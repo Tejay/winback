@@ -1,1 +1,264 @@
-@AGENTS.md
+# Winback — Claude Code Project Context
+
+## What this project is
+
+Winback is a SaaS that helps subscription businesses automatically recover churned customers.
+The moment a subscriber cancels on Stripe, Winback sends a personalised plain-text email from
+the founder's real Gmail within 60 seconds. An LLM classifies why they left and generates a
+targeted win-back message. When the product ships something matching their stated reason, the
+win-back fires automatically.
+
+**Pricing:** Free until first recovery. Then £49/month + 10% of recovered MRR (first year
+each subscriber stays back).
+
+**Live reference site:** https://churntool-jxgo.vercel.app
+Every UI decision must match this site exactly unless specified otherwise.
+
+---
+
+## Project state
+
+Fresh Next.js 14 App Router project. It has Tailwind CSS, TypeScript, and shadcn/ui initialised.
+
+It does NOT have:
+- Database or database connection
+- Authentication
+- API routes
+- Server-side code
+- Environment variables
+
+Build the entire backend from scratch.
+
+---
+
+## Tech stack
+
+| Layer | Technology | Notes |
+|-------|-----------|-------|
+| Framework | Next.js 14 App Router | Pages + API in one repo |
+| Database | Neon (serverless Postgres) | Add via Vercel Storage tab — sets DATABASE_URL automatically |
+| ORM | Drizzle ORM | SQL-like, TypeScript-native |
+| Auth | NextAuth v5 | JWT sessions, credentials provider |
+| Stripe | Stripe SDK + Stripe OAuth | OAuth reads customer's Stripe data read-only |
+| LLM | Anthropic SDK, claude-haiku-4-5-20251001 | ~$0.003/call |
+| Email | Gmail API (googleapis) | Sends from founder's real address |
+| Validation | Zod | All external data validated before use |
+| UI | shadcn/ui + Tailwind CSS | Match live site |
+| Testing | Vitest | Unit tests for all lib modules |
+| Hosting | Vercel | git push deploys, built-in cron jobs |
+
+---
+
+## Design system — match the live site exactly
+
+### Colours
+```
+Page background:  #f5f5f5
+Card/surface:     #ffffff
+Top nav:          #ffffff  border-b border-slate-100
+Primary text:     #0f172a
+Secondary text:   #64748b
+Muted text:       #94a3b8
+Blue accent:      #3b82f6
+Section labels:   #3b82f6  text-xs font-semibold uppercase tracking-widest
+Dark button:      bg-[#0f172a] text-white hover:bg-[#1e293b]
+Border:           #e2e8f0
+Recovered badge:  bg-green-50 text-green-700 border border-green-200
+Contacted badge:  bg-blue-50  text-blue-700  border border-blue-200
+Pending badge:    bg-amber-50 text-amber-700 border border-amber-200
+Lost badge:       bg-slate-100 text-slate-500 border border-slate-200
+```
+
+### Typography
+```
+Section label:  text-xs font-semibold tracking-widest uppercase text-blue-600
+Page title:     text-4xl font-bold text-slate-900
+                Always has a trailing period — "Dashboard." / "Settings." / "Register."
+Page subtitle:  text-sm text-slate-500
+Table header:   text-xs font-semibold uppercase tracking-wide text-slate-400
+Body text:      text-sm text-slate-600
+```
+
+### Page layout templates
+```
+Auth pages (login, register):
+  min-h-screen bg-[#f5f5f5]
+  Logo centred, mt-12 mb-8
+  max-w-sm mx-auto bg-white rounded-2xl shadow-sm border border-slate-100 p-8
+
+Onboarding pages:
+  min-h-screen bg-[#f5f5f5]
+  Logo top-left, py-5 px-6
+  max-w-2xl mx-auto — step progress bar, then white card rounded-2xl p-8
+
+Dashboard / Settings:
+  Sticky white top nav
+  min-h-screen bg-[#f5f5f5]
+  max-w-5xl mx-auto px-6 py-8
+```
+
+### Logo
+Blue rounded-xl square with white lightning bolt SVG. "Winback" in font-semibold text-slate-900 beside it.
+
+### Buttons
+```
+Primary:   bg-[#0f172a] text-white rounded-full px-5 py-2 text-sm font-medium
+Secondary: border border-slate-200 bg-white text-slate-700 rounded-full px-5 py-2 text-sm font-medium
+Disabled:  bg-slate-200 text-slate-400 rounded-full px-5 py-2 text-sm font-medium cursor-not-allowed
+```
+
+### Inputs
+```
+border border-slate-200 rounded-full px-4 py-2.5 text-sm w-full
+focus:outline-none focus:ring-2 focus:ring-blue-500
+Labels: block text-xs font-semibold uppercase tracking-widest text-slate-500 mb-1.5
+```
+
+### Status badges
+```
+All:       inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium
+Recovered: bg-green-50 text-green-700 border border-green-200 — icon: ✓
+Contacted: bg-blue-50  text-blue-700  border border-blue-200  — icon: ✉
+Pending:   bg-amber-50 text-amber-700 border border-amber-200 — icon: ○
+Lost:      bg-slate-100 text-slate-500 border border-slate-200 — icon: ×
+```
+
+---
+
+## File structure to build
+
+```
+app/
+  page.tsx                         Landing page
+  login/page.tsx
+  register/page.tsx
+  onboarding/
+    stripe/page.tsx
+    gmail/page.tsx
+    changelog/page.tsx
+    review/page.tsx
+  dashboard/page.tsx
+  settings/page.tsx
+  api/
+    auth/[...nextauth]/route.ts
+    auth/register/route.ts
+    stripe/webhook/route.ts
+    stripe/connect/route.ts
+    stripe/callback/route.ts
+    gmail/connect/route.ts
+    gmail/callback/route.ts
+    gmail/reply-poll/route.ts
+    changelog/route.ts
+    subscribers/route.ts
+    stats/route.ts
+    billing/preview/route.ts
+
+components/
+  logo.tsx
+  status-badge.tsx
+  top-nav.tsx
+  step-progress.tsx
+
+lib/
+  db.ts
+  auth.ts
+  schema.ts
+
+src/winback/
+  lib/
+    stripe.ts
+    classifier.ts
+    email.ts
+    reply.ts
+    encryption.ts
+    billing.ts
+    types.ts
+  hooks/
+    useWinbackData.ts
+  __tests__/
+    fixtures/
+    classifier.test.ts
+    email.test.ts
+    billing.test.ts
+  migrations/
+    001_initial.sql
+
+vercel.json
+```
+
+---
+
+## Non-negotiable rules
+
+### ⛔ Always stop and ask before:
+1. Running database migrations — show full SQL, wait for "yes"
+2. Any live Anthropic API call — state cost (~$0.003), wait for "yes"
+3. Sending a real email via Gmail — wait for "yes"
+4. Installing npm packages — list all packages with reason, wait for "yes"
+5. Committing or pushing to git
+
+### ✅ Always do without asking:
+1. Write tests alongside every lib module in `src/winback/__tests__/`
+2. Validate all external inputs with Zod before use
+3. Idempotency checks on all webhook handlers
+4. Store money as integers (cents/pence) — never floats
+5. Secrets via environment variables — never hardcoded
+6. TypeScript strict mode — no implicit `any`
+
+### Auth pattern — use in every protected route and page
+
+API route:
+```typescript
+import { getServerSession } from 'next-auth'
+import { authOptions } from '@/lib/auth'
+
+const session = await getServerSession(authOptions)
+if (!session?.user?.id) {
+  return Response.json({ error: 'Unauthorized' }, { status: 401 })
+}
+const userId = session.user.id
+```
+
+Page (server component):
+```typescript
+import { getServerSession } from 'next-auth'
+import { authOptions } from '@/lib/auth'
+import { redirect } from 'next/navigation'
+
+const session = await getServerSession(authOptions)
+if (!session) redirect('/login')
+```
+
+---
+
+## Environment variables (none exist yet)
+
+Tell the human which variables to add at each phase. Never create `.env.local` yourself.
+
+```
+# Phase 1 — set these first
+DATABASE_URL=          # from Neon via Vercel Storage — auto-populated
+NEXTAUTH_SECRET=       # openssl rand -base64 32
+NEXTAUTH_URL=http://localhost:3000
+ENCRYPTION_KEY=        # openssl rand -hex 16  ← must be exactly 32 hex chars
+CRON_SECRET=           # any random string
+
+# Phase 3 — Stripe
+STRIPE_CLIENT_ID=      # Stripe Dashboard → Connect settings
+STRIPE_SECRET_KEY=     # sk_test_...
+STRIPE_WEBHOOK_SECRET= # from: stripe listen --forward-to ...
+
+# Phase 4 — Anthropic + Gmail
+ANTHROPIC_API_KEY=
+GMAIL_CLIENT_ID=
+GMAIL_CLIENT_SECRET=
+GMAIL_REDIRECT_URI=http://localhost:3000/api/gmail/callback
+
+NEXT_PUBLIC_APP_URL=http://localhost:3000
+```
+
+---
+
+## How to start each session
+
+Say: "Read CLAUDE.md and TASKS.md. Work through the next unchecked task."
