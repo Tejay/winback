@@ -184,9 +184,12 @@ TIER DEFINITIONS:
 RULES:
 - Never invent a reason that isn't in the signal data
 - Tier 3 messages must never reference a specific exit reason
+- Never say "we noticed you cancelled" — always say "we noticed you're no longer subscribed." 
+  This is important: some subscribers leave via payment blocking, not the cancellation flow.
 - Never offer a discount unless price was explicitly mentioned by the subscriber
 - cancellationReason: short phrase shown in a dashboard table (e.g. "Switched to a competitor")
 - cancellationCategory: exactly one of: Competitor|Price|Quality|Unused|Feature|Other
+- For Tier 2 and Tier 3, always end firstMessage.body with a single genuine question asking why they left. Keep it to one sentence. Frame it as curiosity, not a survey. Good example: "Would you mind sharing what happened? Hit reply — one line is enough." Bad example: "Please complete our exit survey." Do NOT add this question to Tier 1 — they already told you why they left.
 - Return ONLY valid JSON with no preamble and no markdown code fences
 ```
 
@@ -308,7 +311,8 @@ export async function pollCustomerReplies(
 ```
 
 **How reply detection works:**
-1. Query `wb_emails_sent`: `type='exit'`, `replied_at IS NULL`, `sent_at > NOW() - 30 days`
+
+1. Query `wb_emails_sent`: `replied_at IS NULL`, `sent_at > NOW() - 30 days`
 2. For each email: fetch Gmail thread by `gmail_thread_id`
 3. If thread has more than 1 message AND at least one message is NOT from the sender → reply found
 4. Extract reply body: strip lines starting with `>`
