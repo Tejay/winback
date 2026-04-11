@@ -12,7 +12,9 @@ const changelogSchema = z.object({
   content: z.string().min(1),
 })
 
-const anthropic = new Anthropic()
+function getAnthropicClient() {
+  return new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+}
 
 export async function POST(req: Request) {
   const session = await auth()
@@ -48,7 +50,7 @@ export async function POST(req: Request) {
   // Extract keywords via LLM
   let keywordsFound: string[] = []
   try {
-    const response = await anthropic.messages.create({
+    const response = await getAnthropicClient().messages.create({
       model: 'claude-haiku-4-5-20251001',
       temperature: 0,
       max_tokens: 200,

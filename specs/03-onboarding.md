@@ -95,6 +95,16 @@ Checkmark: `text-blue-600 font-bold text-base`
 - Exchange code: `POST https://connect.stripe.com/oauth/token` `grant_type=authorization_code code={code}`
 - Encrypt access_token using `encryption.ts`
 - Save `stripe_account_id` and encrypted `stripe_access_token` to `wb_customers`
+- Register webhook on connected account using access token:
+    ```
+    POST https://api.stripe.com/v1/webhook_endpoints
+    Headers: Authorization: Bearer {access_token}
+    Body:
+      url: {NEXT_PUBLIC_APP_URL}/api/stripe/webhook
+      enabled_events[]: customer.subscription.deleted
+      enabled_events[]: customer.subscription.created
+    ```
+  - Encrypt the returned `secret` and save to `wb_customers.stripe_webhook_secret`
 - Redirect to `/onboarding/gmail`
 
 ⛔ **CHECKPOINT — before testing OAuth:**

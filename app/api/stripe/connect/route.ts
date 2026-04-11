@@ -20,10 +20,14 @@ export async function GET() {
     return NextResponse.json({ error: 'Customer not found' }, { status: 404 })
   }
 
+  // NEXT_PUBLIC_APP_URL is used for Stripe redirect_uri because it must be
+  // the publicly accessible URL (ngrok in dev, Vercel domain in prod).
+  // NEXTAUTH_URL may differ (localhost for browser sessions).
   const params = new URLSearchParams({
     response_type: 'code',
     client_id: process.env.STRIPE_CLIENT_ID!,
-    scope: 'read_only',
+    scope: 'read_write', // TODO: Contact Stripe support to enable read_only scope before production
+    stripe_landing: 'login',
     state: customer.id,
     redirect_uri: `${process.env.NEXT_PUBLIC_APP_URL}/api/stripe/callback`,
   })

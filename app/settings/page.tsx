@@ -4,6 +4,7 @@ import { db } from '@/lib/db'
 import { customers } from '@/lib/schema'
 import { eq } from 'drizzle-orm'
 import { TopNav } from '@/components/top-nav'
+import { DisconnectButton } from './disconnect-button'
 import { CreditCard, Mail } from 'lucide-react'
 
 export default async function SettingsPage() {
@@ -66,9 +67,7 @@ export default async function SettingsPage() {
                     <span className="bg-green-50 text-green-700 border border-green-200 rounded-full px-2.5 py-0.5 text-xs font-medium">
                       ● Connected
                     </span>
-                    <button className="border border-slate-200 bg-white text-slate-700 rounded-full px-4 py-1.5 text-sm font-medium">
-                      Disconnect
-                    </button>
+                    <DisconnectButton service="stripe" />
                   </>
                 ) : (
                   <>
@@ -105,9 +104,7 @@ export default async function SettingsPage() {
                     <span className="bg-green-50 text-green-700 border border-green-200 rounded-full px-2.5 py-0.5 text-xs font-medium">
                       ● Connected
                     </span>
-                    <button className="border border-slate-200 bg-white text-slate-700 rounded-full px-4 py-1.5 text-sm font-medium">
-                      Disconnect
-                    </button>
+                    <DisconnectButton service="gmail" />
                   </>
                 ) : (
                   <>

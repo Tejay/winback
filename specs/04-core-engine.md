@@ -84,9 +84,28 @@ export async function POST(req: Request) {
   const rawBody = Buffer.from(await req.arrayBuffer())
   const sig     = req.headers.get('stripe-signature') ?? ''
 
+  // Step 1: Parse raw body to extract event.account (connected account ID)
+  // Step 2: Look up wb_customers by stripe_account_id
+  // Step 3: Decrypt customer's stripe_webhook_secret
+  // Step 4: Verify signature using per-customer secret:
+  //         stripe.webhooks.constructEvent(rawBody, sig, decryptedWebhookSecret)
+  // Fallback: if no customer found, try STRIPE_WEBHOOK_SECRET env var (for CLI testing)
+
   let event: Stripe.Event
   try {
-    event = stripe.webhooks.constructEvent(rawBody, sig, process.env.STRIPE_WEBHOOK_SECRET!)
+    const payload = JSON.parse(rawBody.toString())
+    const accountId = payload.account
+    let secret = process.env.STRIPE_WEBHOOK_SECRET! // fallback for CLI testing
+
+    if (accountId) {
+      const [customer] = await db.select().from(customers)
+        .where(eq(customers.stripeAccountId, accountId)).limit(1)
+      if (customer?.stripeWebhookSecret) {
+        secret = decrypt(customer.stripeWebhookSecret)
+      }
+    }
+
+    event = stripe.webhooks.constructEvent(rawBody, sig, secret)
   } catch (err) {
     console.error('Webhook signature failed:', err)
     return new Response('Invalid signature', { status: 400 })

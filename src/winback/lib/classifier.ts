@@ -2,7 +2,27 @@ import Anthropic from '@anthropic-ai/sdk'
 import { z } from 'zod'
 import { SubscriberSignals, ClassificationResult } from './types'
 
-const client = new Anthropic()
+function getApiKey(): string {
+  // process.env.ANTHROPIC_API_KEY may be empty string from system env
+  // (e.g. Claude Code sets it to empty). Fall back to reading .env.local directly.
+  const key = process.env.ANTHROPIC_API_KEY
+  if (key && key.startsWith('sk-')) return key
+
+  // Fallback: read from .env.local
+  try {
+    const fs = require('fs')
+    const path = require('path')
+    const envFile = fs.readFileSync(path.join(process.cwd(), '.env.local'), 'utf8')
+    const match = envFile.match(/^ANTHROPIC_API_KEY="?([^"\n]+)"?$/m)
+    if (match?.[1]) return match[1]
+  } catch {}
+
+  throw new Error('ANTHROPIC_API_KEY is not set')
+}
+
+function getClient() {
+  return new Anthropic({ apiKey: getApiKey() })
+}
 
 const ClassificationSchema = z.object({
   tier:                 z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]),
@@ -47,7 +67,7 @@ export async function classifySubscriber(
 ): Promise<ClassificationResult> {
   const userPrompt = buildPrompt(signals, context)
 
-  const response = await client.messages.create({
+  const response = await getClient().messages.create({
     model: 'claude-haiku-4-5-20251001',
     max_tokens: 1500,
     temperature: 0,

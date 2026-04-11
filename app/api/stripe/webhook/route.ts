@@ -1,6 +1,6 @@
 import Stripe from 'stripe'
 import { db } from '@/lib/db'
-import { customers, churnedSubscribers, recoveries, emailsSent } from '@/lib/schema'
+import { customers, churnedSubscribers, recoveries } from '@/lib/schema'
 import { eq, and, inArray } from 'drizzle-orm'
 import { decrypt } from '@/src/winback/lib/encryption'
 import { extractSignals } from '@/src/winback/lib/stripe'
@@ -25,15 +25,18 @@ export async function POST(req: Request) {
     return new Response('Invalid signature', { status: 400 })
   }
 
-  if (event.type === 'customer.subscription.deleted') {
-    processChurn(event).catch((err) =>
-      console.error('processChurn error:', err)
-    )
-  }
-  if (event.type === 'customer.subscription.created') {
-    processRecovery(event).catch((err) =>
-      console.error('processRecovery error:', err)
-    )
+  console.log('Webhook received:', event.type, 'account:', event.account ?? 'none')
+
+  try {
+    if (event.type === 'customer.subscription.deleted') {
+      await processChurn(event)
+    }
+    if (event.type === 'customer.subscription.created') {
+      await processRecovery(event)
+    }
+  } catch (err) {
+    console.error('Webhook processing error:', err)
+    return new Response('Processing error', { status: 500 })
   }
 
   return new Response('ok', { status: 200 })
@@ -117,14 +120,16 @@ async function processChurn(event: Stripe.Event) {
     })
     .returning({ id: churnedSubscribers.id })
 
+  console.log('Churned subscriber saved:', newSub.id, signals.email)
+
   if (!classification.suppress && signals.email && customer.gmailRefreshToken) {
     const decryptedRefreshToken = decrypt(customer.gmailRefreshToken)
-    scheduleExitEmail({
+    await scheduleExitEmail({
       subscriberId: newSub.id,
       email: signals.email,
       classification,
       refreshToken: decryptedRefreshToken,
-    }).catch((err) => console.error('scheduleExitEmail error:', err))
+    })
   }
 }
 
@@ -146,7 +151,6 @@ async function processRecovery(event: Stripe.Event) {
     ? subscription.customer
     : subscription.customer.id
 
-  // Find churned subscriber by stripe customer ID
   const [churned] = await db
     .select()
     .from(churnedSubscribers)

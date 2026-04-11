@@ -68,6 +68,20 @@ Left:
 Right:
 - Same connected/not-connected pattern. "Connect" → `/api/gmail/connect`
 
+**Disconnect routes:**
+
+`POST /api/stripe/disconnect`:
+- Requires auth session
+- Clears `stripe_account_id`, `stripe_access_token`, `stripe_webhook_secret` in `wb_customers`
+- Returns `{ success: true }`
+
+`POST /api/gmail/disconnect`:
+- Requires auth session
+- Clears `gmail_refresh_token`, `gmail_email` in `wb_customers`
+- Returns `{ success: true }`
+
+Both disconnect buttons show a confirmation dialog before calling the API. Page refreshes after disconnect.
+
 **"Connected" is determined by:** `customer.stripeAccessToken !== null` and `customer.gmailRefreshToken !== null`
 
 ---

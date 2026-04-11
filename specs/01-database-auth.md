@@ -48,6 +48,7 @@ export const customers = pgTable('wb_customers', {
   userId:             uuid('user_id').notNull().unique().references(() => users.id, { onDelete: 'cascade' }),
   stripeAccountId:    text('stripe_account_id'),
   stripeAccessToken:  text('stripe_access_token'),   // AES-256-GCM encrypted
+  stripeWebhookSecret: text('stripe_webhook_secret'), // AES-256-GCM encrypted, per connected account
   gmailRefreshToken:  text('gmail_refresh_token'),   // AES-256-GCM encrypted
   gmailEmail:         text('gmail_email'),
   founderName:        text('founder_name'),
@@ -136,6 +137,7 @@ CREATE TABLE IF NOT EXISTS wb_customers (
   user_id              UUID NOT NULL UNIQUE REFERENCES wb_users(id) ON DELETE CASCADE,
   stripe_account_id    TEXT,
   stripe_access_token  TEXT,
+  stripe_webhook_secret TEXT,
   gmail_refresh_token  TEXT,
   gmail_email          TEXT,
   founder_name         TEXT,

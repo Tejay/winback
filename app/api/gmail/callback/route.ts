@@ -4,23 +4,21 @@ import { customers } from '@/lib/schema'
 import { eq } from 'drizzle-orm'
 import { encrypt } from '@/src/winback/lib/encryption'
 
+const baseUrl = () => process.env.NEXTAUTH_URL!
+
 export async function GET(req: NextRequest) {
   const { searchParams } = req.nextUrl
 
   const error = searchParams.get('error')
   if (error) {
-    return NextResponse.redirect(
-      new URL('/onboarding/gmail?error=denied', req.url)
-    )
+    return NextResponse.redirect(`${baseUrl()}/onboarding/gmail?error=denied`)
   }
 
   const code = searchParams.get('code')
   const state = searchParams.get('state')
 
   if (!code || !state) {
-    return NextResponse.redirect(
-      new URL('/onboarding/gmail?error=missing_params', req.url)
-    )
+    return NextResponse.redirect(`${baseUrl()}/onboarding/gmail?error=missing_params`)
   }
 
   const [customer] = await db
@@ -30,9 +28,7 @@ export async function GET(req: NextRequest) {
     .limit(1)
 
   if (!customer) {
-    return NextResponse.redirect(
-      new URL('/onboarding/gmail?error=invalid_state', req.url)
-    )
+    return NextResponse.redirect(`${baseUrl()}/onboarding/gmail?error=invalid_state`)
   }
 
   const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
@@ -48,9 +44,7 @@ export async function GET(req: NextRequest) {
   })
 
   if (!tokenRes.ok) {
-    return NextResponse.redirect(
-      new URL('/onboarding/gmail?error=token_exchange_failed', req.url)
-    )
+    return NextResponse.redirect(`${baseUrl()}/onboarding/gmail?error=token_exchange_failed`)
   }
 
   const tokenData = await tokenRes.json()
@@ -69,5 +63,5 @@ export async function GET(req: NextRequest) {
     })
     .where(eq(customers.id, state))
 
-  return NextResponse.redirect(new URL('/onboarding/changelog', req.url))
+  return NextResponse.redirect(`${baseUrl()}/onboarding/changelog`)
 }

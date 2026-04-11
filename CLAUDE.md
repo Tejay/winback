@@ -246,7 +246,7 @@ CRON_SECRET=           # any random string
 # Phase 3 — Stripe
 STRIPE_CLIENT_ID=      # Stripe Dashboard → Connect settings
 STRIPE_SECRET_KEY=     # sk_test_...
-STRIPE_WEBHOOK_SECRET= # from: stripe listen --forward-to ...
+STRIPE_WEBHOOK_SECRET= # CLI only — each connected account stores its own webhook secret in wb_customers
 
 # Phase 4 — Anthropic + Gmail
 ANTHROPIC_API_KEY=
