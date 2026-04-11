@@ -94,18 +94,11 @@ Checkmark: `text-blue-600 font-bold text-base`
 - Verify `state` matches a `wb_customers.id`
 - Exchange code: `POST https://connect.stripe.com/oauth/token` `grant_type=authorization_code code={code}`
 - Encrypt access_token using `encryption.ts`
-- Save `stripe_account_id` and encrypted `stripe_access_token` to `wb_customers`
-- Register webhook on connected account using access token:
-    ```
-    POST https://api.stripe.com/v1/webhook_endpoints
-    Headers: Authorization: Bearer {access_token}
-    Body:
-      url: {NEXT_PUBLIC_APP_URL}/api/stripe/webhook
-      enabled_events[]: customer.subscription.deleted
-      enabled_events[]: customer.subscription.created
-    ```
-  - Encrypt the returned `secret` and save to `wb_customers.stripe_webhook_secret`
+- Reconnect protection: if user already has a `stripeAccountId`, keep the original account ID (don't overwrite with new one from `read_write` OAuth which creates duplicate accounts)
+- Save `stripe_account_id` (or keep existing) and encrypted `stripe_access_token` to `wb_customers`
 - Redirect to `/onboarding/gmail`
+- Note: scope is `read_write` (Stripe blocks `read_only` by default — contact support to enable before production)
+- Note: webhook is NOT registered per-account. A single Connect webhook on the platform account handles all connected accounts (see Phase 8)
 
 ⛔ **CHECKPOINT — before testing OAuth:**
 Show the redirect URI that will be used. Ask: "Is `{NEXT_PUBLIC_APP_URL}/api/stripe/callback` added as a Redirect URI in your Stripe Dashboard → Connect → Settings? Type 'yes' when done."

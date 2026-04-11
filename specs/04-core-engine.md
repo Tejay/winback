@@ -84,39 +84,21 @@ export async function POST(req: Request) {
   const rawBody = Buffer.from(await req.arrayBuffer())
   const sig     = req.headers.get('stripe-signature') ?? ''
 
-  // Step 1: Parse raw body to extract event.account (connected account ID)
-  // Step 2: Look up wb_customers by stripe_account_id
-  // Step 3: Decrypt customer's stripe_webhook_secret
-  // Step 4: Verify signature using per-customer secret:
-  //         stripe.webhooks.constructEvent(rawBody, sig, decryptedWebhookSecret)
-  // Fallback: if no customer found, try STRIPE_WEBHOOK_SECRET env var (for CLI testing)
-
+  // Single Connect webhook on platform account — one STRIPE_WEBHOOK_SECRET for all connected accounts
   let event: Stripe.Event
   try {
-    const payload = JSON.parse(rawBody.toString())
-    const accountId = payload.account
-    let secret = process.env.STRIPE_WEBHOOK_SECRET! // fallback for CLI testing
-
-    if (accountId) {
-      const [customer] = await db.select().from(customers)
-        .where(eq(customers.stripeAccountId, accountId)).limit(1)
-      if (customer?.stripeWebhookSecret) {
-        secret = decrypt(customer.stripeWebhookSecret)
-      }
-    }
-
-    event = stripe.webhooks.constructEvent(rawBody, sig, secret)
+    event = stripe.webhooks.constructEvent(rawBody, sig, process.env.STRIPE_WEBHOOK_SECRET!)
   } catch (err) {
     console.error('Webhook signature failed:', err)
     return new Response('Invalid signature', { status: 400 })
   }
 
-  // Respond immediately — processing is async
+  // Process synchronously — do NOT fire-and-forget on serverless (function dies after response)
   if (event.type === 'customer.subscription.deleted') {
-    processChurn(event).catch(err => console.error('processChurn error:', err))
+    await processChurn(event)
   }
   if (event.type === 'customer.subscription.created') {
-    processRecovery(event).catch(err => console.error('processRecovery error:', err))
+    await processRecovery(event)
   }
 
   return new Response('ok', { status: 200 })
@@ -177,7 +159,12 @@ import Anthropic from '@anthropic-ai/sdk'
 import { z } from 'zod'
 import { SubscriberSignals, ClassificationResult } from './types'
 
-const client = new Anthropic()
+// IMPORTANT: Use lazy initialization — process.env.ANTHROPIC_API_KEY may be
+// empty at module load time (Claude Code overrides it with empty string).
+// Read from .env.local as fallback if env var is empty.
+function getClient() {
+  return new Anthropic({ apiKey: getApiKey() })
+}
 
 export async function classifySubscriber(
   signals: SubscriberSignals,

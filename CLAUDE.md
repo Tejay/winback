@@ -239,14 +239,14 @@ Tell the human which variables to add at each phase. Never create `.env.local` y
 # Phase 1 — set these first
 DATABASE_URL=          # from Neon via Vercel Storage — auto-populated
 NEXTAUTH_SECRET=       # openssl rand -base64 32
-NEXTAUTH_URL=http://localhost:3000
+NEXTAUTH_URL=http://localhost:3000  # Browser-facing URL — used for all browser redirects after OAuth
 ENCRYPTION_KEY=        # openssl rand -hex 16  ← must be exactly 32 hex chars
 CRON_SECRET=           # any random string
 
 # Phase 3 — Stripe
-STRIPE_CLIENT_ID=      # Stripe Dashboard → Connect settings
+STRIPE_CLIENT_ID=      # Stripe Dashboard → Connect → OAuth tab → Test client ID
 STRIPE_SECRET_KEY=     # sk_test_...
-STRIPE_WEBHOOK_SECRET= # CLI only — each connected account stores its own webhook secret in wb_customers
+STRIPE_WEBHOOK_SECRET= # From the Connect webhook registered on the platform account (connect=true)
 
 # Phase 4 — Anthropic + Gmail
 ANTHROPIC_API_KEY=
@@ -254,7 +254,7 @@ GMAIL_CLIENT_ID=
 GMAIL_CLIENT_SECRET=
 GMAIL_REDIRECT_URI=http://localhost:3000/api/gmail/callback
 
-NEXT_PUBLIC_APP_URL=http://localhost:3000
+NEXT_PUBLIC_APP_URL=http://localhost:3000  # Must be publicly accessible (ngrok in dev, Vercel domain in prod) — used for Stripe OAuth redirect_uri and webhook endpoint
 ```
 
 ---

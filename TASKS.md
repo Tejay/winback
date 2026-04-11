@@ -235,6 +235,18 @@ Tell me when .env.local has DATABASE_URL set.
 - [ ] After login: redirect to `/onboarding/stripe` if Stripe not connected
 - [ ] After Stripe + Gmail connected: redirect to `/dashboard`
 
+### Task 8.2b — Connect webhook setup
+- [ ] Register one Connect webhook on the platform Stripe account:
+  ```
+  POST /v1/webhook_endpoints
+    connect=true
+    url={NEXT_PUBLIC_APP_URL}/api/stripe/webhook
+    enabled_events[]=customer.subscription.deleted
+    enabled_events[]=customer.subscription.created
+  ```
+- [ ] Save the returned `secret` as `STRIPE_WEBHOOK_SECRET` in env vars
+- [ ] For local dev: use ngrok URL. For production: use Vercel domain.
+
 ### Task 8.3 — Final checks
 - [ ] `npx tsc --noEmit` → zero errors
 - [ ] `npm test` → all passing
