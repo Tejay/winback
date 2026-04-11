@@ -30,12 +30,12 @@ const ClassificationSchema = z.object({
   cancellationReason:   z.string(),
   cancellationCategory: z.enum(['Competitor', 'Price', 'Quality', 'Unused', 'Feature', 'Other']),
   confidence:           z.number().min(0).max(1).default(0),
-  suppress:             z.boolean(),
+  suppress:             z.boolean().default(false),
   suppressReason:       z.string().optional(),
   firstMessage:         z.object({
     subject:       z.string(),
     body:          z.string(),
-    sendDelaySecs: z.number(),
+    sendDelaySecs: z.number().default(60),
   }).nullable().default(null),
   triggerKeyword: z.string().nullable().default(null),
   fallbackDays:   z.union([z.literal(30), z.literal(90), z.literal(180)]).default(90),
@@ -80,12 +80,27 @@ export async function classifySubscriber(
   // Strip markdown code fences if present
   raw = raw.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim()
 
-  let parsed: unknown
+  let parsed: Record<string, unknown>
   try {
     parsed = JSON.parse(raw)
   } catch {
     console.error('Raw LLM output:', raw)
     throw new Error('Failed to parse LLM output as JSON')
+  }
+
+  // Normalize LLM output — handle common field name variations
+  if (parsed.shouldEmail !== undefined && parsed.suppress === undefined) {
+    parsed.suppress = !parsed.shouldEmail
+  }
+  // Derive suppress from tier if missing
+  if (parsed.suppress === undefined && parsed.tier === 4) {
+    parsed.suppress = true
+  }
+  // Copy firstMessage to winback fields if missing
+  if (parsed.firstMessage && !parsed.winBackSubject) {
+    const fm = parsed.firstMessage as Record<string, unknown>
+    parsed.winBackSubject = fm.subject ?? ''
+    parsed.winBackBody = fm.body ?? ''
   }
 
   const result = ClassificationSchema.safeParse(parsed)
