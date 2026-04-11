@@ -57,7 +57,13 @@ export async function scheduleExitEmail(params: {
   refreshToken: string
 }): Promise<void> {
   const { subscriberId, email, classification, refreshToken } = params
-  const delaySecs = classification.firstMessage.sendDelaySecs
+
+  if (!classification.firstMessage) {
+    console.log('No firstMessage (suppressed), skipping email')
+    return
+  }
+
+  const { subject, body, sendDelaySecs } = classification.firstMessage
 
   // TODO: replace setTimeout with a persistent job queue (e.g. BullMQ) before production
   setTimeout(async () => {
@@ -65,8 +71,8 @@ export async function scheduleExitEmail(params: {
       const { messageId, threadId } = await sendEmail({
         refreshToken,
         to: email,
-        subject: classification.firstMessage.subject,
-        body: classification.firstMessage.body,
+        subject,
+        body,
       })
 
       await db.insert(emailsSent).values({
@@ -74,7 +80,7 @@ export async function scheduleExitEmail(params: {
         gmailMessageId: messageId,
         gmailThreadId: threadId,
         type: 'exit',
-        subject: classification.firstMessage.subject,
+        subject,
       })
 
       await db
@@ -84,5 +90,5 @@ export async function scheduleExitEmail(params: {
     } catch (err) {
       console.error('Failed to send exit email:', err)
     }
-  }, delaySecs * 1000)
+  }, sendDelaySecs * 1000)
 }

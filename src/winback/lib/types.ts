@@ -29,7 +29,7 @@ export interface ClassificationResult {
     subject:        string
     body:           string
     sendDelaySecs:  number
-  }
+  } | null
   triggerKeyword:  string | null
   fallbackDays:    30 | 90 | 180
   winBackSubject:  string

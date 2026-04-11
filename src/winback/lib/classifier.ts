@@ -26,21 +26,21 @@ function getClient() {
 
 const ClassificationSchema = z.object({
   tier:                 z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]),
-  tierReason:           z.string(),
+  tierReason:           z.string().default(''),
   cancellationReason:   z.string(),
   cancellationCategory: z.enum(['Competitor', 'Price', 'Quality', 'Unused', 'Feature', 'Other']),
-  confidence:           z.number().min(0).max(1),
+  confidence:           z.number().min(0).max(1).default(0),
   suppress:             z.boolean(),
   suppressReason:       z.string().optional(),
   firstMessage:         z.object({
     subject:       z.string(),
     body:          z.string(),
     sendDelaySecs: z.number(),
-  }),
-  triggerKeyword: z.string().nullable(),
-  fallbackDays:   z.union([z.literal(30), z.literal(90), z.literal(180)]),
-  winBackSubject: z.string(),
-  winBackBody:    z.string(),
+  }).nullable().default(null),
+  triggerKeyword: z.string().nullable().default(null),
+  fallbackDays:   z.union([z.literal(30), z.literal(90), z.literal(180)]).default(90),
+  winBackSubject: z.string().default(''),
+  winBackBody:    z.string().default(''),
 })
 
 const SYSTEM_PROMPT = `You are a win-back classification engine for subscription businesses.
@@ -75,7 +75,10 @@ export async function classifySubscriber(
     messages: [{ role: 'user', content: userPrompt }],
   })
 
-  const raw = response.content[0].type === 'text' ? response.content[0].text : ''
+  let raw = response.content[0].type === 'text' ? response.content[0].text : ''
+
+  // Strip markdown code fences if present
+  raw = raw.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim()
 
   let parsed: unknown
   try {

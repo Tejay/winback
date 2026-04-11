@@ -164,7 +164,7 @@ describe('classifySubscriber', () => {
     expect(result.tier).toBe(3)
     expect(result.confidence).toBeLessThanOrEqual(0.70)
     // Tier 3 must NOT reference a specific exit reason
-    expect(result.firstMessage.body).not.toMatch(/too expensive|competitor|feature|quality/i)
+    expect(result.firstMessage?.body).not.toMatch(/too expensive|competitor|feature|quality/i)
     expect(ClassificationSchema.safeParse(result).success).toBe(true)
   })
 
