@@ -2,26 +2,26 @@ import Anthropic from '@anthropic-ai/sdk'
 import { z } from 'zod'
 import { SubscriberSignals, ClassificationResult } from './types'
 
-function getApiKey(): string {
-  // process.env.ANTHROPIC_API_KEY may be empty string from system env
-  // (e.g. Claude Code sets it to empty). Fall back to reading .env.local directly.
-  const key = process.env.ANTHROPIC_API_KEY
-  if (key && key.startsWith('sk-')) return key
-
-  // Fallback: read from .env.local
-  try {
-    const fs = require('fs')
-    const path = require('path')
-    const envFile = fs.readFileSync(path.join(process.cwd(), '.env.local'), 'utf8')
-    const match = envFile.match(/^ANTHROPIC_API_KEY="?([^"\n]+)"?$/m)
-    if (match?.[1]) return match[1]
-  } catch {}
-
-  throw new Error('ANTHROPIC_API_KEY is not set')
-}
-
 function getClient() {
-  return new Anthropic({ apiKey: getApiKey() })
+  // process.env.ANTHROPIC_API_KEY may be empty string locally
+  // (Claude Code sets it to empty in system env, overriding .env.local).
+  // On Vercel, the env var will be set correctly.
+  const key = process.env.ANTHROPIC_API_KEY
+
+  if (!key || !key.startsWith('sk-')) {
+    // Local dev fallback: read directly from .env.local
+    try {
+      const fs = require('fs')
+      const path = require('path')
+      const envFile = fs.readFileSync(path.join(process.cwd(), '.env.local'), 'utf8')
+      const match = envFile.match(/^ANTHROPIC_API_KEY="?([^"\n]+)"?$/m)
+      if (match?.[1]) return new Anthropic({ apiKey: match[1] })
+    } catch {}
+
+    throw new Error('ANTHROPIC_API_KEY is not set or empty')
+  }
+
+  return new Anthropic({ apiKey: key })
 }
 
 const ClassificationSchema = z.object({

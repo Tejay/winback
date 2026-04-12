@@ -101,7 +101,7 @@ describe('scheduleExitEmail', () => {
     })
   })
 
-  it('calls sendEmail after the correct delay', async () => {
+  it('sends email immediately and updates database', async () => {
     const classification: ClassificationResult = {
       tier: 1,
       tierReason: 'test',
@@ -120,23 +120,15 @@ describe('scheduleExitEmail', () => {
       winBackBody: 'Win back body',
     }
 
-    scheduleExitEmail({
+    await scheduleExitEmail({
       subscriberId: 'sub_123',
       email: 'test@example.com',
       classification,
       refreshToken: 'refresh_token',
     })
 
-    // Should not have sent yet
-    expect(mockSend).not.toHaveBeenCalled()
-
-    // Advance timer past the delay
-    await vi.advanceTimersByTimeAsync(61000)
-
     expect(mockSend).toHaveBeenCalledOnce()
     expect(mockInsert).toHaveBeenCalled()
     expect(mockUpdate).toHaveBeenCalled()
-
-    vi.useRealTimers()
   })
 })

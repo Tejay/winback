@@ -63,32 +63,25 @@ export async function scheduleExitEmail(params: {
     return
   }
 
-  const { subject, body, sendDelaySecs } = classification.firstMessage
+  const { subject, body } = classification.firstMessage
 
-  // TODO: replace setTimeout with a persistent job queue (e.g. BullMQ) before production
-  setTimeout(async () => {
-    try {
-      const { messageId, threadId } = await sendEmail({
-        refreshToken,
-        to: email,
-        subject,
-        body,
-      })
+  const { messageId, threadId } = await sendEmail({
+    refreshToken,
+    to: email,
+    subject,
+    body,
+  })
 
-      await db.insert(emailsSent).values({
-        subscriberId,
-        gmailMessageId: messageId,
-        gmailThreadId: threadId,
-        type: 'exit',
-        subject,
-      })
+  await db.insert(emailsSent).values({
+    subscriberId,
+    gmailMessageId: messageId,
+    gmailThreadId: threadId,
+    type: 'exit',
+    subject,
+  })
 
-      await db
-        .update(churnedSubscribers)
-        .set({ status: 'contacted', updatedAt: new Date() })
-        .where(eq(churnedSubscribers.id, subscriberId))
-    } catch (err) {
-      console.error('Failed to send exit email:', err)
-    }
-  }, sendDelaySecs * 1000)
+  await db
+    .update(churnedSubscribers)
+    .set({ status: 'contacted', updatedAt: new Date() })
+    .where(eq(churnedSubscribers.id, subscriberId))
 }

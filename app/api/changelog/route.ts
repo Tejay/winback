@@ -13,7 +13,18 @@ const changelogSchema = z.object({
 })
 
 function getAnthropicClient() {
-  return new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+  const key = process.env.ANTHROPIC_API_KEY
+  if (!key || !key.startsWith('sk-')) {
+    try {
+      const fs = require('fs')
+      const path = require('path')
+      const envFile = fs.readFileSync(path.join(process.cwd(), '.env.local'), 'utf8')
+      const match = envFile.match(/^ANTHROPIC_API_KEY="?([^"\n]+)"?$/m)
+      if (match?.[1]) return new Anthropic({ apiKey: match[1] })
+    } catch {}
+    throw new Error('ANTHROPIC_API_KEY is not set or empty')
+  }
+  return new Anthropic({ apiKey: key })
 }
 
 export async function POST(req: Request) {
