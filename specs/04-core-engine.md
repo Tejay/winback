@@ -260,105 +260,80 @@ Run Scenario A live. Show the actual JSON output. Confirm it passes Zod.
 
 ```typescript
 export async function sendEmail(params: {
-  refreshToken: string   // decrypted
+  subscriberId: string
   to:           string
   subject:      string
   body:         string
-}): Promise<{ messageId: string; threadId: string }>
+  founderName:  string
+}): Promise<{ messageId: string }>
 
 export async function scheduleExitEmail(params: {
   subscriberId: string
   email:        string
   classification: ClassificationResult
-  refreshToken: string   // decrypted
+  founderName:  string
 }): Promise<void>
 ```
 
 **`sendEmail` implementation:**
-- Build RFC 2822 email: plain text only (no HTML), `\r\n` line endings
-- base64url encode the message for Gmail API
-- Authenticate with refresh token using `google.auth.OAuth2`
-- `POST https://gmail.googleapis.com/gmail/v1/users/me/messages/send`
-- Return `messageId` and `threadId` from response
+- Use Resend SDK (`new Resend(process.env.RESEND_API_KEY)`)
+- From address: `"${founderName} via Winback <reply+${subscriberId}@winbackflow.co>"`
+- Plain text only (no HTML)
+- Return `messageId` from Resend response
 
 **`scheduleExitEmail` implementation:**
-- `setTimeout` for `classification.firstMessage.sendDelaySecs` (typically 60 seconds)
-- Inside timeout: call `sendEmail` with `firstMessage.subject` and `firstMessage.body`
+- Send immediately (no setTimeout — Resend handles delivery)
+- Call `sendEmail` with `firstMessage.subject` and `firstMessage.body`
 - Insert row into `wb_emails_sent` (`type: 'exit'`)
 - Update `wb_churned_subscribers.status = 'contacted'`
-- Add code comment: `// TODO: replace setTimeout with a persistent job queue (e.g. BullMQ) before production`
 
-**Tests** (mocked Gmail API):
-1. Correct RFC 2822 message structure (headers + body)
-2. Correct base64url encoding
-3. `scheduleExitEmail` calls `sendEmail` after correct delay
+**Tests** (mocked Resend):
+1. Correct from address format with subscriberId
+2. Plain text body sent correctly
+3. `scheduleExitEmail` calls `sendEmail` and inserts DB rows
 4. After send: row exists in `wb_emails_sent`, subscriber status is `'contacted'`
-
-⛔ **CHECKPOINT — after Gmail OAuth works:**
-"Ready to send one test email to your address to verify Gmail API works. Type 'yes'."
-Send to human's Gmail address. Show the `messageId` returned. Confirm human received it.
 
 ---
 
-## Part F — src/winback/lib/reply.ts + cron endpoint
+## Part F — src/winback/lib/reply.ts + inbound webhook
 
 ```typescript
-// Entry point for cron: check all customers for replies
-export async function pollAllCustomerReplies(): Promise<{
-  processed:    number
-  repliesFound: number
-}>
-
-// Check one customer's email threads
-export async function pollCustomerReplies(
-  customerId:        string,
-  gmailRefreshToken: string  // decrypted
-): Promise<{ repliesFound: number }>
+// Process an inbound email reply from Resend webhook
+export async function processReply(
+  subscriberId: string,
+  replyText:    string
+): Promise<void>
 ```
 
-**How reply detection works:**
+**`app/api/email/inbound/route.ts`:**
+Receives POST requests from Resend inbound webhook when a reply arrives.
 
-1. Query `wb_emails_sent`: `replied_at IS NULL`, `sent_at > NOW() - 30 days`
-2. For each email: fetch Gmail thread by `gmail_thread_id`
-3. If thread has more than 1 message AND at least one message is NOT from the sender → reply found
-4. Extract reply body: strip lines starting with `>`
-5. Call `processReply(subscriberId, replyText)`
-
-**`processReply`:**
-1. Update `wb_emails_sent.replied_at = NOW()`
-2. Update `wb_churned_subscribers.reply_text = replyText`
-3. Re-classify using `classifySubscriber` with `replyText` injected as primary signal
-4. Update subscriber: `tier`, `confidence`, `triggerKeyword`, `winBackBody`, `winBackSubject`
-
-**`app/api/gmail/reply-poll/route.ts`:**
 ```typescript
 export async function POST(req: Request) {
-  const secret = req.headers.get('x-cron-secret')
-  if (secret !== process.env.CRON_SECRET) {
-    return new Response('Unauthorized', { status: 401 })
-  }
-  const result = await pollAllCustomerReplies()
-  return Response.json(result)
+  const body = await req.json()
+  // Extract subscriberId from the "to" address: reply+{subscriberId}@winbackflow.co
+  const toAddress = body.to
+  const match = toAddress.match(/reply\+([a-f0-9-]+)@/)
+  if (!match) return new Response('Unknown recipient', { status: 200 })
+  const subscriberId = match[1]
+  const replyText = body.text || body.html || ''
+  await processReply(subscriberId, replyText)
+  return new Response('ok', { status: 200 })
 }
 ```
 
-**`vercel.json`** (create in project root):
-```json
-{
-  "crons": [
-    {
-      "path": "/api/gmail/reply-poll",
-      "schedule": "*/5 * * * *"
-    }
-  ]
-}
-```
+**`processReply`:**
+1. Find `wb_emails_sent` for this subscriber where `replied_at IS NULL`
+2. Update `wb_emails_sent.replied_at = NOW()`
+3. Update `wb_churned_subscribers.reply_text = replyText`
+4. Re-classify using `classifySubscriber` with `replyText` injected as primary signal
+5. Update subscriber: `tier`, `confidence`, `triggerKeyword`, `winBackBody`, `winBackSubject`
 
 **Tests:**
-1. Thread with no reply → no changes to database
-2. Thread with reply → `repliesFound` incremented, `replied_at` set, tier updated
-3. Quoted content stripped correctly from reply body
-4. Cron endpoint with wrong secret → 401
+1. Inbound webhook with valid reply+{id} address → reply processed, `replied_at` set, tier updated
+2. Inbound webhook with unknown address → 200, no DB changes
+3. Re-classification updates subscriber fields correctly
+4. Quoted content stripped correctly from reply body
 
 ---
 
@@ -373,8 +348,6 @@ export async function POST(req: Request) {
 - [ ] `classifier.ts` — Zod schema defined
 - [ ] All 5 mocked classifier tests passing
 - [ ] Human approved + live classifier test passes Zod
-- [ ] `email.ts` — all tests passing with mocked Gmail
-- [ ] Human confirmed test email received
+- [ ] `email.ts` — all tests passing with mocked Resend
 - [ ] `reply.ts` — all tests passing
-- [ ] Cron endpoint secured with CRON_SECRET
-- [ ] `vercel.json` created
+- [ ] Inbound webhook endpoint created at `/api/email/inbound`

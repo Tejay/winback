@@ -52,7 +52,7 @@ Stop. That's wrong — [explain the problem]. Do not continue until this is fixe
 | specs/01-database-auth.md | Database schema, Drizzle, NextAuth, shared components |
 | specs/02-public-pages.md | Landing page, login, register |
 | specs/03-onboarding.md | All 4 onboarding steps with exact UI |
-| specs/04-core-engine.md | Stripe signals, LLM classifier, Gmail email, reply polling |
+| specs/04-core-engine.md | Stripe signals, LLM classifier, Resend email, inbound webhook |
 | specs/05-dashboard.md | Dashboard page, subscriber table, detail panel |
 | specs/06-settings.md | Settings page (integrations + billing sections) |
 | specs/07-billing.md | Changelog trigger, fee calculation |

@@ -3,8 +3,8 @@
 ## What this project is
 
 Winback is a SaaS that helps subscription businesses automatically recover churned customers.
-The moment a subscriber cancels on Stripe, Winback sends a personalised plain-text email from
-the founder's real Gmail within 60 seconds. An LLM classifies why they left and generates a
+The moment a subscriber cancels on Stripe, Winback sends a personalised plain-text email via
+Resend within 60 seconds. An LLM classifies why they left and generates a
 targeted win-back message. When the product ships something matching their stated reason, the
 win-back fires automatically.
 
@@ -41,7 +41,7 @@ Build the entire backend from scratch.
 | Auth | NextAuth v5 | JWT sessions, credentials provider |
 | Stripe | Stripe SDK + Stripe OAuth | OAuth reads customer's Stripe data read-only |
 | LLM | Anthropic SDK, claude-haiku-4-5-20251001 | ~$0.003/call |
-| Email | Gmail API (googleapis) | Sends from founder's real address |
+| Email | Resend | Reliable transactional email with inbound webhooks |
 | Validation | Zod | All external data validated before use |
 | UI | shadcn/ui + Tailwind CSS | Match live site |
 | Testing | Vitest | Unit tests for all lib modules |
@@ -134,7 +134,6 @@ app/
   register/page.tsx
   onboarding/
     stripe/page.tsx
-    gmail/page.tsx
     changelog/page.tsx
     review/page.tsx
   dashboard/page.tsx
@@ -145,9 +144,7 @@ app/
     stripe/webhook/route.ts
     stripe/connect/route.ts
     stripe/callback/route.ts
-    gmail/connect/route.ts
-    gmail/callback/route.ts
-    gmail/reply-poll/route.ts
+    email/inbound/route.ts
     changelog/route.ts
     subscribers/route.ts
     stats/route.ts
@@ -193,9 +190,8 @@ vercel.json
 ### ⛔ Always stop and ask before:
 1. Running database migrations — show full SQL, wait for "yes"
 2. Any live Anthropic API call — state cost (~$0.003), wait for "yes"
-3. Sending a real email via Gmail — wait for "yes"
-4. Installing npm packages — list all packages with reason, wait for "yes"
-5. Committing or pushing to git
+3. Installing npm packages — list all packages with reason, wait for "yes"
+4. Committing or pushing to git
 
 ### ✅ Always do without asking:
 1. Write tests alongside every lib module in `src/winback/__tests__/`
@@ -209,8 +205,38 @@ vercel.json
    # WRONG — echo adds \n which corrupts API keys and URLs
    echo "value" | vercel env add NAME production
    ```
-5. Secrets via environment variables — never hardcoded
-6. TypeScript strict mode — no implicit `any`
+6. Secrets via environment variables — never hardcoded
+7. TypeScript strict mode — no implicit `any`
+8. **Serverless-safe initialization** — NEVER instantiate SDK clients or validate env vars at module load time. Always use lazy initialization inside functions:
+   ```typescript
+   // WRONG — crashes build if env var missing
+   const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!)
+   const KEY = Buffer.from(process.env.ENCRYPTION_KEY ?? '', 'hex')
+   if (KEY.length !== 16) throw new Error('...')
+
+   // CORRECT — only runs when function is called
+   function getStripe() { return new Stripe(process.env.STRIPE_SECRET_KEY!) }
+   function getKey() {
+     const key = Buffer.from(process.env.ENCRYPTION_KEY ?? '', 'hex')
+     if (key.length !== 16) throw new Error('...')
+     return key
+   }
+   ```
+   This is critical because:
+   - Vercel imports all route modules at build time to collect page data
+   - Preview deployments may not have all env vars set
+   - Module-level throws crash the entire build, not just the affected route
+9. **Vercel environment parity** — when adding env vars for production, ALWAYS also add them for preview. Preview deployments need all env vars to build and run:
+   ```bash
+   # Add for production
+   printf "%s" "value" | vercel env add NAME production
+   # ALSO add for preview (requires branch name)
+   printf "%s" "value" | vercel env add NAME preview feature/branch-name
+   ```
+   URL-based vars (NEXTAUTH_URL, NEXT_PUBLIC_APP_URL) differ per environment:
+   - Production: `https://winbackflow.co`
+   - Preview: `https://winback-git-{branch}-....vercel.app`
+   - Local: `http://localhost:3000`
 
 ### Auth pattern — use in every protected route and page
 
@@ -255,11 +281,9 @@ STRIPE_CLIENT_ID=      # Stripe Dashboard → Connect → OAuth tab → Test cli
 STRIPE_SECRET_KEY=     # sk_test_...
 STRIPE_WEBHOOK_SECRET= # From the Connect webhook registered on the platform account (connect=true)
 
-# Phase 4 — Anthropic + Gmail
+# Phase 4 — Anthropic + Email
 ANTHROPIC_API_KEY=
-GMAIL_CLIENT_ID=
-GMAIL_CLIENT_SECRET=
-GMAIL_REDIRECT_URI=http://localhost:3000/api/gmail/callback
+RESEND_API_KEY=
 
 NEXT_PUBLIC_APP_URL=http://localhost:3000  # Must be publicly accessible (ngrok in dev, Vercel domain in prod) — used for Stripe OAuth redirect_uri and webhook endpoint
 ```

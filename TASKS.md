@@ -29,7 +29,7 @@ bcryptjs                 Password hashing
 @types/bcryptjs
 stripe                   Stripe SDK
 @anthropic-ai/sdk        Claude API
-googleapis               Gmail API
+resend                   Transactional email
 zod                      Validation
 swr                      Data fetching
 @types/node
@@ -113,19 +113,11 @@ Tell me when .env.local has DATABASE_URL set.
 
 ⛔ **STOP — "Is `{NEXT_PUBLIC_APP_URL}/api/stripe/callback` configured in your Stripe Dashboard → Connect → Redirect URIs? Type 'yes' when done."**
 
-### Task 3.2 — Step 2: Connect Gmail
-- [ ] Create `app/onboarding/gmail/page.tsx`
-
-⛔ **STOP — output Google Cloud Console setup instructions, wait for confirmation**
-
-- [ ] Create `app/api/gmail/connect/route.ts`
-- [ ] Create `app/api/gmail/callback/route.ts`
-
-### Task 3.3 — Step 3: Changelog
+### Task 3.2 — Step 2: Changelog
 - [ ] Create `app/onboarding/changelog/page.tsx`
 - [ ] Create `app/api/changelog/route.ts` (save only — keyword matching added in Phase 7)
 
-### Task 3.4 — Step 4: Review email
+### Task 3.3 — Step 3: Review email
 - [ ] Create `app/onboarding/review/page.tsx`
 - [ ] "Approve & enter dashboard →" sets `onboarding_complete = true` + redirects to `/dashboard`
 
@@ -157,18 +149,13 @@ Tell me when .env.local has DATABASE_URL set.
 
 - [ ] Run one live test → confirm output passes Zod validation
 
-### Task 4.4 — Gmail email sender
+### Task 4.4 — Resend email sender
 - [ ] Create `src/winback/lib/email.ts` (`sendEmail`, `scheduleExitEmail`)
-- [ ] Tests passing with mocked Gmail API
+- [ ] Tests passing with mocked Resend
 
-⛔ **STOP — "Ready to send one test email to your address to verify Gmail works. Type 'yes'."**
-
-- [ ] Confirm human received the email
-
-### Task 4.5 — Reply polling
+### Task 4.5 — Inbound webhook for replies
 - [ ] Create `src/winback/lib/reply.ts`
-- [ ] Create `app/api/gmail/reply-poll/route.ts` (secured with CRON_SECRET)
-- [ ] Create `vercel.json` with 5-minute cron schedule
+- [ ] Create `app/api/email/inbound/route.ts` (Resend inbound webhook)
 - [ ] Tests passing
 
 ---
@@ -203,7 +190,7 @@ Tell me when .env.local has DATABASE_URL set.
 
 ### Task 6.1 — Settings page
 - [ ] Create `app/settings/page.tsx`
-- [ ] Integrations section (Stripe + Gmail cards with live connection status)
+- [ ] Integrations section (Stripe card with live connection status)
 - [ ] Billing section (plan card + billing contact + invoices)
 
 ---
@@ -233,7 +220,7 @@ Tell me when .env.local has DATABASE_URL set.
 ### Task 8.2 — Route protection audit
 - [ ] `/dashboard` and `/onboarding/*` → redirect to `/login` if no session
 - [ ] After login: redirect to `/onboarding/stripe` if Stripe not connected
-- [ ] After Stripe + Gmail connected: redirect to `/dashboard`
+- [ ] After Stripe connected: redirect to `/dashboard`
 
 ### Task 8.2b — Connect webhook setup
 - [ ] Register one Connect webhook on the platform Stripe account:

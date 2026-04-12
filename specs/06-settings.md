@@ -59,15 +59,6 @@ Right:
 - If connected: `[● Connected]` badge + `[Disconnect]` outline button
   - Badge: `bg-green-50 text-green-700 border border-green-200 rounded-full px-2.5 py-0.5 text-xs font-medium`
 
-**Gmail row** (`flex items-center justify-between py-4`) — same structure as Stripe:
-
-Left:
-- Red envelope icon (`#EA4335`) on `bg-red-50 rounded-xl w-10 h-10`
-- `"Gmail"` + `"Sends winback emails from your address"`
-
-Right:
-- Same connected/not-connected pattern. "Connect" → `/api/gmail/connect`
-
 **Disconnect routes:**
 
 `POST /api/stripe/disconnect`:
@@ -75,14 +66,9 @@ Right:
 - Clears `stripe_account_id`, `stripe_access_token`, `stripe_webhook_secret` in `wb_customers`
 - Returns `{ success: true }`
 
-`POST /api/gmail/disconnect`:
-- Requires auth session
-- Clears `gmail_refresh_token`, `gmail_email` in `wb_customers`
-- Returns `{ success: true }`
+Disconnect button shows a confirmation dialog before calling the API. Page refreshes after disconnect.
 
-Both disconnect buttons show a confirmation dialog before calling the API. Page refreshes after disconnect.
-
-**"Connected" is determined by:** `customer.stripeAccessToken !== null` and `customer.gmailRefreshToken !== null`
+**"Connected" is determined by:** `customer.stripeAccessToken !== null`
 
 ---
 
@@ -125,8 +111,7 @@ Bottom:
 - [ ] `/settings` redirects to `/login` without session
 - [ ] Page header matches live site
 - [ ] Stripe row correctly shows "Not connected" or "Connected" based on database
-- [ ] Gmail row correctly shows connection state
-- [ ] "Connect" links go to correct OAuth routes
+- [ ] "Connect" link goes to correct OAuth route
 - [ ] Billing section shows plan card with all content
 - [ ] Billing contact shows user's email from session
 - [ ] Page matches https://churntool-jxgo.vercel.app/settings visually

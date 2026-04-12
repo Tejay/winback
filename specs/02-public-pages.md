@@ -103,7 +103,7 @@ Body: "Winback reads each cancellation reason and picks the response that matche
 Demo card shows: Cancellation reason + "Winback chooses" section with Tone / Content / Channel fields
 
 **Step 03 — Act Sent automatically. From your real inbox.**
-Body: "Emails go from your own Gmail, signed with your name. No generic no-reply. Replies come straight back to you — which is what turns a winback into a conversation."
+Body: "Emails go from your brand, signed with your name. No generic no-reply. Replies come straight back to you — which is what turns a winback into a conversation."
 
 Demo card shows: Email preview (From / To / Subject / abbreviated body)
 
