@@ -30,11 +30,11 @@ export default function OnboardingChangelogPage() {
       </div>
 
       <div className="max-w-2xl mx-auto px-4 pb-12">
-        <StepProgress currentStep={3} completedSteps={[1, 2]} />
+        <StepProgress currentStep={2} completedSteps={[1]} />
 
         <div className="mt-6 bg-white rounded-2xl border border-slate-100 shadow-sm p-8">
           <span className="bg-blue-50 text-blue-700 text-xs font-semibold rounded-full px-3 py-1 inline-block mb-4">
-            STEP 3 OF 4
+            STEP 2 OF 3
           </span>
 
           <h1 className="text-2xl font-bold text-slate-900 mb-2">
@@ -58,7 +58,7 @@ export default function OnboardingChangelogPage() {
 
           <div className="flex justify-between mt-8">
             <Link
-              href="/onboarding/gmail"
+              href="/onboarding/stripe"
               className="border border-slate-200 bg-white text-slate-700 rounded-full px-5 py-2 text-sm font-medium"
             >
               Back

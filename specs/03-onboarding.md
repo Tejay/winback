@@ -1,7 +1,7 @@
-# Spec 03 — Onboarding Flow (4 steps)
+# Spec 03 — Onboarding Flow (3 steps)
 
 **Phase:** 3
-**Depends on:** Spec 01 (auth + step-progress component), Spec 01 (Stripe + Gmail routes)
+**Depends on:** Spec 01 (auth + step-progress component), Spec 01 (Stripe routes)
 **Reference:** /onboarding/stripe through /onboarding/review on live site
 **Estimated time:** 3 hours
 **Human checkpoints:** 2
@@ -41,7 +41,7 @@ Body:
 Inside white card:
 
 **Step badge:**
-`"STEP 1 OF 4"` — `bg-blue-50 text-blue-700 text-xs font-semibold rounded-full px-3 py-1 inline-block mb-4`
+`"STEP 1 OF 3"` — `bg-blue-50 text-blue-700 text-xs font-semibold rounded-full px-3 py-1 inline-block mb-4`
 
 **Heading:**
 `"Connect your Stripe account"` — `text-2xl font-bold text-slate-900 mb-2`
@@ -71,7 +71,7 @@ Checkmark: `text-blue-600 font-bold text-base`
 
 **Navigation:**
 `flex justify-end mt-8`
-`"Next: Connect Gmail →"` button — disabled/greyed if Stripe not yet connected, enabled dark button if connected.
+`"Next: Paste changelog →"` button — disabled/greyed if Stripe not yet connected, enabled dark button if connected.
 
 **Stripe OAuth routes:**
 
@@ -96,7 +96,7 @@ Checkmark: `text-blue-600 font-bold text-base`
 - Encrypt access_token using `encryption.ts`
 - Reconnect protection: if user already has a `stripeAccountId`, keep the original account ID (don't overwrite with new one from `read_write` OAuth which creates duplicate accounts)
 - Save `stripe_account_id` (or keep existing) and encrypted `stripe_access_token` to `wb_customers`
-- Redirect to `/onboarding/gmail`
+- Redirect to `/onboarding/changelog`
 - Note: scope is `read_write` (Stripe blocks `read_only` by default — contact support to enable before production)
 - Note: webhook is NOT registered per-account. A single Connect webhook on the platform account handles all connected accounts (see Phase 8)
 
@@ -105,79 +105,15 @@ Show the redirect URI that will be used. Ask: "Is `{NEXT_PUBLIC_APP_URL}/api/str
 
 ---
 
-## Step 2 — /onboarding/gmail
+## Step 2 — /onboarding/changelog
 
 **StepProgress:** `currentStep={2}` `completedSteps={[1]}`
 
-Step 1 shows as completed (green check in progress bar).
-
-Inside white card — same structure as Step 1:
-
-**Step badge:** `"STEP 2 OF 4"`
-
-**Heading:** `"Connect Gmail to send winback emails"`
-
-**Subtitle:** `"Emails go from your real address, not a generic no-reply. That's what gets replies."`
-
-**Gmail integration card** (same layout as Stripe card):
-- Red envelope icon on `bg-red-50 rounded-xl` (Gmail red: `#EA4335`)
-- `"Gmail"` + `"Send from your own address via OAuth"`
-- `"Connect Gmail"` primary button
-
-**Three trust points:**
-```
-✓  Send only — we never read your inbox
-✓  Replies land directly in your real inbox
-✓  Revoke access in Google anytime
-```
-
-**Navigation:**
-`"Back"` secondary button → `/onboarding/stripe`
-`"Next: Paste changelog →"` — greyed until Gmail connected, dark when connected
-
-**Gmail OAuth routes:**
-
-⛔ **CHECKPOINT — before building Gmail routes:**
-Output these exact instructions:
-```
-To set up Gmail OAuth:
-1. Go to console.cloud.google.com
-2. Create new project → name it "winback"
-3. APIs & Services → Library → search "Gmail API" → Enable
-4. APIs & Services → Credentials → Create Credentials → OAuth 2.0 Client ID
-   Application type: Web application
-   Authorised redirect URI: http://localhost:3000/api/gmail/callback
-5. Copy Client ID and Client Secret → add to .env.local as GMAIL_CLIENT_ID and GMAIL_CLIENT_SECRET
-6. OAuth consent screen → Test users → add your own email address
-Tell me when this is done.
-```
-**Wait for human confirmation before writing the Gmail routes.**
-
-`GET /api/gmail/connect`:
-- Requires auth
-- Scopes: `gmail.send` + `gmail.modify`
-- `access_type: 'offline'`, `prompt: 'consent'` (ensures refresh token is returned)
-- State: `customer.id`
-- Redirect to Google OAuth URL
-
-`GET /api/gmail/callback?code=XXX&state=XXX`:
-- Exchange code: `POST https://oauth2.googleapis.com/token`
-- Get Gmail email from: `GET https://www.googleapis.com/userinfo/v2/me`
-- Encrypt refresh_token using `encryption.ts`
-- Save encrypted `gmail_refresh_token` and `gmail_email` to `wb_customers`
-- Redirect to `/onboarding/changelog`
-
----
-
-## Step 3 — /onboarding/changelog
-
-**StepProgress:** `currentStep={3}` `completedSteps={[1, 2]}`
-
-Steps 1 and 2 show as completed.
+Step 1 shows as completed.
 
 Inside white card:
 
-**Step badge:** `"STEP 3 OF 4"`
+**Step badge:** `"STEP 2 OF 3"`
 
 **Heading:** `"What have you shipped recently?"`
 
@@ -203,7 +139,7 @@ e.g.
 `"⚡ Bullet points work best. You can edit this any time in Settings."` — `text-xs text-slate-400 mt-2 flex items-center gap-1.5`
 
 **Navigation:**
-`"Back"` → `/onboarding/gmail`
+`"Back"` → `/onboarding/stripe`
 `"Next: Review first email →"` — always enabled (changelog is optional)
 
 On "Next": if textarea has content, `POST /api/changelog { content }`, then navigate to `/onboarding/review`.
@@ -218,15 +154,15 @@ If textarea is empty, navigate directly to `/onboarding/review`.
 
 ---
 
-## Step 4 — /onboarding/review
+## Step 3 — /onboarding/review
 
-**StepProgress:** `currentStep={4}` `completedSteps={[1, 2, 3]}`
+**StepProgress:** `currentStep={3}` `completedSteps={[1, 2]}`
 
-All three prior steps show as completed (green checks).
+Both prior steps show as completed (green checks).
 
 Inside white card:
 
-**Step badge:** `"STEP 4 OF 4"`
+**Step badge:** `"STEP 3 OF 3"`
 
 **Heading:** `"Review the first winback email"`
 
@@ -237,7 +173,7 @@ Inside white card:
 
 Header rows (each row: `flex justify-between items-center px-5 py-3 border-b border-slate-100 text-sm`):
 ```
-From     | {user's gmail_email — or placeholder "you@yourdomain.com"}
+From     | Founder Name via Winback <recover@winbackflow.co>
 To       | sarah.k@gmail.com
 Subject  | A quick update since you left
 ```
@@ -280,14 +216,13 @@ On "Approve & enter dashboard":
 ---
 
 ## Definition of done
-- [ ] All 4 pages render with correct layout and copy
+- [ ] All 3 pages render with correct layout and copy
 - [ ] Step progress bar shows correct active/completed states on each page
 - [ ] All pages redirect to `/login` if unauthenticated
 - [ ] Back buttons navigate correctly
-- [ ] Next buttons disabled until step requirement met (steps 1 and 2)
+- [ ] Next button disabled until step requirement met (step 1)
 - [ ] Stripe OAuth saves encrypted token + redirects to step 2
-- [ ] Gmail OAuth saves encrypted refresh token + gmail email + redirects to step 3
 - [ ] Changelog saves to database
-- [ ] Step 4 shows email preview using user's real Gmail address
+- [ ] Step 3 shows email preview using Resend from address
 - [ ] "Approve & enter dashboard" sets `onboarding_complete = true` + redirects to `/dashboard`
 - [ ] Pages match live site visually

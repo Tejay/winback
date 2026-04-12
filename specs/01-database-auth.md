@@ -48,8 +48,8 @@ export const customers = pgTable('wb_customers', {
   userId:             uuid('user_id').notNull().unique().references(() => users.id, { onDelete: 'cascade' }),
   stripeAccountId:    text('stripe_account_id'),
   stripeAccessToken:  text('stripe_access_token'),   // AES-256-GCM encrypted
-  gmailRefreshToken:  text('gmail_refresh_token'),   // AES-256-GCM encrypted
-  gmailEmail:         text('gmail_email'),
+  gmailRefreshToken:  text('gmail_refresh_token'),   // Legacy — kept for migration. Resend replaces Gmail OAuth
+  gmailEmail:         text('gmail_email'),           // Legacy — kept for migration. Resend replaces Gmail OAuth
   founderName:        text('founder_name'),
   productName:        text('product_name'),
   changelogText:      text('changelog_text'),
@@ -94,8 +94,8 @@ export const churnedSubscribers = pgTable('wb_churned_subscribers', {
 export const emailsSent = pgTable('wb_emails_sent', {
   id:             uuid('id').primaryKey().defaultRandom(),
   subscriberId:   uuid('subscriber_id').notNull().references(() => churnedSubscribers.id, { onDelete: 'cascade' }),
-  gmailMessageId: text('gmail_message_id'),
-  gmailThreadId:  text('gmail_thread_id'),
+  gmailMessageId: text('gmail_message_id'),  // Resend message ID (legacy column name)
+  gmailThreadId:  text('gmail_thread_id'),  // Resend message ID (legacy column name)
   type:           text('type').notNull(),  // exit|win_back|followup
   subject:        text('subject'),
   sentAt:         timestamp('sent_at').defaultNow(),
@@ -375,9 +375,9 @@ Props: `userName?: string | null`
 Use `usePathname()` to detect active tab.
 
 ### components/step-progress.tsx
-Four steps: `[Connect Stripe] [Connect Gmail] [Paste changelog] [Review first e…]`
+Three steps: `[Connect Stripe] [Paste changelog] [Review first e…]`
 
-Props: `currentStep: 1 | 2 | 3 | 4`, `completedSteps: number[]`
+Props: `currentStep: 1 | 2 | 3`, `completedSteps: number[]`
 
 Container: `flex items-center bg-white rounded-2xl border border-slate-100 p-2 gap-1 max-w-2xl w-full`
 

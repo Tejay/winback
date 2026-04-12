@@ -1,11 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
-import { customers, churnedSubscribers } from '@/lib/schema'
+import { customers, churnedSubscribers, emailsSent } from '@/lib/schema'
 import { eq, and } from 'drizzle-orm'
-import { decrypt } from '@/src/winback/lib/encryption'
 import { sendEmail } from '@/src/winback/lib/email'
-import { emailsSent } from '@/lib/schema'
 
 export async function POST(
   req: NextRequest,
@@ -24,8 +22,8 @@ export async function POST(
     .where(eq(customers.userId, session.user.id))
     .limit(1)
 
-  if (!customer?.gmailRefreshToken) {
-    return NextResponse.json({ error: 'Gmail not connected' }, { status: 400 })
+  if (!customer) {
+    return NextResponse.json({ error: 'Customer not found' }, { status: 404 })
   }
 
   const [subscriber] = await db
@@ -43,18 +41,18 @@ export async function POST(
     return NextResponse.json({ error: 'Subscriber not found' }, { status: 404 })
   }
 
-  const refreshToken = decrypt(customer.gmailRefreshToken)
-  const { messageId, threadId } = await sendEmail({
-    refreshToken,
+  const fromName = customer.founderName ?? session.user.name ?? 'The team'
+  const { messageId } = await sendEmail({
     to: subscriber.email,
     subject: subscriber.winBackSubject ?? 'Following up',
     body: subscriber.winBackBody ?? 'Hi, just checking in.',
+    fromName,
+    subscriberId: id,
   })
 
   await db.insert(emailsSent).values({
     subscriberId: id,
     gmailMessageId: messageId,
-    gmailThreadId: threadId,
     type: 'followup',
     subject: subscriber.winBackSubject ?? 'Following up',
   })

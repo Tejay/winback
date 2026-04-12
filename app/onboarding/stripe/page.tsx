@@ -33,7 +33,7 @@ export default async function OnboardingStripePage() {
 
         <div className="mt-6 bg-white rounded-2xl border border-slate-100 shadow-sm p-8">
           <span className="bg-blue-50 text-blue-700 text-xs font-semibold rounded-full px-3 py-1 inline-block mb-4">
-            STEP 1 OF 4
+            STEP 1 OF 3
           </span>
 
           <h1 className="text-2xl font-bold text-slate-900 mb-2">
@@ -79,7 +79,7 @@ export default async function OnboardingStripePage() {
 
           <div className="flex justify-end mt-8">
             <Link
-              href={stripeConnected ? '/onboarding/gmail' : '#'}
+              href={stripeConnected ? '/onboarding/changelog' : '#'}
               className={`rounded-full px-5 py-2 text-sm font-medium ${
                 stripeConnected
                   ? 'bg-[#0f172a] text-white hover:bg-[#1e293b]'
@@ -87,7 +87,7 @@ export default async function OnboardingStripePage() {
               }`}
               aria-disabled={!stripeConnected}
             >
-              Next: Connect Gmail &rarr;
+              Next: Paste changelog &rarr;
             </Link>
           </div>
         </div>

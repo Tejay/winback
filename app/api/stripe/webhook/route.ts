@@ -1,13 +1,15 @@
 import Stripe from 'stripe'
 import { db } from '@/lib/db'
-import { customers, churnedSubscribers, recoveries } from '@/lib/schema'
+import { users, customers, churnedSubscribers, recoveries } from '@/lib/schema'
 import { eq, and, inArray } from 'drizzle-orm'
 import { decrypt } from '@/src/winback/lib/encryption'
 import { extractSignals } from '@/src/winback/lib/stripe'
 import { classifySubscriber } from '@/src/winback/lib/classifier'
 import { scheduleExitEmail } from '@/src/winback/lib/email'
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!)
+function getStripe() {
+  return new Stripe(process.env.STRIPE_SECRET_KEY!)
+}
 
 export async function POST(req: Request) {
   const rawBody = Buffer.from(await req.arrayBuffer())
@@ -15,7 +17,7 @@ export async function POST(req: Request) {
 
   let event: Stripe.Event
   try {
-    event = stripe.webhooks.constructEvent(
+    event = getStripe().webhooks.constructEvent(
       rawBody,
       sig,
       process.env.STRIPE_WEBHOOK_SECRET!
@@ -122,13 +124,22 @@ async function processChurn(event: Stripe.Event) {
 
   console.log('Churned subscriber saved:', newSub.id, signals.email)
 
-  if (!classification.suppress && signals.email && customer.gmailRefreshToken) {
-    const decryptedRefreshToken = decrypt(customer.gmailRefreshToken)
+  if (!classification.suppress && signals.email) {
+    // Get founder's name from users table if not set on customer
+    let founderName = customer.founderName
+    if (!founderName) {
+      const [user] = await db
+        .select({ name: users.name, email: users.email })
+        .from(users)
+        .where(eq(users.id, customer.userId))
+        .limit(1)
+      founderName = user?.name ?? user?.email?.split('@')[0] ?? 'The team'
+    }
     await scheduleExitEmail({
       subscriberId: newSub.id,
       email: signals.email,
       classification,
-      refreshToken: decryptedRefreshToken,
+      fromName: founderName,
     })
   }
 }

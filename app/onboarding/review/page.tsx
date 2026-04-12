@@ -18,8 +18,8 @@ export default async function OnboardingReviewPage() {
     .where(eq(customers.userId, session.user.id))
     .limit(1)
 
-  const gmailEmail = customer?.gmailEmail ?? 'you@yourdomain.com'
-  const userName = session.user.name ?? gmailEmail.split('@')[0]
+  const userName = session.user.name ?? session.user.email?.split('@')[0] ?? 'The team'
+  const fromEmail = `${userName} via Winback <recover@winbackflow.co>`
   const changelog = customer?.changelogText
 
   const emailBody = `Hi Sarah,
@@ -41,11 +41,11 @@ It's a much more reliable experience now. If you're open to it, I'd love for you
       </div>
 
       <div className="max-w-2xl mx-auto px-4 pb-12">
-        <StepProgress currentStep={4} completedSteps={[1, 2, 3]} />
+        <StepProgress currentStep={3} completedSteps={[1, 2]} />
 
         <div className="mt-6 bg-white rounded-2xl border border-slate-100 shadow-sm p-8">
           <span className="bg-blue-50 text-blue-700 text-xs font-semibold rounded-full px-3 py-1 inline-block mb-4">
-            STEP 4 OF 4
+            STEP 3 OF 3
           </span>
 
           <h1 className="text-2xl font-bold text-slate-900 mb-2">
@@ -59,7 +59,7 @@ It's a much more reliable experience now. If you're open to it, I'd love for you
           <div className="border border-slate-200 rounded-2xl overflow-hidden mt-6">
             <div className="flex justify-between items-center px-5 py-3 border-b border-slate-100 text-sm">
               <span className="text-slate-400">From</span>
-              <span className="text-slate-900">{gmailEmail}</span>
+              <span className="text-slate-900">{fromEmail}</span>
             </div>
             <div className="flex justify-between items-center px-5 py-3 border-b border-slate-100 text-sm">
               <span className="text-slate-400">To</span>

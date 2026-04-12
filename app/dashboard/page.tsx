@@ -18,7 +18,6 @@ export default async function DashboardPage() {
 
   // Route protection: redirect to onboarding if not complete
   if (!customer?.stripeAccessToken) redirect('/onboarding/stripe')
-  if (!customer?.gmailRefreshToken) redirect('/onboarding/gmail')
   if (!customer?.onboardingComplete) redirect('/onboarding/changelog')
 
   // Check if billing alert should show
