@@ -8,8 +8,8 @@ import { SubscriberSignals } from '@/src/winback/lib/types'
 export async function POST(req: Request) {
   const body = await req.json()
 
-  // Resend inbound webhook payload
-  const to = body.to?.[0] ?? body.to ?? ''
+  // Resend inbound webhook payload — to can be string or array
+  const to = Array.isArray(body.to) ? body.to[0] : (body.to ?? '')
   const from = body.from ?? ''
   const text = body.text ?? body.plain_text ?? ''
 

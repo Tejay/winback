@@ -1,6 +1,6 @@
 import Stripe from 'stripe'
 import { db } from '@/lib/db'
-import { customers, churnedSubscribers, recoveries } from '@/lib/schema'
+import { users, customers, churnedSubscribers, recoveries } from '@/lib/schema'
 import { eq, and, inArray } from 'drizzle-orm'
 import { decrypt } from '@/src/winback/lib/encryption'
 import { extractSignals } from '@/src/winback/lib/stripe'
@@ -123,7 +123,16 @@ async function processChurn(event: Stripe.Event) {
   console.log('Churned subscriber saved:', newSub.id, signals.email)
 
   if (!classification.suppress && signals.email) {
-    const founderName = customer.founderName ?? customer.gmailEmail ?? 'The team'
+    // Get founder's name from users table if not set on customer
+    let founderName = customer.founderName
+    if (!founderName) {
+      const [user] = await db
+        .select({ name: users.name, email: users.email })
+        .from(users)
+        .where(eq(users.id, customer.userId))
+        .limit(1)
+      founderName = user?.name ?? user?.email?.split('@')[0] ?? 'The team'
+    }
     await scheduleExitEmail({
       subscriberId: newSub.id,
       email: signals.email,

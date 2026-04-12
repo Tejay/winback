@@ -1,9 +1,13 @@
 import { createCipheriv, createDecipheriv, randomBytes } from 'crypto'
 
-const KEY = Buffer.from(process.env.ENCRYPTION_KEY ?? '', 'hex')
-if (KEY.length !== 16) throw new Error('ENCRYPTION_KEY must be exactly 32 hex chars (16 bytes)')
+function getKey(): Buffer {
+  const key = Buffer.from(process.env.ENCRYPTION_KEY ?? '', 'hex')
+  if (key.length !== 16) throw new Error('ENCRYPTION_KEY must be exactly 32 hex chars (16 bytes)')
+  return key
+}
 
 export function encrypt(plaintext: string): string {
+  const KEY = getKey()
   const iv = randomBytes(12)
   const cipher = createCipheriv('aes-128-gcm', KEY, iv)
   const encrypted = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()])
@@ -12,6 +16,7 @@ export function encrypt(plaintext: string): string {
 }
 
 export function decrypt(ciphertext: string): string {
+  const KEY = getKey()
   const buf = Buffer.from(ciphertext, 'base64')
   const iv  = buf.subarray(0, 12)
   const tag = buf.subarray(12, 28)
