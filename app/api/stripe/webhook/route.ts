@@ -122,13 +122,13 @@ async function processChurn(event: Stripe.Event) {
 
   console.log('Churned subscriber saved:', newSub.id, signals.email)
 
-  if (!classification.suppress && signals.email && customer.gmailRefreshToken) {
-    const decryptedRefreshToken = decrypt(customer.gmailRefreshToken)
+  if (!classification.suppress && signals.email) {
+    const founderName = customer.founderName ?? customer.gmailEmail ?? 'The team'
     await scheduleExitEmail({
       subscriberId: newSub.id,
       email: signals.email,
       classification,
-      refreshToken: decryptedRefreshToken,
+      fromName: founderName,
     })
   }
 }

@@ -8,6 +8,7 @@ export default defineConfig({
     env: {
       ENCRYPTION_KEY: 'a1b2c3d4e5f6a7b8a1b2c3d4e5f6a7b8',
       DATABASE_URL: 'postgresql://test:test@localhost:5432/test',
+      RESEND_API_KEY: 're_test_fake_key',
     },
   },
   resolve: {

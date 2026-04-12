@@ -1,11 +1,10 @@
 interface StepProgressProps {
-  currentStep: 1 | 2 | 3 | 4
+  currentStep: 1 | 2 | 3
   completedSteps: number[]
 }
 
 const steps = [
   'Connect Stripe',
-  'Connect Gmail',
   'Paste changelog',
   'Review first email',
 ]

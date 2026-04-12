@@ -1,62 +1,49 @@
-import { google } from 'googleapis'
+import { Resend } from 'resend'
 import { db } from '@/lib/db'
 import { emailsSent, churnedSubscribers } from '@/lib/schema'
 import { eq } from 'drizzle-orm'
 import { ClassificationResult } from './types'
 
-function getOAuth2Client(refreshToken: string) {
-  const oauth2 = new google.auth.OAuth2(
-    process.env.GMAIL_CLIENT_ID,
-    process.env.GMAIL_CLIENT_SECRET
-  )
-  oauth2.setCredentials({ refresh_token: refreshToken })
-  return oauth2
+function getResendClient() {
+  const key = process.env.RESEND_API_KEY
+  if (!key) throw new Error('RESEND_API_KEY is not set')
+  return new Resend(key)
 }
 
 export async function sendEmail(params: {
-  refreshToken: string
   to: string
   subject: string
   body: string
-}): Promise<{ messageId: string; threadId: string }> {
-  const { refreshToken, to, subject, body } = params
+  fromName: string
+  subscriberId: string
+}): Promise<{ messageId: string }> {
+  const { to, subject, body, fromName, subscriberId } = params
+  const resend = getResendClient()
 
-  const auth = getOAuth2Client(refreshToken)
-  const gmail = google.gmail({ version: 'v1', auth })
+  // Use reply+{subscriberId}@winbackflow.co so inbound webhook can match replies
+  const from = `${fromName} <reply+${subscriberId}@winbackflow.co>`
 
-  const message = [
-    `To: ${to}`,
-    `Subject: ${subject}`,
-    'Content-Type: text/plain; charset=utf-8',
-    'MIME-Version: 1.0',
-    '',
-    body,
-  ].join('\r\n')
-
-  const encodedMessage = Buffer.from(message)
-    .toString('base64')
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=+$/, '')
-
-  const res = await gmail.users.messages.send({
-    userId: 'me',
-    requestBody: { raw: encodedMessage },
+  const res = await resend.emails.send({
+    from,
+    to,
+    subject,
+    text: body,
   })
 
-  return {
-    messageId: res.data.id ?? '',
-    threadId: res.data.threadId ?? '',
+  if (res.error) {
+    throw new Error(`Resend error: ${res.error.message}`)
   }
+
+  return { messageId: res.data?.id ?? '' }
 }
 
 export async function scheduleExitEmail(params: {
   subscriberId: string
   email: string
   classification: ClassificationResult
-  refreshToken: string
+  fromName: string
 }): Promise<void> {
-  const { subscriberId, email, classification, refreshToken } = params
+  const { subscriberId, email, classification, fromName } = params
 
   if (!classification.firstMessage) {
     console.log('No firstMessage (suppressed), skipping email')
@@ -65,17 +52,17 @@ export async function scheduleExitEmail(params: {
 
   const { subject, body } = classification.firstMessage
 
-  const { messageId, threadId } = await sendEmail({
-    refreshToken,
+  const { messageId } = await sendEmail({
     to: email,
     subject,
     body,
+    fromName,
+    subscriberId,
   })
 
   await db.insert(emailsSent).values({
     subscriberId,
     gmailMessageId: messageId,
-    gmailThreadId: threadId,
     type: 'exit',
     subject,
   })

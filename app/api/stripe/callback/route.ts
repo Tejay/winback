@@ -76,5 +76,5 @@ export async function GET(req: NextRequest) {
     console.log('First Stripe connect — historical seeding will run on dashboard load')
   }
 
-  return NextResponse.redirect(`${baseUrl()}/onboarding/gmail`)
+  return NextResponse.redirect(`${baseUrl()}/onboarding/changelog`)
 }

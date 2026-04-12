@@ -1,21 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-// Mock googleapis
+// Mock Resend
 const mockSend = vi.hoisted(() => vi.fn())
-vi.mock('googleapis', () => ({
-  google: {
-    auth: {
-      OAuth2: class {
-        setCredentials = vi.fn()
-      },
-    },
-    gmail: () => ({
-      users: {
-        messages: {
-          send: mockSend,
-        },
-      },
-    }),
+vi.mock('resend', () => ({
+  Resend: class {
+    emails = { send: mockSend }
   },
 }))
 
@@ -45,53 +34,53 @@ describe('sendEmail', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockSend.mockResolvedValue({
-      data: { id: 'msg_123', threadId: 'thread_456' },
+      data: { id: 'msg_123' },
+      error: null,
     })
   })
 
-  it('sends RFC 2822 formatted email via Gmail API', async () => {
+  it('sends email via Resend with correct from address', async () => {
     const result = await sendEmail({
-      refreshToken: 'test_refresh_token',
       to: 'sarah@example.com',
       subject: 'Test subject',
       body: 'Hello Sarah, this is a test.',
+      fromName: 'Alex from Acme',
+      subscriberId: 'sub_abc123',
     })
 
     expect(mockSend).toHaveBeenCalledOnce()
     const callArgs = mockSend.mock.calls[0][0]
 
-    // Decode the raw message
-    const raw = callArgs.requestBody.raw
-    const decoded = Buffer.from(raw, 'base64').toString('utf8')
-
-    expect(decoded).toContain('To: sarah@example.com')
-    expect(decoded).toContain('Subject: Test subject')
-    expect(decoded).toContain('Hello Sarah, this is a test.')
-    expect(decoded).toContain('Content-Type: text/plain; charset=utf-8')
-
+    expect(callArgs.to).toBe('sarah@example.com')
+    expect(callArgs.subject).toBe('Test subject')
+    expect(callArgs.text).toBe('Hello Sarah, this is a test.')
+    expect(callArgs.from).toContain('Alex from Acme')
+    expect(callArgs.from).toContain('reply+sub_abc123@winbackflow.co')
     expect(result.messageId).toBe('msg_123')
-    expect(result.threadId).toBe('thread_456')
   })
 
-  it('uses base64url encoding (no +, /, or = chars)', async () => {
-    await sendEmail({
-      refreshToken: 'token',
-      to: 'test@test.com',
-      subject: 'Subject with special chars: café résumé',
-      body: 'Body with special chars: naïve',
+  it('throws on Resend error', async () => {
+    mockSend.mockResolvedValue({
+      data: null,
+      error: { message: 'Invalid recipient' },
     })
 
-    const raw = mockSend.mock.calls[0][0].requestBody.raw
-    expect(raw).not.toMatch(/[+/=]/)
+    await expect(sendEmail({
+      to: 'bad@example.com',
+      subject: 'Test',
+      body: 'Test',
+      fromName: 'Alex',
+      subscriberId: 'sub_1',
+    })).rejects.toThrow('Resend error: Invalid recipient')
   })
 })
 
 describe('scheduleExitEmail', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    vi.useFakeTimers()
     mockSend.mockResolvedValue({
-      data: { id: 'msg_exit', threadId: 'thread_exit' },
+      data: { id: 'msg_exit' },
+      error: null,
     })
     mockInsert.mockReturnValue({ values: vi.fn().mockResolvedValue([]) })
     mockUpdate.mockReturnValue({
@@ -124,11 +113,36 @@ describe('scheduleExitEmail', () => {
       subscriberId: 'sub_123',
       email: 'test@example.com',
       classification,
-      refreshToken: 'refresh_token',
+      fromName: 'Alex from Acme',
     })
 
     expect(mockSend).toHaveBeenCalledOnce()
     expect(mockInsert).toHaveBeenCalled()
     expect(mockUpdate).toHaveBeenCalled()
+  })
+
+  it('skips email when firstMessage is null (suppressed)', async () => {
+    const classification: ClassificationResult = {
+      tier: 4,
+      tierReason: 'suppress',
+      cancellationReason: 'test account',
+      cancellationCategory: 'Other',
+      confidence: 0.95,
+      suppress: true,
+      firstMessage: null,
+      triggerKeyword: null,
+      fallbackDays: 90,
+      winBackSubject: '',
+      winBackBody: '',
+    }
+
+    await scheduleExitEmail({
+      subscriberId: 'sub_456',
+      email: 'test@example.com',
+      classification,
+      fromName: 'Alex',
+    })
+
+    expect(mockSend).not.toHaveBeenCalled()
   })
 })

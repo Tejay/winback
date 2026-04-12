@@ -5,7 +5,6 @@ import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { customers, churnedSubscribers, emailsSent } from '@/lib/schema'
 import { eq, and, isNotNull, inArray, sql } from 'drizzle-orm'
-import { decrypt } from '@/src/winback/lib/encryption'
 import { sendEmail } from '@/src/winback/lib/email'
 
 const changelogSchema = z.object({
@@ -86,40 +85,39 @@ export async function POST(req: Request) {
   // Find matching subscribers with trigger keywords
   let matchesFound = 0
 
-  if (customer.gmailRefreshToken) {
-    const matchedSubs = await db
-      .select()
-      .from(churnedSubscribers)
-      .where(
-        and(
-          eq(churnedSubscribers.customerId, customer.id),
-          inArray(churnedSubscribers.status, ['pending', 'contacted']),
-          isNotNull(churnedSubscribers.triggerKeyword),
-          isNotNull(churnedSubscribers.winBackBody),
-          sql`${content} ILIKE '%' || ${churnedSubscribers.triggerKeyword} || '%'`
-        )
+  const matchedSubs = await db
+    .select()
+    .from(churnedSubscribers)
+    .where(
+      and(
+        eq(churnedSubscribers.customerId, customer.id),
+        inArray(churnedSubscribers.status, ['pending', 'contacted']),
+        isNotNull(churnedSubscribers.triggerKeyword),
+        isNotNull(churnedSubscribers.winBackBody),
+        sql`${content} ILIKE '%' || ${churnedSubscribers.triggerKeyword} || '%'`
       )
+    )
 
-    const decryptedRefreshToken = decrypt(customer.gmailRefreshToken)
+  const fromName = customer.founderName ?? 'The team'
 
-    for (const sub of matchedSubs) {
-      if (!sub.email || !sub.winBackBody || !sub.winBackSubject) continue
+  for (const sub of matchedSubs) {
+    if (!sub.email || !sub.winBackBody || !sub.winBackSubject) continue
 
-      try {
-        const { messageId, threadId } = await sendEmail({
-          refreshToken: decryptedRefreshToken,
-          to: sub.email,
-          subject: sub.winBackSubject,
-          body: sub.winBackBody,
-        })
+    try {
+      const { messageId } = await sendEmail({
+        to: sub.email,
+        subject: sub.winBackSubject,
+        body: sub.winBackBody,
+        fromName,
+        subscriberId: sub.id,
+      })
 
-        await db.insert(emailsSent).values({
-          subscriberId: sub.id,
-          gmailMessageId: messageId,
-          gmailThreadId: threadId,
-          type: 'win_back',
-          subject: sub.winBackSubject,
-        })
+      await db.insert(emailsSent).values({
+        subscriberId: sub.id,
+        gmailMessageId: messageId,
+        type: 'win_back',
+        subject: sub.winBackSubject,
+      })
 
         await db
           .update(churnedSubscribers)
@@ -127,9 +125,8 @@ export async function POST(req: Request) {
           .where(eq(churnedSubscribers.id, sub.id))
 
         matchesFound++
-      } catch (err) {
-        console.error(`Failed to send win-back email to ${sub.email}:`, err)
-      }
+    } catch (err) {
+      console.error(`Failed to send win-back email to ${sub.email}:`, err)
     }
   }
 
