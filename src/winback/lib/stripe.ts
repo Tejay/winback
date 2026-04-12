@@ -71,6 +71,8 @@ export async function extractSignals(
 
   return {
     stripeCustomerId: customerId,
+    stripeSubscriptionId: subscription.id,
+    stripePriceId: planItem?.price?.id ?? null,
     email: customer.email ?? null,
     name: customer.name ?? null,
     planName,

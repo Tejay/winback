@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { StatusBadge } from '@/components/status-badge'
-import { TrendingUp, CheckCircle, DollarSign, Users, Search, Zap, X, RotateCcw, Check, Archive } from 'lucide-react'
+import { TrendingUp, CheckCircle, DollarSign, Users, Search, Zap, X, RotateCcw, Check } from 'lucide-react'
 
 interface Subscriber {
   id: string
@@ -22,6 +22,7 @@ interface Subscriber {
   confidence: string | null
   winBackSubject: string | null
   winBackBody: string | null
+  attributionType: string | null
 }
 
 interface Stats {
@@ -76,7 +77,7 @@ export function DashboardClient({ changelog, isTrial, firstRecovery }: Dashboard
     setChangelogOpen(false)
   }
 
-  async function handleAction(id: string, action: 'resend' | 'recover' | 'archive') {
+  async function handleAction(id: string, action: 'resend' | 'recover') {
     await fetch(`/api/subscribers/${id}/${action}`, { method: 'POST' })
     setSelected(null)
     fetchData()
@@ -262,7 +263,18 @@ export function DashboardClient({ changelog, isTrial, firstRecovery }: Dashboard
             </div>
 
             <div className="px-6 py-4 flex items-center justify-between">
-              <StatusBadge status={selected.status as 'pending' | 'contacted' | 'recovered' | 'lost'} />
+              <div className="flex items-center gap-2">
+                <StatusBadge status={selected.status as 'pending' | 'contacted' | 'recovered' | 'lost'} />
+                {selected.status === 'recovered' && selected.attributionType && (
+                  <span className={`text-xs font-medium ${
+                    selected.attributionType === 'strong'
+                      ? 'text-green-600'
+                      : 'text-blue-600'
+                  }`}>
+                    {selected.attributionType === 'strong' ? '— via Winback link' : '— resubscribed organically'}
+                  </span>
+                )}
+              </div>
               <div className="text-right">
                 <div className="text-xs font-semibold uppercase tracking-widest text-slate-400">MRR</div>
                 <div className="text-xl font-bold text-slate-900">${(selected.mrrCents / 100).toFixed(2)}</div>
@@ -330,12 +342,6 @@ export function DashboardClient({ changelog, isTrial, firstRecovery }: Dashboard
                   </button>
                 </div>
               )}
-              <button
-                onClick={() => handleAction(selected.id, 'archive')}
-                className="w-full border border-slate-200 bg-white text-slate-700 rounded-full px-4 py-2 text-sm font-medium flex items-center justify-center gap-1.5"
-              >
-                <Archive className="w-3.5 h-3.5" /> Archive as lost
-              </button>
             </div>
           </div>
         </>

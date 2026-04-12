@@ -1,7 +1,7 @@
 import Stripe from 'stripe'
 import { db } from '@/lib/db'
-import { users, customers, churnedSubscribers, recoveries } from '@/lib/schema'
-import { eq, and, inArray } from 'drizzle-orm'
+import { users, customers, churnedSubscribers, recoveries, emailsSent } from '@/lib/schema'
+import { eq, and, ne, inArray } from 'drizzle-orm'
 import { decrypt } from '@/src/winback/lib/encryption'
 import { extractSignals } from '@/src/winback/lib/stripe'
 import { classifySubscriber } from '@/src/winback/lib/classifier'
@@ -35,6 +35,9 @@ export async function POST(req: Request) {
     }
     if (event.type === 'customer.subscription.created') {
       await processRecovery(event)
+    }
+    if (event.type === 'checkout.session.completed') {
+      await processCheckoutRecovery(event)
     }
   } catch (err) {
     console.error('Webhook processing error:', err)
@@ -99,6 +102,8 @@ async function processChurn(event: Stripe.Event) {
     .values({
       customerId: customer.id,
       stripeCustomerId: signals.stripeCustomerId,
+      stripeSubscriptionId: signals.stripeSubscriptionId,
+      stripePriceId: signals.stripePriceId,
       email: signals.email,
       name: signals.name,
       planName: signals.planName,
@@ -169,12 +174,24 @@ async function processRecovery(event: Stripe.Event) {
       and(
         eq(churnedSubscribers.customerId, customer.id),
         eq(churnedSubscribers.stripeCustomerId, stripeCustomerId),
-        inArray(churnedSubscribers.status, ['pending', 'contacted'])
+        ne(churnedSubscribers.status, 'recovered')
       )
     )
     .limit(1)
 
   if (!churned) return
+
+  // Only count as weak recovery if we actually emailed them
+  const [emailRecord] = await db
+    .select({ id: emailsSent.id })
+    .from(emailsSent)
+    .where(eq(emailsSent.subscriberId, churned.id))
+    .limit(1)
+
+  if (!emailRecord) {
+    console.log('Resubscription but no emails sent — not counting as recovery:', churned.email)
+    return
+  }
 
   const planItem = subscription.items?.data[0]
   const mrrCents = planItem?.price?.unit_amount ?? 0
@@ -187,6 +204,7 @@ async function processRecovery(event: Stripe.Event) {
     planMrrCents: mrrCents,
     newStripeSubId: subscription.id,
     attributionEndsAt,
+    attributionType: 'weak',
   })
 
   await db
@@ -194,5 +212,42 @@ async function processRecovery(event: Stripe.Event) {
     .set({ status: 'recovered', updatedAt: new Date() })
     .where(eq(churnedSubscribers.id, churned.id))
 
-  console.log('RECOVERY:', churned.email, 'at', mrrCents, 'cents/mo')
+  console.log('WEAK RECOVERY:', churned.email, 'at', mrrCents, 'cents/mo')
+}
+
+async function processCheckoutRecovery(event: Stripe.Event) {
+  const session = event.data.object as Stripe.Checkout.Session
+  const subscriberId = session.metadata?.winback_subscriber_id
+  const customerId = session.metadata?.winback_customer_id
+
+  if (!subscriberId || !customerId) return // Not a Winback checkout
+
+  const [subscriber] = await db
+    .select()
+    .from(churnedSubscribers)
+    .where(eq(churnedSubscribers.id, subscriberId))
+    .limit(1)
+
+  if (!subscriber) return
+  if (subscriber.status === 'recovered') return // Already recovered — idempotent
+
+  const mrrCents = subscriber.mrrCents
+  const attributionEndsAt = new Date()
+  attributionEndsAt.setFullYear(attributionEndsAt.getFullYear() + 1)
+
+  await db.insert(recoveries).values({
+    subscriberId,
+    customerId,
+    planMrrCents: mrrCents,
+    newStripeSubId: session.subscription as string ?? null,
+    attributionEndsAt,
+    attributionType: 'strong',
+  })
+
+  await db
+    .update(churnedSubscribers)
+    .set({ status: 'recovered', updatedAt: new Date() })
+    .where(eq(churnedSubscribers.id, subscriberId))
+
+  console.log('STRONG RECOVERY:', subscriber.email, 'at', mrrCents, 'cents/mo')
 }

@@ -28,6 +28,8 @@ export const churnedSubscribers = pgTable('wb_churned_subscribers', {
   id:                   uuid('id').primaryKey().defaultRandom(),
   customerId:           uuid('customer_id').notNull().references(() => customers.id, { onDelete: 'cascade' }),
   stripeCustomerId:     text('stripe_customer_id').notNull(),
+  stripeSubscriptionId: text('stripe_subscription_id'),
+  stripePriceId:        text('stripe_price_id'),
   email:                text('email'),
   name:                 text('name'),
   planName:             text('plan_name'),
@@ -72,6 +74,7 @@ export const recoveries = pgTable('wb_recoveries', {
   planMrrCents:      integer('plan_mrr_cents').notNull(),
   newStripeSubId:    text('new_stripe_sub_id'),
   attributionEndsAt: timestamp('attribution_ends_at').notNull(),
+  attributionType:   text('attribution_type').default('weak'),
   stillActive:       boolean('still_active').default(true),
   lastCheckedAt:     timestamp('last_checked_at').defaultNow(),
 })

@@ -50,7 +50,7 @@ TIER DEFINITIONS:
 1 — Explicit stated reason in stripe_comment or reply_text. Send targeted message.
 2 — Stripe enum only (e.g. too_expensive), no free text. Send directional message asking for more detail.
 3 — Billing signals only. Generic honest re-engagement. NEVER claim to know why they left.
-4 — Suppress. No email. Use when: email is null, tenure < 5 days, obvious test/spam account.
+4 — Suppress. No email. Use ONLY when: email is null. Every subscriber with an email should receive at least one message, regardless of tenure.
 
 RULES:
 - Never invent a reason that isn't in the signal data
