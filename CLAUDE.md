@@ -202,6 +202,13 @@ vercel.json
 2. Validate all external inputs with Zod before use
 3. Idempotency checks on all webhook handlers
 4. Store money as integers (cents/pence) — never floats
+5. When adding Vercel env vars via CLI, ALWAYS use `printf` — never `echo`:
+   ```bash
+   # Correct — no trailing newline
+   printf "%s" "value" | vercel env add NAME production
+   # WRONG — echo adds \n which corrupts API keys and URLs
+   echo "value" | vercel env add NAME production
+   ```
 5. Secrets via environment variables — never hardcoded
 6. TypeScript strict mode — no implicit `any`
 
