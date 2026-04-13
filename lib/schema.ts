@@ -60,8 +60,8 @@ export const churnedSubscribers = pgTable('wb_churned_subscribers', {
 export const emailsSent = pgTable('wb_emails_sent', {
   id:             uuid('id').primaryKey().defaultRandom(),
   subscriberId:   uuid('subscriber_id').notNull().references(() => churnedSubscribers.id, { onDelete: 'cascade' }),
-  gmailMessageId: text('gmail_message_id'),
-  gmailThreadId:  text('gmail_thread_id'),
+  gmailMessageId: text('gmail_message_id'),  // Legacy name — stores Resend message ID
+  gmailThreadId:  text('gmail_thread_id'),  // Legacy name — stores reference ID
   type:           text('type').notNull(),
   subject:        text('subject'),
   sentAt:         timestamp('sent_at').defaultNow(),

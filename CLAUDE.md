@@ -192,6 +192,8 @@ vercel.json
 2. Any live Anthropic API call — state cost (~$0.003), wait for "yes"
 3. Installing npm packages — list all packages with reason, wait for "yes"
 4. Committing or pushing to git
+5. Merging a PR — always run `npx tsc --noEmit` and `npx vitest run` locally first.
+   Show the results to the human before merging. No merge without passing tests.
 
 ### ✅ Always do without asking:
 1. Write tests alongside every lib module in `src/winback/__tests__/`
