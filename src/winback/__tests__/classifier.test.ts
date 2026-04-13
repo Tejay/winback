@@ -15,6 +15,8 @@ import { classifySubscriber, ClassificationSchema } from '../lib/classifier'
 function makeSignals(overrides: Partial<SubscriberSignals> = {}): SubscriberSignals {
   return {
     stripeCustomerId: 'cus_test123',
+    stripeSubscriptionId: 'sub_test123',
+    stripePriceId: 'price_test123',
     email: 'test@example.com',
     name: 'Test User',
     planName: 'Pro',

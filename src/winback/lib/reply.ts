@@ -143,6 +143,8 @@ async function processReply(subscriberId: string, replyText: string) {
   try {
     const signals: SubscriberSignals = {
       stripeCustomerId: subscriber.stripeCustomerId,
+      stripeSubscriptionId: subscriber.stripeSubscriptionId ?? '',
+      stripePriceId: subscriber.stripePriceId ?? null,
       email: subscriber.email,
       name: subscriber.name,
       planName: subscriber.planName ?? 'Unknown',

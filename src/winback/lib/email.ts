@@ -23,11 +23,20 @@ export async function sendEmail(params: {
   // Use reply+{subscriberId}@winbackflow.co so inbound webhook can match replies
   const from = `${fromName} <reply+${subscriberId}@winbackflow.co>`
 
+  // Append reactivation link to every email
+  const reactivationLink = `${process.env.NEXT_PUBLIC_APP_URL}/api/reactivate/${subscriberId}`
+  const fullBody = `${body}
+
+Ready to give us another try? Resubscribe here:
+${reactivationLink}
+
+— ${fromName}`
+
   const res = await resend.emails.send({
     from,
     to,
     subject,
-    text: body,
+    text: fullBody,
   })
 
   if (res.error) {

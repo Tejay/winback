@@ -2,19 +2,21 @@ export type SubscriberStatus = 'pending' | 'contacted' | 'recovered' | 'lost'
 export type EmailType        = 'exit' | 'win_back' | 'followup'
 
 export interface SubscriberSignals {
-  stripeCustomerId: string
-  email:            string | null
-  name:             string | null
-  planName:         string
-  mrrCents:         number
-  tenureDays:       number
-  everUpgraded:     boolean
-  nearRenewal:      boolean
-  paymentFailures:  number
-  previousSubs:     number
-  stripeEnum:       string | null
-  stripeComment:    string | null
-  cancelledAt:      Date
+  stripeCustomerId:     string
+  stripeSubscriptionId: string
+  stripePriceId:        string | null
+  email:                string | null
+  name:                 string | null
+  planName:             string
+  mrrCents:             number
+  tenureDays:           number
+  everUpgraded:         boolean
+  nearRenewal:          boolean
+  paymentFailures:      number
+  previousSubs:         number
+  stripeEnum:           string | null
+  stripeComment:        string | null
+  cancelledAt:          Date
 }
 
 export interface ClassificationResult {
