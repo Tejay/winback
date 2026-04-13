@@ -1,0 +1,143 @@
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#3b82f6', 'primaryTextColor': '#0f172a', 'primaryBorderColor': '#e2e8f0', 'lineColor': '#94a3b8', 'secondaryColor': '#f1f5f9', 'tertiaryColor': '#f5f5f5', 'fontSize': '14px' }}}%%
+
+flowchart TB
+  subgraph EXTERNAL["External Services"]
+    direction LR
+    STRIPE["Stripe\n(Connect Platform)"]
+    RESEND["Resend\n(Email + Inbound)"]
+    ANTHROPIC["Anthropic\n(Claude Haiku)"]
+    NEON[("Neon\nPostgres")]
+  end
+
+  subgraph VERCEL["Vercel  -  Next.js App Router"]
+    direction TB
+
+    subgraph AUTH["Authentication"]
+      NEXTAUTH["NextAuth v5\nJWT Sessions"]
+      REGISTER["/api/auth/register"]
+    end
+
+    subgraph STRIPE_ROUTES["Stripe Integration"]
+      CONNECT["/api/stripe/connect\nOAuth initiation"]
+      CALLBACK["/api/stripe/callback\nToken exchange + encrypt"]
+      WEBHOOK["/api/stripe/webhook\nConnect webhook handler"]
+      DISCONNECT["/api/stripe/disconnect"]
+    end
+
+    subgraph PROCESSING["Event Processing Pipeline"]
+      direction TB
+      EXTRACT["extractSignals()\nFetch customer + invoices\nvia OAuth token"]
+      CLASSIFY["classifySubscriber()\nLLM: tier, reason,\nwin-back copy"]
+      ENCRYPT["encrypt() / decrypt()\nAES-128-GCM\nOAuth tokens"]
+    end
+
+    subgraph EMAIL_ROUTES["Email System"]
+      SEND_EXIT["scheduleExitEmail()\nPersonalised churn email"]
+      SEND_DUNNING["sendDunningEmail()\nPayment failure email"]
+      INBOUND["/api/email/inbound\nResend reply webhook"]
+    end
+
+    subgraph RECOVERY["Recovery Paths"]
+      REACTIVATE["/api/reactivate/:id\nResume or Checkout"]
+      UPDATE_PAY["/api/update-payment/:id\nBilling portal redirect"]
+      CHANGELOG["/api/changelog\nKeyword match trigger"]
+    end
+
+    subgraph DASHBOARD_API["Dashboard API"]
+      STATS["/api/stats"]
+      SUBS["/api/subscribers"]
+      BILLING["/api/billing/preview"]
+    end
+
+    subgraph PAGES["Pages"]
+      direction LR
+      LANDING["Landing"]
+      LOGIN["Login"]
+      ONBOARD["Onboarding\n3 steps"]
+      DASH["Dashboard\nStats + Subscribers"]
+      SETTINGS["Settings"]
+    end
+  end
+
+  subgraph SUBSCRIBER["Churned Subscriber"]
+    EMAIL_INBOX["Email Inbox"]
+  end
+
+  %% === Stripe flows ===
+  STRIPE -- "subscription.deleted" --> WEBHOOK
+  STRIPE -- "subscription.created" --> WEBHOOK
+  STRIPE -- "checkout.session.completed" --> WEBHOOK
+  STRIPE -- "invoice.payment_failed" --> WEBHOOK
+  STRIPE -- "invoice.payment_succeeded" --> WEBHOOK
+
+  CONNECT -- "OAuth redirect" --> STRIPE
+  STRIPE -- "code + account_id" --> CALLBACK
+  CALLBACK -- "encrypt token" --> ENCRYPT
+
+  %% === Churn processing pipeline ===
+  WEBHOOK -- "churn event" --> EXTRACT
+  EXTRACT -- "signals" --> CLASSIFY
+  CLASSIFY -- "tier 1-3" --> SEND_EXIT
+  CLASSIFY -- "tier 4: suppress" --> NEON
+
+  %% === Dunning pipeline ===
+  WEBHOOK -- "payment_failed\n(1st attempt)" --> SEND_DUNNING
+
+  %% === External service calls ===
+  EXTRACT -- "customer's OAuth token" --> STRIPE
+  CLASSIFY -- "classify prompt" --> ANTHROPIC
+  SEND_EXIT -- "send email" --> RESEND
+  SEND_DUNNING -- "send email" --> RESEND
+  RESEND -- "reply webhook" --> INBOUND
+  INBOUND -- "re-classify" --> CLASSIFY
+
+  %% === DB writes ===
+  EXTRACT --> NEON
+  CLASSIFY --> NEON
+  SEND_EXIT --> NEON
+  SEND_DUNNING --> NEON
+  CALLBACK --> NEON
+  REGISTER --> NEON
+  INBOUND --> NEON
+
+  %% === Recovery flows ===
+  RESEND -- "exit email\nw/ reactivation link" --> EMAIL_INBOX
+  RESEND -- "dunning email\nw/ billing portal link" --> EMAIL_INBOX
+  EMAIL_INBOX -- "clicks reactivation link" --> REACTIVATE
+  EMAIL_INBOX -- "clicks update payment" --> UPDATE_PAY
+  REACTIVATE -- "Checkout session\nw/ metadata" --> STRIPE
+  UPDATE_PAY -- "Billing portal" --> STRIPE
+
+  %% === Changelog trigger ===
+  DASH -- "save changelog" --> CHANGELOG
+  CHANGELOG -- "extract keywords" --> ANTHROPIC
+  CHANGELOG -- "matched subscribers" --> RESEND
+
+  %% === Dashboard reads ===
+  DASH --> STATS
+  DASH --> SUBS
+  SETTINGS --> BILLING
+  STATS --> NEON
+  SUBS --> NEON
+  BILLING --> NEON
+
+  %% === Auth ===
+  LOGIN --> NEXTAUTH
+  ONBOARD --> CONNECT
+
+  %% === Styling ===
+  classDef external fill:#dbeafe,stroke:#3b82f6,stroke-width:2px,color:#0f172a
+  classDef webhook fill:#fef3c7,stroke:#f59e0b,stroke-width:2px,color:#0f172a
+  classDef processing fill:#f0fdf4,stroke:#22c55e,stroke-width:2px,color:#0f172a
+  classDef email fill:#ede9fe,stroke:#8b5cf6,stroke-width:2px,color:#0f172a
+  classDef recovery fill:#ecfdf5,stroke:#10b981,stroke-width:2px,color:#0f172a
+  classDef page fill:#ffffff,stroke:#e2e8f0,stroke-width:1px,color:#0f172a
+  classDef db fill:#fce7f3,stroke:#ec4899,stroke-width:2px,color:#0f172a
+
+  class STRIPE,RESEND,ANTHROPIC external
+  class NEON db
+  class WEBHOOK webhook
+  class EXTRACT,CLASSIFY,ENCRYPT processing
+  class SEND_EXIT,SEND_DUNNING,INBOUND email
+  class REACTIVATE,UPDATE_PAY,CHANGELOG recovery
+  class LANDING,LOGIN,ONBOARD,DASH,SETTINGS page
