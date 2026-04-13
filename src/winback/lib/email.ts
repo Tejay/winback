@@ -98,7 +98,7 @@ export async function sendDunningEmail(params: {
   const name = customerName ?? 'there'
   const amount = (amountDue / 100).toFixed(2)
   const updateLink = `${process.env.NEXT_PUBLIC_APP_URL}/api/update-payment/${subscriberId}`
-  const from = `${fromName} <reply+${subscriberId}@winbackflow.co>`
+  const from = `${fromName} <noreply@winbackflow.co>`
 
   let subject: string
   let body: string
