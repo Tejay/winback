@@ -50,6 +50,8 @@ export const churnedSubscribers = pgTable('wb_churned_subscribers', {
   winBackSubject:       text('win_back_subject'),
   winBackBody:          text('win_back_body'),
   status:               text('status').default('pending'),
+  billingPortalClickedAt: timestamp('billing_portal_clicked_at'),
+  paymentMethodAtFailure: text('payment_method_at_failure'),
   cancelledAt:          timestamp('cancelled_at'),
   createdAt:            timestamp('created_at').defaultNow(),
   updatedAt:            timestamp('updated_at').defaultNow(),
