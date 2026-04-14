@@ -98,6 +98,14 @@ export default function LoginPage() {
           </Link>
         </p>
       </div>
+
+      <nav className="mt-8 mb-12 flex items-center gap-4 text-xs text-slate-400">
+        <Link href="/privacy" className="hover:text-slate-700">Privacy</Link>
+        <span>·</span>
+        <Link href="/terms" className="hover:text-slate-700">Terms</Link>
+        <span>·</span>
+        <Link href="/dpa" className="hover:text-slate-700">DPA</Link>
+      </nav>
     </div>
   )
 }

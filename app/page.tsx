@@ -236,6 +236,19 @@ export default function LandingPage() {
           </p>
         </div>
       </section>
+
+      <footer className="border-t border-slate-200 bg-white">
+        <div className="max-w-5xl mx-auto px-6 py-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-500">
+          <div>© {new Date().getFullYear()} Winback Ltd</div>
+          <nav className="flex items-center gap-5">
+            <Link href="/privacy" className="hover:text-slate-900">Privacy</Link>
+            <Link href="/terms" className="hover:text-slate-900">Terms</Link>
+            <Link href="/dpa" className="hover:text-slate-900">DPA</Link>
+            <Link href="/subprocessors" className="hover:text-slate-900">Subprocessors</Link>
+            <a href="mailto:privacy@winbackflow.co" className="hover:text-slate-900">Privacy contact</a>
+          </nav>
+        </div>
+      </footer>
     </div>
   )
 }
