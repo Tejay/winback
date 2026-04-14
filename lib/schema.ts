@@ -53,8 +53,18 @@ export const churnedSubscribers = pgTable('wb_churned_subscribers', {
   billingPortalClickedAt: timestamp('billing_portal_clicked_at'),
   paymentMethodAtFailure: text('payment_method_at_failure'),
   cancelledAt:          timestamp('cancelled_at'),
+  doNotContact:         boolean('do_not_contact').notNull().default(false),
+  unsubscribedAt:       timestamp('unsubscribed_at'),
   createdAt:            timestamp('created_at').defaultNow(),
   updatedAt:            timestamp('updated_at').defaultNow(),
+})
+
+export const legalAcceptances = pgTable('wb_legal_acceptances', {
+  id:         uuid('id').primaryKey().defaultRandom(),
+  userId:     uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  version:    text('version').notNull(),
+  acceptedAt: timestamp('accepted_at').notNull().defaultNow(),
+  ipAddress:  text('ip_address'),
 })
 
 export const emailsSent = pgTable('wb_emails_sent', {

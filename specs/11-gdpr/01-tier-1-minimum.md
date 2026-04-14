@@ -26,7 +26,7 @@ Ship the minimum legal surface to operate in the EU: data subject opt-out, manda
 
 ### T1.A.1 `do_not_contact` flag
 
-Migration `src/winback/migrations/003_gdpr.sql`:
+Migration `src/winback/migrations/005_gdpr.sql`:
 ```sql
 ALTER TABLE wb_churned_subscribers
   ADD COLUMN do_not_contact    boolean     NOT NULL DEFAULT false,
@@ -155,7 +155,7 @@ Flesh out the stubs in `docs/gdpr/`:
 - `app/subprocessors/page.tsx`
 - `src/winback/lib/subprocessors.ts`
 - `src/winback/lib/unsubscribe-token.ts`
-- `src/winback/migrations/003_gdpr.sql`
+- `src/winback/migrations/005_gdpr.sql`
 - `scripts/dsr.ts`
 
 **Modify:**
@@ -189,7 +189,7 @@ Flesh out the stubs in `docs/gdpr/`:
 
 ## Rollback plan
 
-- Migration `003_gdpr.sql`:
+- Migration `005_gdpr.sql`:
   ```sql
   DROP TABLE wb_legal_acceptances;
   ALTER TABLE wb_churned_subscribers DROP COLUMN do_not_contact, DROP COLUMN unsubscribed_at;
