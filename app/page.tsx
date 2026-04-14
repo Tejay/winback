@@ -245,7 +245,6 @@ export default function LandingPage() {
             <Link href="/terms" className="hover:text-slate-900">Terms</Link>
             <Link href="/dpa" className="hover:text-slate-900">DPA</Link>
             <Link href="/subprocessors" className="hover:text-slate-900">Subprocessors</Link>
-            <a href="mailto:privacy@winbackflow.co" className="hover:text-slate-900">Privacy contact</a>
           </nav>
         </div>
       </footer>
