@@ -92,6 +92,7 @@ export async function POST(req: Request) {
       and(
         eq(churnedSubscribers.customerId, customer.id),
         inArray(churnedSubscribers.status, ['pending', 'contacted']),
+        eq(churnedSubscribers.doNotContact, false),
         isNotNull(churnedSubscribers.triggerKeyword),
         isNotNull(churnedSubscribers.winBackBody),
         sql`${content} ILIKE '%' || ${churnedSubscribers.triggerKeyword} || '%'`

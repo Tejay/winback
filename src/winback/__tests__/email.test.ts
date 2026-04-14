@@ -8,11 +8,13 @@ vi.mock('resend', () => ({
   },
 }))
 
-// Mock database
+// Mock database — select/insert/update
+const mockSelect = vi.hoisted(() => vi.fn())
 const mockInsert = vi.hoisted(() => vi.fn())
 const mockUpdate = vi.hoisted(() => vi.fn())
 vi.mock('@/lib/db', () => ({
   db: {
+    select: mockSelect,
     insert: mockInsert,
     update: mockUpdate,
   },
@@ -20,7 +22,7 @@ vi.mock('@/lib/db', () => ({
 
 vi.mock('@/lib/schema', () => ({
   emailsSent: 'wb_emails_sent',
-  churnedSubscribers: 'wb_churned_subscribers',
+  churnedSubscribers: { doNotContact: 'do_not_contact', id: 'id' },
 }))
 
 vi.mock('drizzle-orm', () => ({
@@ -30,13 +32,26 @@ vi.mock('drizzle-orm', () => ({
 import { sendEmail, scheduleExitEmail } from '../lib/email'
 import { ClassificationResult } from '../lib/types'
 
+function mockDncReturns(dnc: boolean) {
+  mockSelect.mockReturnValue({
+    from: vi.fn().mockReturnValue({
+      where: vi.fn().mockReturnValue({
+        limit: vi.fn().mockResolvedValue([{ dnc }]),
+      }),
+    }),
+  })
+}
+
+beforeEach(() => {
+  process.env.NEXTAUTH_SECRET = 'test-secret-for-hmac-signing'
+  process.env.NEXT_PUBLIC_APP_URL = 'https://winbackflow.co'
+})
+
 describe('sendEmail', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockSend.mockResolvedValue({
-      data: { id: 'msg_123' },
-      error: null,
-    })
+    mockSend.mockResolvedValue({ data: { id: 'msg_123' }, error: null })
+    mockDncReturns(false)
   })
 
   it('sends email via Resend with correct from address', async () => {
@@ -60,12 +75,48 @@ describe('sendEmail', () => {
     expect(result.messageId).toBe('msg_123')
   })
 
-  it('throws on Resend error', async () => {
-    mockSend.mockResolvedValue({
-      data: null,
-      error: { message: 'Invalid recipient' },
+  it('includes unsubscribe link in the email body', async () => {
+    await sendEmail({
+      to: 'sarah@example.com',
+      subject: 'Test',
+      body: 'Body',
+      fromName: 'Alex',
+      subscriberId: 'sub_abc123',
     })
+    const callArgs = mockSend.mock.calls[0][0]
+    expect(callArgs.text).toContain('/api/unsubscribe/sub_abc123')
+    expect(callArgs.text).toContain('unsubscribe')
+  })
 
+  it('sets List-Unsubscribe + List-Unsubscribe-Post headers', async () => {
+    await sendEmail({
+      to: 'sarah@example.com',
+      subject: 'Test',
+      body: 'Body',
+      fromName: 'Alex',
+      subscriberId: 'sub_abc123',
+    })
+    const callArgs = mockSend.mock.calls[0][0]
+    expect(callArgs.headers['List-Unsubscribe']).toContain('/api/unsubscribe/sub_abc123')
+    expect(callArgs.headers['List-Unsubscribe']).toContain('mailto:unsubscribe@winbackflow.co')
+    expect(callArgs.headers['List-Unsubscribe-Post']).toBe('List-Unsubscribe=One-Click')
+  })
+
+  it('skips send when subscriber has do_not_contact', async () => {
+    mockDncReturns(true)
+    const result = await sendEmail({
+      to: 'sarah@example.com',
+      subject: 'Test',
+      body: 'Body',
+      fromName: 'Alex',
+      subscriberId: 'sub_abc123',
+    })
+    expect(mockSend).not.toHaveBeenCalled()
+    expect(result.messageId).toBe('')
+  })
+
+  it('throws on Resend error', async () => {
+    mockSend.mockResolvedValue({ data: null, error: { message: 'Invalid recipient' } })
     await expect(sendEmail({
       to: 'bad@example.com',
       subject: 'Test',
@@ -79,10 +130,8 @@ describe('sendEmail', () => {
 describe('scheduleExitEmail', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockSend.mockResolvedValue({
-      data: { id: 'msg_exit' },
-      error: null,
-    })
+    mockSend.mockResolvedValue({ data: { id: 'msg_exit' }, error: null })
+    mockDncReturns(false)
     mockInsert.mockReturnValue({ values: vi.fn().mockResolvedValue([]) })
     mockUpdate.mockReturnValue({
       set: vi.fn().mockReturnValue({
@@ -91,25 +140,21 @@ describe('scheduleExitEmail', () => {
     })
   })
 
-  it('sends email immediately and updates database', async () => {
-    const classification: ClassificationResult = {
-      tier: 1,
-      tierReason: 'test',
-      cancellationReason: 'test reason',
-      cancellationCategory: 'Feature',
-      confidence: 0.9,
-      suppress: false,
-      firstMessage: {
-        subject: 'Exit email subject',
-        body: 'Exit email body',
-        sendDelaySecs: 60,
-      },
-      triggerKeyword: null,
-      fallbackDays: 90,
-      winBackSubject: 'Win back subject',
-      winBackBody: 'Win back body',
-    }
+  const classification: ClassificationResult = {
+    tier: 1,
+    tierReason: 'test',
+    cancellationReason: 'test reason',
+    cancellationCategory: 'Feature',
+    confidence: 0.9,
+    suppress: false,
+    firstMessage: { subject: 'S', body: 'B', sendDelaySecs: 60 },
+    triggerKeyword: null,
+    fallbackDays: 90,
+    winBackSubject: 'W',
+    winBackBody: 'B',
+  }
 
+  it('sends email immediately and updates database', async () => {
     await scheduleExitEmail({
       subscriberId: 'sub_123',
       email: 'test@example.com',
@@ -123,27 +168,25 @@ describe('scheduleExitEmail', () => {
   })
 
   it('skips email when firstMessage is null (suppressed)', async () => {
-    const classification: ClassificationResult = {
-      tier: 4,
-      tierReason: 'suppress',
-      cancellationReason: 'test account',
-      cancellationCategory: 'Other',
-      confidence: 0.95,
-      suppress: true,
-      firstMessage: null,
-      triggerKeyword: null,
-      fallbackDays: 90,
-      winBackSubject: '',
-      winBackBody: '',
-    }
-
+    const suppressed = { ...classification, firstMessage: null, suppress: true, tier: 4 as const }
     await scheduleExitEmail({
       subscriberId: 'sub_456',
+      email: 'test@example.com',
+      classification: suppressed,
+      fromName: 'Alex',
+    })
+    expect(mockSend).not.toHaveBeenCalled()
+  })
+
+  it('skips email when subscriber has do_not_contact', async () => {
+    mockDncReturns(true)
+    await scheduleExitEmail({
+      subscriberId: 'sub_789',
       email: 'test@example.com',
       classification,
       fromName: 'Alex',
     })
-
     expect(mockSend).not.toHaveBeenCalled()
+    expect(mockInsert).not.toHaveBeenCalled()
   })
 })
