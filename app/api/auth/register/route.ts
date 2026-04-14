@@ -2,13 +2,16 @@ import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import bcrypt from 'bcryptjs'
 import { db } from '@/lib/db'
-import { users, customers } from '@/lib/schema'
+import { users, customers, legalAcceptances } from '@/lib/schema'
 import { eq } from 'drizzle-orm'
 
+const LEGAL_VERSION = '2026-04-14'
+
 const registerSchema = z.object({
-  name:     z.string().min(1, 'Name is required'),
-  email:    z.string().email('Invalid email'),
-  password: z.string().min(8, 'Password must be at least 8 characters'),
+  name:          z.string().min(1, 'Name is required'),
+  email:         z.string().email('Invalid email'),
+  password:      z.string().min(8, 'Password must be at least 8 characters'),
+  acceptedLegal: z.literal(true, { message: 'You must accept the Terms, Privacy Policy, and DPA' }),
 })
 
 export async function POST(req: Request) {
@@ -45,6 +48,14 @@ export async function POST(req: Request) {
     .returning({ id: users.id })
 
   await db.insert(customers).values({ userId: newUser.id })
+
+  const ipAddress =
+    req.headers.get('x-forwarded-for')?.split(',')[0].trim() ?? null
+  await db.insert(legalAcceptances).values({
+    userId: newUser.id,
+    version: LEGAL_VERSION,
+    ipAddress,
+  })
 
   return NextResponse.json({ success: true }, { status: 201 })
 }

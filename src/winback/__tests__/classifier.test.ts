@@ -3,10 +3,14 @@ import { SubscriberSignals } from '../lib/types'
 
 // vi.hoisted ensures this runs before vi.mock factory
 const mockCreate = vi.hoisted(() => vi.fn())
+const mockCtor = vi.hoisted(() => vi.fn())
 
 vi.mock('@anthropic-ai/sdk', () => ({
   default: class {
     messages = { create: mockCreate }
+    constructor(opts: unknown) {
+      mockCtor(opts)
+    }
   },
 }))
 
@@ -42,6 +46,28 @@ function mockLLMResponse(response: object) {
 describe('classifySubscriber', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    process.env.ANTHROPIC_API_KEY = 'sk-test-key'
+  })
+
+  it('sets anthropic-beta: zero-retention header on the client', async () => {
+    const signals = makeSignals()
+    mockLLMResponse({
+      tier: 3,
+      tierReason: 't',
+      cancellationReason: 'r',
+      cancellationCategory: 'Other',
+      confidence: 0.5,
+      suppress: false,
+      firstMessage: { subject: 's', body: 'b', sendDelaySecs: 60 },
+      triggerKeyword: null,
+      fallbackDays: 90,
+      winBackSubject: 'w',
+      winBackBody: 'b',
+    })
+    await classifySubscriber(signals, {})
+    expect(mockCtor).toHaveBeenCalled()
+    const opts = mockCtor.mock.calls[0][0] as { defaultHeaders?: Record<string, string> }
+    expect(opts.defaultHeaders?.['anthropic-beta']).toBe('zero-retention')
   })
 
   it('Scenario A — Tier 1, feature complaint in stripe_comment', async () => {

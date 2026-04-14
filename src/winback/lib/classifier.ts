@@ -15,13 +15,13 @@ function getClient() {
       const path = require('path')
       const envFile = fs.readFileSync(path.join(process.cwd(), '.env.local'), 'utf8')
       const match = envFile.match(/^ANTHROPIC_API_KEY="?([^"\n]+)"?$/m)
-      if (match?.[1]) return new Anthropic({ apiKey: match[1] })
+      if (match?.[1]) return new Anthropic({ apiKey: match[1], defaultHeaders: { 'anthropic-beta': 'zero-retention' } })
     } catch {}
 
     throw new Error('ANTHROPIC_API_KEY is not set or empty')
   }
 
-  return new Anthropic({ apiKey: key })
+  return new Anthropic({ apiKey: key, defaultHeaders: { 'anthropic-beta': 'zero-retention' } })
 }
 
 const ClassificationSchema = z.object({

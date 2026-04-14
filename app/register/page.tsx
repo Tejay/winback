@@ -10,6 +10,7 @@ export default function RegisterPage() {
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [accepted, setAccepted] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
@@ -22,12 +23,17 @@ export default function RegisterPage() {
       return
     }
 
+    if (!accepted) {
+      setError('Please accept the Terms, Privacy Policy, and Data Processing Agreement.')
+      return
+    }
+
     setLoading(true)
 
     const res = await fetch('/api/auth/register', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, email, password }),
+      body: JSON.stringify({ name, email, password, acceptedLegal: accepted }),
     })
 
     const data = await res.json()
@@ -102,11 +108,27 @@ export default function RegisterPage() {
             />
           </div>
 
+          <label className="flex items-start gap-2 text-xs text-slate-600">
+            <input
+              type="checkbox"
+              checked={accepted}
+              onChange={(e) => setAccepted(e.target.checked)}
+              className="mt-0.5"
+              required
+            />
+            <span>
+              I accept the{' '}
+              <Link href="/terms" className="text-blue-600 underline" target="_blank">Terms</Link>,{' '}
+              <Link href="/privacy" className="text-blue-600 underline" target="_blank">Privacy Policy</Link>, and{' '}
+              <Link href="/dpa" className="text-blue-600 underline" target="_blank">Data Processing Agreement</Link>.
+            </span>
+          </label>
+
           <button
             type="submit"
-            disabled={loading}
+            disabled={loading || !accepted}
             className={`w-full rounded-full px-5 py-2.5 text-sm font-medium ${
-              loading
+              loading || !accepted
                 ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
                 : 'bg-[#0f172a] text-white hover:bg-[#1e293b]'
             }`}
