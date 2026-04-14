@@ -4,7 +4,7 @@ Tiered, incremental compliance. Each tier is independently shippable with its ow
 
 | Tier | Status | Trigger | Effort | Spec |
 |------|--------|---------|--------|------|
-| 1 — Minimum legal | [ ] Not started | EU launch | 1d | [01](./01-tier-1-minimum.md) |
+| 1 — Minimum legal | [x] Shipped | EU launch | 1d | [01](./01-tier-1-minimum.md) |
 | 2 — Operational hygiene | [ ] Not started | DSR > 2/mo or 1st enterprise ask | 2d | [02](./02-tier-2-hygiene.md) |
 | 3 — Defensibility | [ ] Not started | Audit request or MRR > £10k/mo | 3d | [03](./03-tier-3-defensibility.md) |
 | 4 — Enterprise posture | [ ] Not started | Enterprise pipeline justifies spend | 1w | [04](./04-tier-4-enterprise.md) |
@@ -12,7 +12,7 @@ Tiered, incremental compliance. Each tier is independently shippable with its ow
 See [`00-overview.md`](./00-overview.md) for the full context and GDPR article traceability.
 
 ## Current state
-- [ ] None shipped
+- [x] Tier 1 shipped — minimum legal surface for EU launch (migration 005, unsubscribe flow, clickwrap, zero-retention, public legal pages, DSR script).
 
 ## Deferred decisions (revisit when moving to next tier)
 - (Populated as we go.)
