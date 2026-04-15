@@ -129,6 +129,162 @@ Modified:
   app/settings/pause-toggle.tsx                 (optional rose variant prop for use in Danger Zone)
 ```
 
+## Addendum — open-obligation guard (must-ship before taking paid customers)
+
+### The problem this addendum fixes
+
+The flow described above hard-deletes `wb_recoveries`. That table is exactly
+where we track "this merchant owes 15% on subscriber X for N more months"
+under the 12-month attribution promise in `/terms` §3 and `/faq` §12. A
+merchant today can accept N recoveries → delete the workspace → walk away
+owing us money. Once the `recoveries` row is gone and the Stripe token is
+nulled, we can't reconstruct the obligation or verify the subscriber is
+still active.
+
+This is acceptable only while we have zero paid customers. Before Phase 9
+billing goes live — or sooner — we must gate delete on open obligations.
+
+### Decision
+
+Ship **Option 1 — block delete while obligations are open** as the interim
+guard. Target state is **Option 2 — soft-close with ledger retention** once
+Phase 9.1 (platform-side card capture via SetupIntent) lands. Tracked in
+`TASKS.md` under a new Task 10.6.
+
+Options 3 (pre-authorise 12 months on recovery) and 4 (status quo + warning)
+were considered and rejected — 3 is a bigger infra lift than Phase 9.1
+warrants and forces cards too early; 4 institutionalises the dodge.
+
+### Gate-0 — obligation check (runs before Gate 1)
+
+In the `/settings/delete` server component, compute:
+
+```ts
+// Sum the attributed fee we're still entitled to across live recoveries
+// whose attribution window hasn't closed yet.
+openObligationCents = SUM over recoveries WHERE
+  customerId = ? AND stillActive = true AND attributionEndsAt > now()
+of
+  planMrrCents * 0.15 * monthsRemaining(attributionEndsAt)
+```
+
+`monthsRemaining` = `ceil((attributionEndsAt - now) / 30d)` — overestimates
+slightly so we never under-quote. Clamped to `[0, 12]`.
+
+If `openObligationCents > 0`, the page renders a **Settlement required** block
+in place of `<DeleteConfirmation />`:
+
+```
+⚠ Settlement required
+
+You have {N} attributed subscribers with {M} months of billing remaining,
+totalling £{openObligationCents/100}. Under our Terms, Winback bills 15% of
+each recovered subscriber's revenue for up to 12 months — deleting your
+workspace does not waive that obligation.
+
+Three ways forward:
+
+1. Settle now  →  [Request settlement invoice]
+   We send you a single invoice for £{total} today, payable within 7 days.
+   When it clears, your workspace is deleted and all billing stops.
+
+2. Pause instead  →  [Pause sending]
+   Your attributed subscribers continue to bill until each 12-month window
+   closes. No new recoveries, no new emails. Stays deletable the moment all
+   obligations reach zero.
+
+3. Wait it out
+   Your earliest attribution window closes on {minEndDate}; the last one
+   closes on {maxEndDate}. Delete unlocks automatically at that point.
+```
+
+Gates 1–3 remain **locked out** until `openObligationCents === 0`.
+Gate 1's consequence screen still shows the data we'd wipe (same copy, same
+numbers), but the "Continue to deletion" button is disabled with tooltip
+"Settle or pause first."
+
+### Settlement-invoice request (short-term, manual)
+
+Until Phase 9.2 (invoice cron) lands, the "Request settlement invoice" button
+is a concierge flow:
+
+- `POST /api/settings/request-settlement` — auth-gated, no body.
+- Writes a row to `wb_settlement_requests(customerId, requestedAt,
+  obligationCents, status='pending')` — new table.
+- Sends an email to `ops@winbackflow.co` with the merchant's email, workspace
+  name, total owed, and the per-subscriber breakdown.
+- Returns `{ ok: true }`.
+- UI shows "Invoice request sent. We'll email you within 1 business day."
+- When ops settles the invoice manually in Stripe, they run a privileged
+  action (Neon SQL or a tiny admin route) that flips `status='settled'` — at
+  which point the merchant's next visit to `/settings/delete` sees zero
+  obligations and Gates 1–3 unlock.
+
+Small, ugly, works. Phase 9.2 supersedes.
+
+### Server-side enforcement
+
+`/api/settings/delete` must re-check `openObligationCents` before performing
+the delete, not just trust the client. If non-zero at the API layer:
+
+```json
+{ "error": "Open obligations remain; settle or pause before deleting.",
+  "openObligationCents": 12345 }
+```
+
+HTTP 409 Conflict. The client refreshes the page; the user sees the
+Settlement block.
+
+### New files
+
+```
+Added:
+  app/api/settings/request-settlement/route.ts
+  app/settings/delete/settlement-required.tsx  (client — handles request button)
+  src/winback/migrations/007_settlement_requests.sql
+  src/winback/lib/obligations.ts               (computeOpenObligationCents + monthsRemaining)
+  src/winback/__tests__/obligations.test.ts
+
+Modified:
+  lib/schema.ts                                (+ settlementRequests table)
+  app/settings/delete/page.tsx                 (Gate 0 branching)
+  app/api/settings/delete/route.ts             (re-check; 409 when owed)
+  app/settings/delete/delete-confirmation.tsx  (props: show disabled state)
+  app/privacy/page.tsx                         (note: billing records retained
+                                                under legal obligation — 6 yrs)
+  app/terms/page.tsx                           (§3: "deleting your workspace
+                                                does not waive attribution
+                                                obligations; settlement or
+                                                pause required")
+  app/refunds/page.tsx                         (add settlement section —
+                                                blocked on spec 05 shipping)
+```
+
+### Verification (incremental on top of the base flow)
+
+- [ ] `obligations.ts`: unit test covers — 0 recoveries, 1 live recovery mid-window,
+      mixed active/inactive, expired attributions excluded, 12-month clamp
+- [ ] `/settings/delete` with live recoveries → Settlement block visible, Gates
+      1–3 hidden
+- [ ] `/settings/delete` with zero recoveries → behaves exactly as the base
+      flow (current behaviour)
+- [ ] `POST /api/settings/delete` returns 409 when obligations exist, even if
+      a client somehow crafts a valid confirmation string
+- [ ] Settlement-request email arrives at `ops@winbackflow.co` with the full
+      breakdown
+- [ ] After ops flips `status='settled'` manually, the merchant's next visit
+      shows obligations = £0 and delete unlocks
+- [ ] `/privacy` and `/terms` updated copy renders correctly
+
+### Non-goals (this addendum)
+
+- Automated settlement charging. Phase 9.2 cron handles it.
+- Self-serve SetupIntent capture on the delete screen. Arrives via Phase 9.1.
+- Refunds if an attributed subscriber re-cancels mid-wind-down. Existing
+  `stillActive=false` update flow handles it on the dashboard side;
+  settlement invoice is computed at request time against the then-current
+  `stillActive` set.
+
 ## Non-goals
 
 - Soft delete / undo window. Explicit decision: the consequence screen says

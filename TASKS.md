@@ -326,7 +326,28 @@ must be built before taking paid customers.
 - [ ] Disables one-click reactivation (requires write) — surface this trade-off in UI.
 - [ ] Promised in FAQ as "email us for early access" — no code yet.
 
-### Task 10.5 — Stripe-side deauthorize on delete (roadmap)
+### Task 10.5 — Open-obligation guard on delete (must-ship before first paid customer)
+**Spec: specs/11-danger-zone.md — Addendum**
+- [ ] `src/winback/lib/obligations.ts` — `computeOpenObligationCents()` over live,
+      in-window recoveries with the 12-month clamp.
+- [ ] Gate-0 on `/settings/delete`: render Settlement-required block when
+      obligations > 0; lock Gates 1–3.
+- [ ] `POST /api/settings/request-settlement` + `wb_settlement_requests` table
+      (migration `007_settlement_requests.sql`) + email to `ops@`.
+- [ ] Re-check obligations server-side in `POST /api/settings/delete`, return
+      HTTP 409 when owed — don't trust the client.
+- [ ] Copy updates on `/privacy` (billing records retained under legal
+      obligation) and `/terms` §3 (deletion does not waive attribution).
+- [ ] Unit tests for `computeOpenObligationCents` + integration test for 409.
+
+### Task 10.6 — Soft-close target (blocked on Phase 9.1)
+- [ ] Once platform-side SetupIntent capture (9.1) lands, replace the hard
+      "Delete workspace" with "Close workspace": tokens + operational data
+      wiped, billing ledger + customer row retained with `closed_at`, cron
+      (9.2) continues charging the saved PaymentMethod until every
+      `attribution_ends_at` passes. Supersedes 10.5 settlement-request flow.
+
+### Task 10.7 — Stripe-side deauthorize on delete (roadmap)
 - [ ] Call Stripe OAuth `/oauth/deauthorize` during workspace deletion so the
       customer doesn't need to revoke from Stripe → Apps separately. Skipped for
       now because a failed deauth shouldn't block the user-side delete.
