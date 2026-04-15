@@ -1,17 +1,27 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
+import Stripe from 'stripe'
 import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
-import { customers, churnedSubscribers, recoveries } from '@/lib/schema'
-import { eq, sql } from 'drizzle-orm'
+import { customers, churnedSubscribers, recoveries, settlementRequests } from '@/lib/schema'
+import { and, eq, sql } from 'drizzle-orm'
 import { slugifyWorkspaceName } from '@/src/winback/lib/workspace'
+import { computeOpenObligations } from '@/src/winback/lib/obligations'
 import { DeleteConfirmation } from './delete-confirmation'
+import { SettlementRequired } from './settlement-required'
 
 export const metadata = { title: 'Delete workspace — Winback' }
 
-export default async function DeleteWorkspacePage() {
+interface PageProps {
+  searchParams?: Promise<{ settlement?: string; session_id?: string }>
+}
+
+export default async function DeleteWorkspacePage({ searchParams }: PageProps) {
   const session = await auth()
   if (!session?.user?.id) redirect('/login')
+
+  const sp = (await searchParams) ?? {}
+  let settlementJustPaid = false
 
   const [customer] = await db
     .select({
@@ -31,8 +41,66 @@ export default async function DeleteWorkspacePage() {
   let subscribersCount = 0
   let recoveriesCount = 0
   let recoveredCents = 0
+  let obligations = {
+    openObligationCents: 0,
+    liveCount: 0,
+    earliestEndsAt: null as Date | null,
+    latestEndsAt: null as Date | null,
+  }
+  let alreadyRequestedAt: Date | null = null
 
   if (customer) {
+    // Stripe Checkout success return. Verify the session server-side before
+    // trusting the success query param, then stamp settlement_paid_at so
+    // computeOpenObligations() returns 0 and Gates 1-3 unlock.
+    if (sp.settlement === 'success' && sp.session_id) {
+      const secretKey = process.env.STRIPE_SECRET_KEY
+      if (secretKey) {
+        try {
+          const stripe = new Stripe(secretKey)
+          const s = await stripe.checkout.sessions.retrieve(sp.session_id)
+          if (
+            s.payment_status === 'paid' &&
+            s.metadata?.type === 'winback_settlement' &&
+            s.metadata?.customerId === customer.id
+          ) {
+            await db
+              .update(customers)
+              .set({ settlementPaidAt: new Date() })
+              .where(eq(customers.id, customer.id))
+            await db
+              .update(settlementRequests)
+              .set({ status: 'settled', settledAt: new Date() })
+              .where(
+                and(
+                  eq(settlementRequests.customerId, customer.id),
+                  eq(settlementRequests.stripeSessionId, sp.session_id),
+                ),
+              )
+            settlementJustPaid = true
+          }
+        } catch {
+          // If verification fails we just fall through — the user will still
+          // see the settlement gate and can retry.
+        }
+      }
+    }
+
+    obligations = await computeOpenObligations(customer.id)
+
+    if (obligations.openObligationCents > 0) {
+      const [existing] = await db
+        .select({ requestedAt: settlementRequests.requestedAt })
+        .from(settlementRequests)
+        .where(
+          and(
+            eq(settlementRequests.customerId, customer.id),
+            eq(settlementRequests.status, 'pending'),
+          ),
+        )
+        .limit(1)
+      alreadyRequestedAt = existing?.requestedAt ?? null
+    }
     const [subRow] = await db
       .select({ n: sql<number>`count(*)::int` })
       .from(churnedSubscribers)
@@ -116,18 +184,37 @@ export default async function DeleteWorkspacePage() {
             This cannot be undone. There is no grace period.
           </p>
 
-          {!customer?.pausedAt && (
-            <div className="mt-6 bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-900">
-              <strong className="font-semibold">Not ready to delete?</strong>{' '}
-              You can{' '}
-              <Link href="/settings" className="underline hover:text-amber-950">
-                pause all emails instead
-              </Link>{' '}
-              — your data stays intact and you can reactivate anytime.
+          {settlementJustPaid && (
+            <div className="mt-6 bg-green-50 border border-green-200 rounded-xl p-4 text-sm text-green-900">
+              <strong className="font-semibold">Settlement paid.</strong>{' '}
+              Your attribution obligations are cleared. You can now delete
+              your workspace below.
             </div>
           )}
 
-          <DeleteConfirmation workspaceName={workspaceName} />
+          {obligations.openObligationCents > 0 ? (
+            <SettlementRequired
+              openObligationCents={obligations.openObligationCents}
+              liveCount={obligations.liveCount}
+              earliestEndsAt={obligations.earliestEndsAt?.toISOString() ?? null}
+              latestEndsAt={obligations.latestEndsAt?.toISOString() ?? null}
+              alreadyRequestedAt={alreadyRequestedAt?.toISOString() ?? null}
+            />
+          ) : (
+            <>
+              {!customer?.pausedAt && (
+                <div className="mt-6 bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-900">
+                  <strong className="font-semibold">Not ready to delete?</strong>{' '}
+                  You can{' '}
+                  <Link href="/settings" className="underline hover:text-amber-950">
+                    pause all emails instead
+                  </Link>{' '}
+                  — your data stays intact and you can reactivate anytime.
+                </div>
+              )}
+              <DeleteConfirmation workspaceName={workspaceName} />
+            </>
+          )}
         </div>
       </div>
     </main>
