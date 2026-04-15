@@ -226,6 +226,24 @@ const SECTIONS: Array<{ heading: string; items: QA[] }> = [
         ),
       },
       {
+        q: 'What happens if a Winback customer misuses the product?',
+        a: (
+          <p>
+            We publish an{' '}
+            <Link href="/aup" className="text-blue-600 hover:underline">
+              Acceptable Use Policy
+            </Link>
+            . Breach is grounds for immediate suspension. We monitor spam
+            complaints on our sending domain automatically and pause any
+            account over a 0.3% complaint rate. Report abuse to{' '}
+            <a href="mailto:abuse@winbackflow.co" className="text-blue-600 hover:underline">
+              abuse@winbackflow.co
+            </a>
+            .
+          </p>
+        ),
+      },
+      {
         q: 'Is Winback GDPR-compliant?',
         a: (
           <p>
@@ -253,8 +271,8 @@ const SECTIONS: Array<{ heading: string; items: QA[] }> = [
             Winback is operated by{' '}
             <strong>[Company name &mdash; to be registered]</strong>, a company
             registered in England and Wales. Contact:{' '}
-            <a href="mailto:privacy@winbackflow.co" className="text-blue-600 hover:underline">
-              privacy@winbackflow.co
+            <a href="mailto:support@winbackflow.co" className="text-blue-600 hover:underline">
+              support@winbackflow.co
             </a>
             . <span className="text-slate-500 italic">(We&rsquo;ll update this entry once the company is formally incorporated.)</span>
           </p>
@@ -274,10 +292,10 @@ export default function FAQPage() {
         <h1 className="text-4xl font-bold text-slate-900 mb-2">Questions, answered.</h1>
         <p className="text-sm text-slate-500 mb-10">
           Stripe access, customer experience, pricing, and GDPR. If you
-          don&rsquo;t see your question, email{' '}
-          <a href="mailto:privacy@winbackflow.co" className="text-blue-600 hover:underline">
-            privacy@winbackflow.co
-          </a>
+          don&rsquo;t see your question,{' '}
+          <Link href="/contact" className="text-blue-600 hover:underline">
+            get in touch
+          </Link>
           .
         </p>
 
@@ -307,8 +325,8 @@ export default function FAQPage() {
         <div className="mt-12 pt-6 border-t border-slate-200 text-xs text-slate-400 flex items-center justify-between">
           <div>
             Still have a question?{' '}
-            <a href="mailto:privacy@winbackflow.co" className="text-blue-600 hover:underline">
-              Email us
+            <a href="mailto:support@winbackflow.co" className="text-blue-600 hover:underline">
+              Email support
             </a>
             .
           </div>

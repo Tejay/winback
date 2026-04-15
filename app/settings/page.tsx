@@ -7,6 +7,7 @@ import { TopNav } from '@/components/top-nav'
 import { DisconnectButton } from './disconnect-button'
 import { DangerZone } from './danger-zone'
 import { CreditCard } from 'lucide-react'
+import { PoweredByStripe } from '@/components/powered-by-stripe'
 
 export default async function SettingsPage() {
   const session = await auth()
@@ -55,7 +56,10 @@ export default async function SettingsPage() {
                   <CreditCard className="w-5 h-5 text-white" />
                 </div>
                 <div>
-                  <div className="text-sm font-medium text-slate-900">Stripe</div>
+                  <div className="flex items-center gap-2">
+                    <div className="text-sm font-medium text-slate-900">Stripe</div>
+                    <PoweredByStripe />
+                  </div>
                   <div className="text-xs text-slate-500">
                     Receives cancellation webhooks
                   </div>

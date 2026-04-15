@@ -26,7 +26,10 @@ export default function TermsPage() {
           for the content and targeting of those emails.
         </p>
 
-        <h2>3. Fees</h2>
+        <h2>3. Fees &amp; refunds</h2>
+        <p className="not-prose text-xs text-slate-400 -mt-2 mb-3">
+          See also: <a href="/refunds" className="text-blue-600 hover:underline">Refunds &amp; cancellations</a>.
+        </p>
         <p>
           The Service is free to sign up and use until Winback recovers a cancelled
           subscriber for you. For each recovered subscriber who remains active, we
@@ -49,7 +52,8 @@ export default function TermsPage() {
         <p>
           You may not use the Service to send unlawful, deceptive, or harassing content,
           to violate any third party&rsquo;s rights, or to disrupt the integrity of the
-          Service. We may suspend accounts that breach these Terms.
+          Service. We may suspend accounts that breach these Terms. Full policy:{' '}
+          <a href="/aup">Acceptable Use Policy</a>.
         </p>
 
         <h2>6. Intellectual property</h2>
@@ -93,7 +97,13 @@ export default function TermsPage() {
 
         <h2>12. Contact</h2>
         <p>
+          General &amp; support:{' '}
+          <a href="mailto:support@winbackflow.co">support@winbackflow.co</a>
+          <br />
+          Privacy &amp; GDPR:{' '}
           <a href="mailto:privacy@winbackflow.co">privacy@winbackflow.co</a>
+          <br />
+          Full list on <a href="/contact">/contact</a>.
         </p>
       </div>
     </main>

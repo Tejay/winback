@@ -7,6 +7,7 @@ import { Logo } from '@/components/logo'
 import { StepProgress } from '@/components/step-progress'
 import { CreditCard } from 'lucide-react'
 import Link from 'next/link'
+import { PoweredByStripe } from '@/components/powered-by-stripe'
 
 export default async function OnboardingStripePage() {
   const session = await auth()
@@ -62,6 +63,10 @@ export default async function OnboardingStripePage() {
             >
               Connect Stripe
             </a>
+          </div>
+
+          <div className="mt-3 flex justify-end">
+            <PoweredByStripe />
           </div>
 
           <div className="mt-4 space-y-3">
