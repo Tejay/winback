@@ -306,8 +306,27 @@ must be built before taking paid customers.
       (`isCustomerPausedForSubscriber`).
 - [x] Tests in `email.test.ts` cover paused + unpaused paths.
 
-### Task 10.3 — Read-only Stripe via API key (roadmap)
+### Task 10.3 — Danger zone + delete workspace ✅
+**Spec: specs/11-danger-zone.md**
+- [x] Rose-styled Danger Zone card at the bottom of /settings with Pause + Delete rows.
+- [x] `/settings/delete` consequence screen with real numbers (subscribers,
+      recoveries, £ recovered) + one-time "pause instead" CTA.
+- [x] Gate 2: typed workspace-name confirmation (case-insensitive, trimmed).
+- [x] Gate 3: 3-second real countdown before the API call fires.
+- [x] `POST /api/settings/delete` — revalidates confirmation server-side,
+      explicitly deletes `wb_recoveries` (no FK cascade), then deletes the user
+      row — cascade handles customers → churned_subscribers → emails_sent +
+      legal_acceptances.
+- [x] Client signs out via `next-auth/react` on success.
+- [x] Unit tests for `slugifyWorkspaceName` + `confirmationMatches`.
+
+### Task 10.4 — Read-only Stripe via API key (roadmap)
 - [ ] Alternative to OAuth `read_write`: accept a customer-issued restricted key with
       read-only subscription/customer scopes.
 - [ ] Disables one-click reactivation (requires write) — surface this trade-off in UI.
 - [ ] Promised in FAQ as "email us for early access" — no code yet.
+
+### Task 10.5 — Stripe-side deauthorize on delete (roadmap)
+- [ ] Call Stripe OAuth `/oauth/deauthorize` during workspace deletion so the
+      customer doesn't need to revoke from Stripe → Apps separately. Skipped for
+      now because a failed deauth shouldn't block the user-side delete.

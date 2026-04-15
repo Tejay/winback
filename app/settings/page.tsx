@@ -5,7 +5,7 @@ import { customers } from '@/lib/schema'
 import { eq } from 'drizzle-orm'
 import { TopNav } from '@/components/top-nav'
 import { DisconnectButton } from './disconnect-button'
-import { PauseToggle } from './pause-toggle'
+import { DangerZone } from './danger-zone'
 import { CreditCard } from 'lucide-react'
 
 export default async function SettingsPage() {
@@ -87,20 +87,6 @@ export default async function SettingsPage() {
 
           </div>
 
-          {/* Section 1b — Sending */}
-          <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 mb-4">
-            <div className="text-xs font-semibold tracking-widest uppercase text-blue-600">
-              Sending
-            </div>
-            <h2 className="text-lg font-semibold text-slate-900 mt-1">
-              Pause Winback
-            </h2>
-            <p className="text-sm text-slate-500 mt-1 mb-2">
-              Useful for migrations, incidents, or holidays. Un-pause to resume.
-            </p>
-            <PauseToggle initialPaused={!!customer?.pausedAt} />
-          </div>
-
           {/* Section 2 — Billing */}
           <div id="billing" className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
             <div className="text-xs font-semibold tracking-widest uppercase text-blue-600">
@@ -169,6 +155,9 @@ export default async function SettingsPage() {
               </button>
             </div>
           </div>
+
+          {/* Danger zone */}
+          <DangerZone paused={!!customer?.pausedAt} />
         </div>
       </main>
     </>

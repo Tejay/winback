@@ -5,9 +5,10 @@ import { useState } from 'react'
 
 interface PauseToggleProps {
   initialPaused: boolean
+  compact?: boolean
 }
 
-export function PauseToggle({ initialPaused }: PauseToggleProps) {
+export function PauseToggle({ initialPaused, compact = false }: PauseToggleProps) {
   const router = useRouter()
   const [paused, setPaused] = useState(initialPaused)
   const [loading, setLoading] = useState(false)
@@ -33,6 +34,35 @@ export function PauseToggle({ initialPaused }: PauseToggleProps) {
     router.refresh()
   }
 
+  const switchEl = (
+    <button
+      onClick={toggle}
+      disabled={loading}
+      aria-pressed={paused}
+      aria-label={paused ? 'Resume sending' : 'Pause sending'}
+      className={`relative inline-flex h-6 w-11 flex-shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-rose-500 focus:ring-offset-2 disabled:opacity-50 ${
+        paused ? 'bg-amber-500' : 'bg-green-500'
+      }`}
+    >
+      <span
+        className={`inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+          paused ? 'translate-x-5' : 'translate-x-0'
+        }`}
+      />
+    </button>
+  )
+
+  if (compact) {
+    return (
+      <div className="flex items-center gap-2">
+        <span className="text-xs font-medium text-slate-500">
+          {paused ? 'Paused' : 'Live'}
+        </span>
+        {switchEl}
+      </div>
+    )
+  }
+
   return (
     <div className="flex items-center justify-between py-4">
       <div>
@@ -45,20 +75,7 @@ export function PauseToggle({ initialPaused }: PauseToggleProps) {
             : 'Winback will send a personalised email within 60 seconds of each new cancellation.'}
         </div>
       </div>
-      <button
-        onClick={toggle}
-        disabled={loading}
-        aria-pressed={paused}
-        className={`relative inline-flex h-6 w-11 flex-shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 ${
-          paused ? 'bg-amber-500' : 'bg-green-500'
-        }`}
-      >
-        <span
-          className={`inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-            paused ? 'translate-x-5' : 'translate-x-0'
-          }`}
-        />
-      </button>
+      {switchEl}
     </div>
   )
 }
