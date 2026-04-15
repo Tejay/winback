@@ -187,13 +187,45 @@ vercel.json
 
 ## Non-negotiable rules
 
+### 🌿 Branch & merge discipline — every feature
+**Every feature MUST be built on its own branch and fully tested before merge.
+No direct commits to `main`. No exceptions.**
+
+The flow for any feature, bugfix, or non-trivial change:
+
+1. **Branch first**, before writing any code:
+   ```bash
+   git checkout -b feat/<short-name>          # or fix/, chore/, refactor/
+   ```
+2. **Commit on the branch only.** Never commit directly to `main`.
+3. **Full verification before merge** — all of these must pass *and be shown
+   to the human*:
+   - [ ] `npx tsc --noEmit` — clean
+   - [ ] `npx vitest run` — all tests green
+   - [ ] **Dev server running** (`npm run dev`) and the new UI clicked through
+         end-to-end by the human. Unit tests do not substitute for this.
+   - [ ] For API routes: hit them with `curl` or the real UI path and verify
+         the expected DB side-effects (query Neon with `psql` if destructive).
+   - [ ] For migrations: applied to Neon *before* merging any code that depends
+         on the new column/table.
+4. **Open a PR**, even for solo work — it's the audit trail. Use `gh pr create`.
+5. **Merge only after the human says "merge"** — Claude never self-merges.
+6. **Delete the branch locally + remotely after merge.**
+
+Exceptions — changes that may go direct to `main` without a branch:
+- Docs-only edits (README, CLAUDE.md, TASKS.md, specs/*.md)
+- Comment-only tweaks with no behaviour change
+
+If it touches runtime code, a schema, an API, or UI: **branch**.
+
 ### ⛔ Always stop and ask before:
 1. Running database migrations — show full SQL, wait for "yes"
 2. Any live Anthropic API call — state cost (~$0.003), wait for "yes"
 3. Installing npm packages — list all packages with reason, wait for "yes"
 4. Committing or pushing to git
-5. Merging a PR — always run `npx tsc --noEmit` and `npx vitest run` locally first.
-   Show the results to the human before merging. No merge without passing tests.
+5. Merging a PR — run `npx tsc --noEmit`, `npx vitest run`, AND walk the human
+   through the new behaviour on a running dev server. Show all results before
+   merging. No merge without passing tests + human click-through.
 
 ### ✅ Always do without asking:
 1. Write tests alongside every lib module in `src/winback/__tests__/`
