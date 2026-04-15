@@ -28,10 +28,14 @@ export default function TermsPage() {
 
         <h2>3. Fees</h2>
         <p>
-          The Service is free until your first recovered subscriber. After that, the
-          fee is <strong>£49/month</strong> plus <strong>10%</strong> of recovered MRR
-          for the first 12 months each subscriber remains reactivated. Fees are billed
-          monthly in arrears via Stripe. All fees are exclusive of VAT.
+          The Service is free until Winback recovers a cancelled subscriber for you.
+          Each time a cancelled subscriber resubscribes after receiving a Winback email
+          (a &ldquo;Recovery&rdquo;), we charge a one-time fee equal to{' '}
+          <strong>25% of the first month&rsquo;s recurring revenue</strong> from that
+          subscriber. There is no monthly platform fee, no setup fee, and no minimum
+          commitment. Fees are charged via Stripe within 7 days of the Recovery event,
+          using the payment method you provide at the point of first Recovery. All fees
+          are exclusive of VAT.
         </p>
 
         <h2>4. Your responsibilities</h2>

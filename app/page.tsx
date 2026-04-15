@@ -13,6 +13,9 @@ export default function LandingPage() {
             <a href="#how-it-works" className="text-slate-600 text-sm">
               How it works
             </a>
+            <a href="#pricing" className="text-slate-600 text-sm">
+              Pricing
+            </a>
             <Link href="/login" className="text-slate-600 text-sm">
               Log in
             </Link>
@@ -64,7 +67,7 @@ export default function LandingPage() {
           </div>
 
           <p className="mt-4 text-sm text-slate-400 text-center">
-            Free first recovery. Then &pound;49/mo + 10% of what we win back.
+            Free until your first recovery. No card required.
           </p>
 
           {/* Demo card */}
@@ -203,7 +206,47 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* Section 4 — Footer CTA */}
+      {/* Section 4 — Pricing */}
+      <section id="pricing" className="bg-white py-40">
+        <div className="max-w-3xl mx-auto px-6 text-center">
+          <div className="text-xs font-semibold tracking-widest uppercase text-blue-600">
+            Pricing
+          </div>
+          <h2 className="mt-8 text-5xl sm:text-6xl font-semibold tracking-tight text-slate-900">
+            One price. One moment.
+          </h2>
+          <p className="mt-6 text-lg text-slate-500 leading-relaxed">
+            Winback is free until we recover a customer for you.
+          </p>
+
+          <div className="mt-24 sm:mt-28">
+            <div className="text-[140px] sm:text-[200px] leading-none font-semibold tracking-tighter text-slate-900">
+              25<span className="text-slate-300">%</span>
+            </div>
+            <p className="mt-10 text-lg sm:text-xl text-slate-600 max-w-xl mx-auto leading-relaxed">
+              of the first month of every subscription we bring back.
+            </p>
+            <p className="mt-4 text-sm text-slate-400">
+              That&apos;s it. No monthly fee. No setup fee. No contracts.
+            </p>
+          </div>
+
+          <div className="mt-24 flex flex-col items-center gap-4 text-sm text-slate-500">
+            <Link
+              href="/register"
+              className="bg-[#0f172a] text-white rounded-full px-5 py-2 text-sm font-medium hover:bg-[#1e293b]"
+            >
+              Get started
+            </Link>
+            <p className="text-xs text-slate-400 max-w-md">
+              No card required at sign-up. We ask for payment the first time
+              Winback recovers a customer for you.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {/* Section 5 — Footer CTA */}
       <section className="bg-[#eef2fb] py-24">
         <div className="max-w-5xl mx-auto px-6 text-center">
           <div className="text-xs font-semibold tracking-widest uppercase text-blue-600">
@@ -228,11 +271,9 @@ export default function LandingPage() {
           <p className="mt-6 text-sm text-slate-400">
             Free until your first recovery.
             <br />
-            Then &pound;49/mo + 10% of recovered revenue
+            Then 25% of the first month &mdash; once, per recovered customer.
             <br />
-            &mdash; first year each subscriber stays back.
-            <br />
-            No card required.
+            No card required to start.
           </p>
         </div>
       </section>
@@ -241,6 +282,7 @@ export default function LandingPage() {
         <div className="max-w-5xl mx-auto px-6 py-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-500">
           <div>© {new Date().getFullYear()} Winback Ltd</div>
           <nav className="flex items-center gap-5">
+            <Link href="/pricing" className="hover:text-slate-900">Pricing</Link>
             <Link href="/privacy" className="hover:text-slate-900">Privacy</Link>
             <Link href="/terms" className="hover:text-slate-900">Terms</Link>
             <Link href="/dpa" className="hover:text-slate-900">DPA</Link>
