@@ -121,6 +121,7 @@ export default function PricingPage() {
           <div>© {new Date().getFullYear()} Winback Ltd</div>
           <nav className="flex items-center gap-5">
             <Link href="/pricing" className="hover:text-slate-900">Pricing</Link>
+            <Link href="/faq" className="hover:text-slate-900">FAQ</Link>
             <Link href="/privacy" className="hover:text-slate-900">Privacy</Link>
             <Link href="/terms" className="hover:text-slate-900">Terms</Link>
             <Link href="/dpa" className="hover:text-slate-900">DPA</Link>

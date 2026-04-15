@@ -17,6 +17,9 @@ export default function LandingPage() {
             <a href="#pricing" className="text-slate-600 text-sm">
               Pricing
             </a>
+            <Link href="/faq" className="text-slate-600 text-sm">
+              FAQ
+            </Link>
             <Link href="/login" className="text-slate-600 text-sm">
               Log in
             </Link>
@@ -316,6 +319,7 @@ export default function LandingPage() {
           <div>© {new Date().getFullYear()} Winback Ltd</div>
           <nav className="flex items-center gap-5">
             <Link href="/pricing" className="hover:text-slate-900">Pricing</Link>
+            <Link href="/faq" className="hover:text-slate-900">FAQ</Link>
             <Link href="/privacy" className="hover:text-slate-900">Privacy</Link>
             <Link href="/terms" className="hover:text-slate-900">Terms</Link>
             <Link href="/dpa" className="hover:text-slate-900">DPA</Link>

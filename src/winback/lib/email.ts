@@ -1,6 +1,6 @@
 import { Resend } from 'resend'
 import { db } from '@/lib/db'
-import { emailsSent, churnedSubscribers } from '@/lib/schema'
+import { emailsSent, churnedSubscribers, customers } from '@/lib/schema'
 import { eq } from 'drizzle-orm'
 import { ClassificationResult } from './types'
 import { generateUnsubscribeToken } from './unsubscribe-token'
@@ -34,6 +34,20 @@ async function isDoNotContact(subscriberId: string): Promise<boolean> {
     .where(eq(churnedSubscribers.id, subscriberId))
     .limit(1)
   return row?.dnc ?? false
+}
+
+/**
+ * Returns true if the subscriber's customer (the Winback user) has paused
+ * sending from Settings. Callers must skip sending.
+ */
+export async function isCustomerPausedForSubscriber(subscriberId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ pausedAt: customers.pausedAt })
+    .from(churnedSubscribers)
+    .innerJoin(customers, eq(churnedSubscribers.customerId, customers.id))
+    .where(eq(churnedSubscribers.id, subscriberId))
+    .limit(1)
+  return !!row?.pausedAt
 }
 
 export async function sendEmail(params: {
@@ -98,6 +112,11 @@ export async function scheduleExitEmail(params: {
 
   if (await isDoNotContact(subscriberId)) {
     console.log('Skipping exit email — subscriber unsubscribed:', subscriberId)
+    return
+  }
+
+  if (await isCustomerPausedForSubscriber(subscriberId)) {
+    console.log('Skipping exit email — customer has paused sending:', subscriberId)
     return
   }
 

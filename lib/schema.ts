@@ -20,6 +20,7 @@ export const customers = pgTable('wb_customers', {
   changelogText:      text('changelog_text'),
   onboardingComplete: boolean('onboarding_complete').default(false),
   plan:               text('plan').default('trial'),
+  pausedAt:           timestamp('paused_at'),
   createdAt:          timestamp('created_at').defaultNow(),
   updatedAt:          timestamp('updated_at').defaultNow(),
 })

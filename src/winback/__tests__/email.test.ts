@@ -22,7 +22,8 @@ vi.mock('@/lib/db', () => ({
 
 vi.mock('@/lib/schema', () => ({
   emailsSent: 'wb_emails_sent',
-  churnedSubscribers: { doNotContact: 'do_not_contact', id: 'id' },
+  churnedSubscribers: { doNotContact: 'do_not_contact', id: 'id', customerId: 'customer_id' },
+  customers: { id: 'customer_id_col', pausedAt: 'paused_at' },
 }))
 
 vi.mock('drizzle-orm', () => ({
@@ -32,14 +33,34 @@ vi.mock('drizzle-orm', () => ({
 import { sendEmail, scheduleExitEmail } from '../lib/email'
 import { ClassificationResult } from '../lib/types'
 
-function mockDncReturns(dnc: boolean) {
-  mockSelect.mockReturnValue({
+/**
+ * scheduleExitEmail issues two db.select() calls:
+ *   1. isDoNotContact → select().from().where().limit() → [{ dnc }]
+ *   2. isCustomerPausedForSubscriber → select().from().innerJoin().where().limit() → [{ pausedAt }]
+ * sendEmail issues just the first (DNC) call.
+ * This helper configures both in order.
+ */
+function mockDbGates({ dnc = false, pausedAt = null }: { dnc?: boolean; pausedAt?: Date | null } = {}) {
+  // scheduleExitEmail can call isDoNotContact twice (once directly, once inside sendEmail)
+  // and isCustomerPausedForSubscriber once. Match chain shape by presence of innerJoin.
+  mockSelect.mockImplementation(() => ({
     from: vi.fn().mockReturnValue({
+      // DNC chain: no innerJoin
       where: vi.fn().mockReturnValue({
         limit: vi.fn().mockResolvedValue([{ dnc }]),
       }),
+      // Paused chain: innerJoin → where → limit
+      innerJoin: vi.fn().mockReturnValue({
+        where: vi.fn().mockReturnValue({
+          limit: vi.fn().mockResolvedValue([{ pausedAt }]),
+        }),
+      }),
     }),
-  })
+  }))
+}
+
+function mockDncReturns(dnc: boolean) {
+  mockDbGates({ dnc })
 }
 
 beforeEach(() => {
@@ -49,7 +70,7 @@ beforeEach(() => {
 
 describe('sendEmail', () => {
   beforeEach(() => {
-    vi.clearAllMocks()
+    vi.resetAllMocks()
     mockSend.mockResolvedValue({ data: { id: 'msg_123' }, error: null })
     mockDncReturns(false)
   })
@@ -129,7 +150,7 @@ describe('sendEmail', () => {
 
 describe('scheduleExitEmail', () => {
   beforeEach(() => {
-    vi.clearAllMocks()
+    vi.resetAllMocks()
     mockSend.mockResolvedValue({ data: { id: 'msg_exit' }, error: null })
     mockDncReturns(false)
     mockInsert.mockReturnValue({ values: vi.fn().mockResolvedValue([]) })
@@ -188,5 +209,28 @@ describe('scheduleExitEmail', () => {
     })
     expect(mockSend).not.toHaveBeenCalled()
     expect(mockInsert).not.toHaveBeenCalled()
+  })
+
+  it('skips email when the customer has paused sending', async () => {
+    mockDbGates({ dnc: false, pausedAt: new Date('2026-04-01') })
+    await scheduleExitEmail({
+      subscriberId: 'sub_paused',
+      email: 'test@example.com',
+      classification,
+      fromName: 'Alex',
+    })
+    expect(mockSend).not.toHaveBeenCalled()
+    expect(mockInsert).not.toHaveBeenCalled()
+  })
+
+  it('sends email when the customer is not paused', async () => {
+    mockDbGates({ dnc: false, pausedAt: null })
+    await scheduleExitEmail({
+      subscriberId: 'sub_live',
+      email: 'test@example.com',
+      classification,
+      fromName: 'Alex',
+    })
+    expect(mockSend).toHaveBeenCalledOnce()
   })
 })

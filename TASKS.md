@@ -288,3 +288,26 @@ must be built before taking paid customers.
 - [ ] Terms + privacy + DPA pages already live (shipped in Tier 1 GDPR).
 
 ⛔ **STOP — final human review before declaring done**
+
+---
+
+## Phase 10 — Trust & control (shipped + roadmap)
+
+### Task 10.1 — FAQ page ✅
+- [x] `/faq` with 18 Q&As across Stripe access, email behaviour, pricing, reliability.
+- [x] Linked from landing nav + landing/pricing footers.
+- [x] No trade-secret disclosure (no model names, no algorithm hints).
+
+### Task 10.2 — Pause toggle ✅
+- [x] `customers.paused_at` column (migration `006_pause.sql`).
+- [x] `POST /api/settings/pause` — auth-gated, sets/clears `paused_at`.
+- [x] Settings UI toggle with confirm dialog.
+- [x] `scheduleExitEmail` short-circuits when the customer is paused
+      (`isCustomerPausedForSubscriber`).
+- [x] Tests in `email.test.ts` cover paused + unpaused paths.
+
+### Task 10.3 — Read-only Stripe via API key (roadmap)
+- [ ] Alternative to OAuth `read_write`: accept a customer-issued restricted key with
+      read-only subscription/customer scopes.
+- [ ] Disables one-click reactivation (requires write) — surface this trade-off in UI.
+- [ ] Promised in FAQ as "email us for early access" — no code yet.

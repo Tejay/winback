@@ -26,7 +26,11 @@ export async function GET() {
   const params = new URLSearchParams({
     response_type: 'code',
     client_id: process.env.STRIPE_CLIENT_ID!,
-    scope: 'read_write', // TODO: Contact Stripe support to enable read_only scope before production
+    // read_write is intentional and narrowly used: the only write operation we
+    // perform is renewing/reactivating a cancelled subscription when the
+    // customer accepts a one-click win-back offer. Read is used for everything
+    // else. See /faq for the customer-facing explanation.
+    scope: 'read_write',
     stripe_landing: 'login',
     state: customer.id,
     redirect_uri: `${process.env.NEXT_PUBLIC_APP_URL}/api/stripe/callback`,
