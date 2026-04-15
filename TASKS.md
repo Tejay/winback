@@ -242,4 +242,49 @@ Tell me when .env.local has DATABASE_URL set.
 - [ ] `vercel.json` committed
 - [ ] No hardcoded secrets anywhere
 
+---
+
+## Phase 9 — Billing (NOT IMPLEMENTED — blocker for charging customers)
+
+**Status (2026-04-15):** Pricing is 15% of recovered revenue × 12 months per subscriber.
+`src/winback/lib/billing.ts::calculateMonthlyFee` returns the right number and is tested.
+`/api/billing/preview` exposes it. **Nothing else exists.** No card capture, no invoice
+creation, no cron, no dunning. Landing/settings/onboarding copy promises all of this —
+must be built before taking paid customers.
+
+### Task 9.1 — Deferred card capture (Stripe SetupIntent)
+- [ ] On first successful recovery event: trigger a Stripe SetupIntent for the Winback
+      customer, store the resulting PaymentMethod against `users` (or a new
+      `billing_customers` row). Webhook-driven, idempotent.
+- [ ] New page `/settings/billing/add-card` — Stripe Elements flow that completes the
+      SetupIntent client-side and returns to dashboard.
+- [ ] Dashboard banner state when `recoveries > 0 && !paymentMethodId` — block further
+      recoveries or flag prominently (decide before build).
+
+### Task 9.2 — Monthly invoice run (Vercel cron)
+- [ ] Vercel cron: 1st of each month, iterates all customers with `paymentMethodId`.
+- [ ] For each: `calculateMonthlyFee(customerId)` → create a Stripe invoice on the
+      Winback platform account (not the connected customer's Stripe) with a single line
+      item "Winback — {month} recovered revenue fee" at `totalFeeCents`.
+- [ ] Auto-advance + auto-charge the saved payment method.
+- [ ] Idempotency: store `billing_runs(customerId, yearMonth)` unique key so a retried
+      cron never double-charges.
+
+### Task 9.3 — Dunning for Winback's own fees
+- [ ] Listen to `invoice.payment_failed` on the **platform** account webhook (distinct
+      from the existing connected-account webhook).
+- [ ] Retry schedule + email sequence (reuse `scripts/test-dunning.ts` shape).
+- [ ] After N failures: suspend the Winback account (no new recoveries sent until
+      paid).
+
+### Task 9.4 — Billing visibility in-app
+- [ ] Settings → Billing: wire to `/api/billing/preview` so the customer sees their
+      current month's running fee, attributed subscribers, and £/month each.
+- [ ] Invoice history list (pulls from Stripe).
+
+### Task 9.5 — Stripe platform approval
+- [ ] Before launching this — Stripe must approve the platform account to charge its
+      own customers. Track in the Stripe dashboard application.
+- [ ] Terms + privacy + DPA pages already live (shipped in Tier 1 GDPR).
+
 ⛔ **STOP — final human review before declaring done**

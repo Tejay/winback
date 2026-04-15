@@ -115,15 +115,14 @@ export default async function SettingsPage() {
               </div>
 
               <div className="mt-4">
-                <span className="text-3xl font-bold text-slate-900">£49</span>
-                <span className="text-slate-400"> / month</span>
+                <span className="text-3xl font-bold text-slate-900">15%</span>
+                <span className="text-slate-400"> of recovered revenue</span>
               </div>
               <p className="text-sm text-slate-500 mt-2">
-                + 10% of recovered MRR for the first year each subscriber stays
-                back.
+                For 12 months per recovered subscriber. No base fee, no cap.
               </p>
               <p className="text-xs text-slate-400 mt-3">
-                First recovery always free · Cancel anytime
+                No card at signup · We ask for payment after your first recovery · Cancel anytime
               </p>
             </div>
 

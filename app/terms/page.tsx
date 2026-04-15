@@ -28,14 +28,13 @@ export default function TermsPage() {
 
         <h2>3. Fees</h2>
         <p>
-          The Service is free until Winback recovers a cancelled subscriber for you.
-          Each time a cancelled subscriber resubscribes after receiving a Winback email
-          (a &ldquo;Recovery&rdquo;), we charge a one-time fee equal to{' '}
-          <strong>25% of the first month&rsquo;s recurring revenue</strong> from that
-          subscriber. There is no monthly platform fee, no setup fee, and no minimum
-          commitment. Fees are charged via Stripe within 7 days of the Recovery event,
-          using the payment method you provide at the point of first Recovery. All fees
-          are exclusive of VAT.
+          The Service is free to sign up and use until Winback recovers a cancelled
+          subscriber for you. For each recovered subscriber who remains active, we
+          charge <strong>15% of their monthly recurring revenue for 12 months from
+          the date of recovery</strong>. After 12 months the subscriber is no longer
+          subject to any fee. There is no base fee, no setup fee, and no minimum
+          commitment. Fees are billed monthly via Stripe against the payment method
+          you provide after your first recovery. All fees are exclusive of VAT.
         </p>
 
         <h2>4. Your responsibilities</h2>

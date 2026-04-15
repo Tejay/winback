@@ -32,39 +32,6 @@ function setupMockDb(recoveryRows: Array<{
   newStripeSubId: string | null
   lastCheckedAt: Date | null
 }>, subscriberEmails: Record<string, string>) {
-  const fromMock = vi.fn()
-  const whereMock = vi.fn()
-  const limitMock = vi.fn()
-
-  mockSelect.mockImplementation((fields?: Record<string, unknown>) => {
-    return {
-      from: (table: string) => {
-        if (table === 'wb_recoveries') {
-          return {
-            where: () => recoveryRows,
-          }
-        }
-        if (table === 'wb_churned_subscribers') {
-          return {
-            where: (condition: { op: string; b: string }) => ({
-              limit: () => {
-                // Return subscriber email based on the id passed
-                const subId = Object.values(subscriberEmails).length > 0
-                  ? [{ email: subscriberEmails[Object.keys(subscriberEmails)[0]] }]
-                  : [{ email: 'unknown' }]
-
-                // Simple mock: return email for any subscriber lookup
-                return subId
-              },
-            }),
-          }
-        }
-        return { where: () => ({ limit: () => [] }) }
-      },
-    }
-  })
-
-  // Override to return proper emails per subscriber
   let callCount = 0
   const subIds = Object.keys(subscriberEmails)
   mockSelect.mockImplementation(() => ({
@@ -72,7 +39,6 @@ function setupMockDb(recoveryRows: Array<{
       if (table === 'wb_recoveries') {
         return { where: () => recoveryRows }
       }
-      // For subscriber lookups
       return {
         where: () => ({
           limit: () => {
@@ -91,18 +57,17 @@ describe('calculateMonthlyFee', () => {
     vi.clearAllMocks()
   })
 
-  it('no recoveries → base fee only', async () => {
+  it('no recoveries → zero fee', async () => {
     setupMockDb([], {})
     const fee = await calculateMonthlyFee('cust_1')
 
-    expect(fee.baseFeeCents).toBe(4900)
     expect(fee.recoveredMrrActiveCents).toBe(0)
     expect(fee.successFeeCents).toBe(0)
-    expect(fee.totalFeeCents).toBe(4900)
+    expect(fee.totalFeeCents).toBe(0)
     expect(fee.recoveredSubscribers).toHaveLength(0)
   })
 
-  it('one active recovery at £39/mo → correct success fee', async () => {
+  it('one active recovery at £39/mo → 15% fee', async () => {
     const futureDate = new Date()
     futureDate.setFullYear(futureDate.getFullYear() + 1)
 
@@ -123,15 +88,13 @@ describe('calculateMonthlyFee', () => {
 
     const fee = await calculateMonthlyFee('cust_1')
 
-    expect(fee.baseFeeCents).toBe(4900)
     expect(fee.recoveredMrrActiveCents).toBe(3900)
-    expect(fee.successFeeCents).toBe(390) // 10% of 3900
-    expect(fee.successFeeCappedCents).toBe(390) // under cap
-    expect(fee.totalFeeCents).toBe(5290) // 4900 + 390
+    expect(fee.successFeeCents).toBe(585) // 15% of 3900
+    expect(fee.totalFeeCents).toBe(585)
     expect(fee.recoveredSubscribers).toHaveLength(1)
   })
 
-  it('five recoveries at £39/mo → correct total', async () => {
+  it('five recoveries at £39/mo → 15% of total', async () => {
     const futureDate = new Date()
     futureDate.setFullYear(futureDate.getFullYear() + 1)
 
@@ -155,15 +118,17 @@ describe('calculateMonthlyFee', () => {
     const fee = await calculateMonthlyFee('cust_1')
 
     expect(fee.recoveredMrrActiveCents).toBe(19500) // 5 × 3900
-    expect(fee.successFeeCents).toBe(1950) // 10%
-    expect(fee.totalFeeCents).toBe(6850) // 4900 + 1950
+    expect(fee.successFeeCents).toBe(2925) // 15%
+    expect(fee.totalFeeCents).toBe(2925)
   })
 
-  it('no active recoveries returned → base fee only', async () => {
-    // DB query filters out still_active=false, so empty result
+  it('recoveries past 12 months are filtered out by the query → contribute £0', async () => {
+    // DB-level filter `gt(attributionEndsAt, now)` excludes expired rows.
+    // The billing function sees an empty set and charges nothing for them.
     setupMockDb([], {})
     const fee = await calculateMonthlyFee('cust_1')
 
-    expect(fee.totalFeeCents).toBe(4900)
+    expect(fee.recoveredMrrActiveCents).toBe(0)
+    expect(fee.totalFeeCents).toBe(0)
   })
 })

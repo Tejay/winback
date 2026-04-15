@@ -96,8 +96,8 @@ It's a much more reliable experience now. If you're open to it, I'd love for you
         </div>
 
         <p className="text-xs text-slate-400 text-center mt-4">
-          Your first recovery is free. After that: &pound;49/mo + 10% of
-          recovered MRR for the first year each subscriber stays back.
+          No card at signup. Billing is 15% of recovered revenue for 12 months
+          per subscriber &mdash; we ask for a payment method after your first recovery.
         </p>
       </div>
     </div>

@@ -3,10 +3,8 @@ import { recoveries, churnedSubscribers } from '@/lib/schema'
 import { eq, and, gt } from 'drizzle-orm'
 
 export interface MonthlyFee {
-  baseFeeCents:            number
   recoveredMrrActiveCents: number
   successFeeCents:         number
-  successFeeCappedCents:   number
   totalFeeCents:           number
   recoveredSubscribers: Array<{
     email:       string
@@ -16,9 +14,11 @@ export interface MonthlyFee {
   }>
 }
 
-const BASE_FEE_CENTS = 4900 // £49
-const SUCCESS_FEE_RATE = 0.10
-const SUCCESS_FEE_CAP_CENTS = 50000 // £500
+// Pricing: 15% of recovered MRR, 12-month attribution per subscriber.
+// No base fee, no cap. Attribution window is enforced by the
+// `recoveries.attributionEndsAt` filter below — rows past that date fall out
+// of the billed set automatically.
+const SUCCESS_FEE_RATE = 0.15
 
 export async function calculateMonthlyFee(customerId: string): Promise<MonthlyFee> {
   const now = new Date()
@@ -56,14 +56,11 @@ export async function calculateMonthlyFee(customerId: string): Promise<MonthlyFe
   }
 
   const successFeeCents = Math.round(recoveredMrrActiveCents * SUCCESS_FEE_RATE)
-  const successFeeCappedCents = Math.min(successFeeCents, SUCCESS_FEE_CAP_CENTS)
-  const totalFeeCents = BASE_FEE_CENTS + successFeeCappedCents
+  const totalFeeCents = successFeeCents
 
   return {
-    baseFeeCents: BASE_FEE_CENTS,
     recoveredMrrActiveCents,
     successFeeCents,
-    successFeeCappedCents,
     totalFeeCents,
     recoveredSubscribers: recoveredSubscribersList,
   }

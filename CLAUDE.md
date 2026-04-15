@@ -8,8 +8,8 @@ Resend within 60 seconds. An LLM classifies why they left and generates a
 targeted win-back message. When the product ships something matching their stated reason, the
 win-back fires automatically.
 
-**Pricing:** Free until first recovery. Then £49/month + 10% of recovered MRR (first year
-each subscriber stays back).
+**Pricing:** 15% of recovered revenue for 12 months per recovered subscriber. No base
+fee, no cap. No card at signup — we ask for payment after the first recovery.
 
 **Live reference site:** https://churntool-jxgo.vercel.app
 Every UI decision must match this site exactly unless specified otherwise.
