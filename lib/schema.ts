@@ -21,6 +21,7 @@ export const customers = pgTable('wb_customers', {
   onboardingComplete: boolean('onboarding_complete').default(false),
   plan:               text('plan').default('trial'),
   pausedAt:           timestamp('paused_at'),
+  settlementPaidAt:   timestamp('settlement_paid_at'),
   createdAt:          timestamp('created_at').defaultNow(),
   updatedAt:          timestamp('updated_at').defaultNow(),
 })
@@ -77,6 +78,18 @@ export const emailsSent = pgTable('wb_emails_sent', {
   subject:        text('subject'),
   sentAt:         timestamp('sent_at').defaultNow(),
   repliedAt:      timestamp('replied_at'),
+})
+
+export const settlementRequests = pgTable('wb_settlement_requests', {
+  id:               uuid('id').primaryKey().defaultRandom(),
+  customerId:       uuid('customer_id').notNull().references(() => customers.id, { onDelete: 'cascade' }),
+  obligationCents:  integer('obligation_cents').notNull(),
+  liveCount:        integer('live_count').notNull(),
+  status:           text('status').notNull().default('pending'), // 'pending' | 'settled' | 'cancelled'
+  requestedAt:      timestamp('requested_at').notNull().defaultNow(),
+  settledAt:        timestamp('settled_at'),
+  stripeSessionId:  text('stripe_session_id'),
+  notes:            text('notes'),
 })
 
 export const recoveries = pgTable('wb_recoveries', {
