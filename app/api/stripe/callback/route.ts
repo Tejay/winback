@@ -65,16 +65,25 @@ export async function GET(req: NextRequest) {
     .set({
       stripeAccountId: accountIdToSave,
       stripeAccessToken: encrypt(accessToken),
+      onboardingComplete: true,
       updatedAt: new Date(),
     })
     .where(eq(customers.id, state))
 
-  // Historical seeding — only on first connect (no existing account ID)
+  // Trigger historical backfill on first connect (fire-and-forget via internal API)
   if (!customer.stripeAccountId) {
-    // Seeding runs in the background via a separate API call from the client
-    // to avoid fire-and-forget issues on serverless
-    console.log('First Stripe connect — historical seeding will run on dashboard load')
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? baseUrl()
+    fetch(`${appUrl}/api/backfill/start`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${process.env.CRON_SECRET}`,
+      },
+      body: JSON.stringify({ customerId: state }),
+    }).catch((err) => {
+      console.error('Failed to trigger backfill:', err)
+    })
   }
 
-  return NextResponse.redirect(`${baseUrl()}/onboarding/changelog`)
+  return NextResponse.redirect(`${baseUrl()}/dashboard`)
 }

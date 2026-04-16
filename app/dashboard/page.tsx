@@ -16,9 +16,8 @@ export default async function DashboardPage() {
     .where(eq(customers.userId, session.user.id))
     .limit(1)
 
-  // Route protection: redirect to onboarding if not complete
+  // Route protection: redirect to onboarding if Stripe not connected
   if (!customer?.stripeAccessToken) redirect('/onboarding/stripe')
-  if (!customer?.onboardingComplete) redirect('/onboarding/changelog')
 
   // Check if billing alert should show
   let firstRecovery: { name: string | null; mrrCents: number } | null = null

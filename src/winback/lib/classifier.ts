@@ -59,7 +59,17 @@ RULES:
 - cancellationReason: short phrase shown in a dashboard table (e.g. "Switched to a competitor")
 - cancellationCategory: exactly one of: Competitor|Price|Quality|Unused|Feature|Other
 - For Tier 2 and Tier 3, always end firstMessage.body with a single genuine question asking why they left. Keep it to one sentence. Frame it as curiosity, not a survey. Good example: "Would you mind sharing what happened? Hit reply — one line is enough." Bad example: "Please complete our exit survey." Do NOT add this question to Tier 1 — they already told you why they left.
-- Return ONLY valid JSON with no preamble and no markdown code fences`
+- Return ONLY valid JSON with no preamble and no markdown code fences
+
+CANCELLATION AGE (check cancelled_at):
+- Recent (< 14 days): treat as fresh — standard win-back approach
+- Medium (14–60 days): only reach out if there's a strong reason (e.g., they cited a specific issue and the changelog shows it's fixed). Otherwise suppress.
+- Old (60+ days): default to suppress unless there's a very compelling match between their reason and recent improvements
+
+EMAIL TONE BY AGE (if not suppressed):
+- Fresh (< 7 days): "You recently cancelled..."
+- Medium (7–30 days): "A few weeks ago you cancelled..."
+- Older (30+ days): "We've made some changes since you left..."`
 
 export async function classifySubscriber(
   signals: SubscriberSignals,
