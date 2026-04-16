@@ -2,7 +2,8 @@ import Link from 'next/link'
 import { PricingCalculator } from '@/components/pricing-calculator'
 import { PoweredByStripe } from '@/components/powered-by-stripe'
 import { StickyNav } from '@/components/landing/sticky-nav'
-import { HeroDemoToggle } from '@/components/landing/hero-demo-toggle'
+import { FlowIllustration } from '@/components/landing/flow-illustration'
+import Image from 'next/image'
 import { StepCard } from '@/components/landing/step-card'
 import { RevealOnScroll } from '@/components/landing/reveal-on-scroll'
 import { Zap, Brain, Send, CheckCircle } from 'lucide-react'
@@ -48,7 +49,7 @@ export default function LandingPage() {
             </p>
           </div>
 
-          <HeroDemoToggle />
+          <FlowIllustration />
         </div>
       </section>
 
@@ -160,6 +161,34 @@ export default function LandingPage() {
               Start recovering customers today →
             </Link>
           </div>
+        </div>
+      </section>
+
+      {/* Section 3b — Dashboard proof */}
+      <section className="bg-[#f5f5f5] py-20 sm:py-24">
+        <div className="max-w-5xl mx-auto px-6">
+          <RevealOnScroll>
+            <div className="text-center mb-10">
+              <div className="text-xs font-semibold tracking-widest uppercase text-blue-600">
+                Your dashboard
+              </div>
+              <h2 className="text-3xl sm:text-4xl font-bold text-slate-900 mt-3">
+                Every recovery, tracked.
+              </h2>
+              <p className="text-base sm:text-lg text-slate-500 mt-4 max-w-2xl mx-auto">
+                See who cancelled, why they left, what Winback sent, and who came back — all in one view.
+              </p>
+            </div>
+            <div className="rounded-2xl overflow-hidden shadow-lg border border-slate-200/60">
+              <Image
+                src="/demo-dashboard.png"
+                alt="Winback dashboard showing recovered subscribers, recovery rate, and MRR recovered"
+                width={1200}
+                height={750}
+                className="w-full h-auto"
+              />
+            </div>
+          </RevealOnScroll>
         </div>
       </section>
 
