@@ -29,7 +29,7 @@ interface Stats {
   recoveryRate: number
   recovered: number
   mrrRecoveredCents: number
-  atRisk: number
+  pending: number
 }
 
 interface DashboardClientProps {
@@ -39,7 +39,7 @@ interface DashboardClientProps {
 }
 
 export function DashboardClient({ changelog, isTrial, firstRecovery }: DashboardClientProps) {
-  const [stats, setStats] = useState<Stats>({ recoveryRate: 0, recovered: 0, mrrRecoveredCents: 0, atRisk: 0 })
+  const [stats, setStats] = useState<Stats>({ recoveryRate: 0, recovered: 0, mrrRecoveredCents: 0, pending: 0 })
   const [subscribers, setSubscribers] = useState<Subscriber[]>([])
   const [filter, setFilter] = useState('all')
   const [search, setSearch] = useState('')
@@ -159,8 +159,8 @@ export function DashboardClient({ changelog, isTrial, firstRecovery }: Dashboard
           <div className="bg-amber-50 rounded-xl w-9 h-9 flex items-center justify-center text-amber-600">
             <Users className="w-4 h-4" />
           </div>
-          <div className="text-4xl font-bold text-slate-900 mt-3">{stats.atRisk}</div>
-          <div className="text-xs font-semibold uppercase tracking-widest text-slate-400 mt-1">At Risk</div>
+          <div className="text-4xl font-bold text-slate-900 mt-3">{stats.pending}</div>
+          <div className="text-xs font-semibold uppercase tracking-widest text-slate-400 mt-1">Pending</div>
         </div>
       </div>
 

@@ -27,7 +27,7 @@ export async function GET() {
 
   const total = allSubs.length
   const recovered = allSubs.filter((s) => s.status === 'recovered').length
-  const atRisk = allSubs.filter(
+  const pending = allSubs.filter(
     (s) => s.status === 'pending' || s.status === 'contacted'
   ).length
   const recoveryRate = total > 0 ? Math.round((recovered / total) * 100) : 0
@@ -51,6 +51,6 @@ export async function GET() {
     recoveryRate,
     recovered,
     mrrRecoveredCents,
-    atRisk,
+    pending,
   })
 }

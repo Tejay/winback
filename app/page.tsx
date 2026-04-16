@@ -2,8 +2,9 @@ import Link from 'next/link'
 import { PricingCalculator } from '@/components/pricing-calculator'
 import { PoweredByStripe } from '@/components/powered-by-stripe'
 import { StickyNav } from '@/components/landing/sticky-nav'
-import { FlowIllustration } from '@/components/landing/flow-illustration'
+import { HeroDemoToggle } from '@/components/landing/hero-demo-toggle'
 import { StepCard } from '@/components/landing/step-card'
+import { RevealOnScroll } from '@/components/landing/reveal-on-scroll'
 import { Zap, Brain, Send, CheckCircle } from 'lucide-react'
 
 export default function LandingPage() {
@@ -47,7 +48,7 @@ export default function LandingPage() {
             </p>
           </div>
 
-          <FlowIllustration />
+          <HeroDemoToggle />
         </div>
       </section>
 
@@ -71,6 +72,7 @@ export default function LandingPage() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-16">
+            <RevealOnScroll delay={0}>
             <StepCard
               step="01"
               label="Detect"
@@ -90,6 +92,8 @@ export default function LandingPage() {
                 </>
               }
             />
+            </RevealOnScroll>
+            <RevealOnScroll delay={120}>
             <StepCard
               step="02"
               label="Decide"
@@ -114,6 +118,8 @@ export default function LandingPage() {
                 </>
               }
             />
+            </RevealOnScroll>
+            <RevealOnScroll delay={240}>
             <StepCard
               step="03"
               label="Act"
@@ -138,6 +144,7 @@ export default function LandingPage() {
                 </>
               }
             />
+            </RevealOnScroll>
           </div>
 
           <div className="mt-6 flex justify-center">
