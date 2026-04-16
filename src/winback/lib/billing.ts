@@ -1,6 +1,7 @@
 import { db } from '@/lib/db'
 import { recoveries, churnedSubscribers } from '@/lib/schema'
 import { eq, and, gt } from 'drizzle-orm'
+import { BILLABLE_ATTRIBUTION, SUCCESS_FEE_RATE as BILLING_RATE } from './obligations'
 
 export interface MonthlyFee {
   recoveredMrrActiveCents: number
@@ -15,15 +16,21 @@ export interface MonthlyFee {
 }
 
 // Pricing: 15% of recovered MRR, 12-month attribution per subscriber.
-// No base fee, no cap. Attribution window is enforced by the
-// `recoveries.attributionEndsAt` filter below — rows past that date fall out
+// No base fee, no cap.
+//
+// We only bill recoveries with `attributionType = BILLABLE_ATTRIBUTION`
+// (currently 'strong' — the subscriber clicked a tracked Winback link).
+// "Weak" recoveries are shown in the dashboard but never invoiced — see
+// `obligations.ts` for the policy and `/faq` for the founder-facing
+// explanation. The attribution window (12 months) is enforced by the
+// `attributionEndsAt` filter below — rows past that date fall out
 // of the billed set automatically.
-const SUCCESS_FEE_RATE = 0.15
+const SUCCESS_FEE_RATE = BILLING_RATE
 
 export async function calculateMonthlyFee(customerId: string): Promise<MonthlyFee> {
   const now = new Date()
 
-  // Get all recoveries where attribution hasn't expired
+  // Get all billable recoveries where attribution hasn't expired
   const activeRecoveries = await db
     .select()
     .from(recoveries)
@@ -31,6 +38,7 @@ export async function calculateMonthlyFee(customerId: string): Promise<MonthlyFe
       and(
         eq(recoveries.customerId, customerId),
         eq(recoveries.stillActive, true),
+        eq(recoveries.attributionType, BILLABLE_ATTRIBUTION),
         gt(recoveries.attributionEndsAt, now)
       )
     )

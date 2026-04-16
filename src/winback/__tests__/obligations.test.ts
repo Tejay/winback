@@ -32,7 +32,7 @@ describe('obligationForRecovery', () => {
   it('is zero for an inactive recovery regardless of window', () => {
     expect(
       obligationForRecovery(
-        { planMrrCents: 10000, attributionEndsAt: daysFromNow(300), stillActive: false },
+        { planMrrCents: 10000, attributionEndsAt: daysFromNow(300), stillActive: false, attributionType: 'strong' },
         NOW,
       ),
     ).toBe(0)
@@ -40,16 +40,16 @@ describe('obligationForRecovery', () => {
   it('is zero when attribution has already ended', () => {
     expect(
       obligationForRecovery(
-        { planMrrCents: 10000, attributionEndsAt: daysFromNow(-5), stillActive: true },
+        { planMrrCents: 10000, attributionEndsAt: daysFromNow(-5), stillActive: true, attributionType: 'strong' },
         NOW,
       ),
     ).toBe(0)
   })
-  it('computes 15% × months against a mid-window active recovery', () => {
+  it('computes 15% × months against a mid-window active strong recovery', () => {
     // 60 days remaining → ceil(60/30) = 2 months. 10000 cents × 0.15 × 2 = 3000.
     expect(
       obligationForRecovery(
-        { planMrrCents: 10000, attributionEndsAt: daysFromNow(60), stillActive: true },
+        { planMrrCents: 10000, attributionEndsAt: daysFromNow(60), stillActive: true, attributionType: 'strong' },
         NOW,
       ),
     ).toBe(3000)
@@ -59,7 +59,7 @@ describe('obligationForRecovery', () => {
     // 10000 cents × 0.15 × 12 = 18000.
     expect(
       obligationForRecovery(
-        { planMrrCents: 10000, attributionEndsAt: daysFromNow(540), stillActive: true },
+        { planMrrCents: 10000, attributionEndsAt: daysFromNow(540), stillActive: true, attributionType: 'strong' },
         NOW,
       ),
     ).toBe(18000)
@@ -67,7 +67,25 @@ describe('obligationForRecovery', () => {
   it('handles stillActive=null as inactive (defensive against NULLs)', () => {
     expect(
       obligationForRecovery(
-        { planMrrCents: 10000, attributionEndsAt: daysFromNow(60), stillActive: null },
+        { planMrrCents: 10000, attributionEndsAt: daysFromNow(60), stillActive: null, attributionType: 'strong' },
+        NOW,
+      ),
+    ).toBe(0)
+  })
+  it('is zero for a weak-attribution recovery even when active and mid-window', () => {
+    // Policy: only strong attribution is billable. Weak stays visible in the
+    // dashboard but never contributes to the invoice.
+    expect(
+      obligationForRecovery(
+        { planMrrCents: 10000, attributionEndsAt: daysFromNow(60), stillActive: true, attributionType: 'weak' },
+        NOW,
+      ),
+    ).toBe(0)
+  })
+  it('is zero when attributionType is null (defensive — never bill on missing data)', () => {
+    expect(
+      obligationForRecovery(
+        { planMrrCents: 10000, attributionEndsAt: daysFromNow(60), stillActive: true, attributionType: null },
         NOW,
       ),
     ).toBe(0)
@@ -75,20 +93,29 @@ describe('obligationForRecovery', () => {
 })
 
 describe('sumObligations', () => {
-  it('sums across a mixed set and excludes inactive/expired', () => {
+  it('sums across a mixed set and excludes inactive/expired/weak', () => {
     const rows = [
-      // Active, 3 months remaining on £50/mo → 15% × 3 × 5000 = 2250
-      { planMrrCents: 5000, attributionEndsAt: daysFromNow(90), stillActive: true },
-      // Active, already past end — 0
-      { planMrrCents: 5000, attributionEndsAt: daysFromNow(-10), stillActive: true },
+      // Active, strong, 3 months remaining on £50/mo → 15% × 3 × 5000 = 2250
+      { planMrrCents: 5000, attributionEndsAt: daysFromNow(90), stillActive: true, attributionType: 'strong' },
+      // Active, strong, already past end — 0
+      { planMrrCents: 5000, attributionEndsAt: daysFromNow(-10), stillActive: true, attributionType: 'strong' },
       // Cancelled again — 0
-      { planMrrCents: 12000, attributionEndsAt: daysFromNow(180), stillActive: false },
-      // Active, 6 months remaining on £120/mo → 15% × 6 × 12000 = 10800
-      { planMrrCents: 12000, attributionEndsAt: daysFromNow(180), stillActive: true },
+      { planMrrCents: 12000, attributionEndsAt: daysFromNow(180), stillActive: false, attributionType: 'strong' },
+      // Active, strong, 6 months remaining on £120/mo → 15% × 6 × 12000 = 10800
+      { planMrrCents: 12000, attributionEndsAt: daysFromNow(180), stillActive: true, attributionType: 'strong' },
+      // Active, weak, 6 months remaining — shown in dashboard, not billed — 0
+      { planMrrCents: 8000, attributionEndsAt: daysFromNow(180), stillActive: true, attributionType: 'weak' },
     ]
     expect(sumObligations(rows, NOW)).toBe(2250 + 10800)
   })
   it('returns 0 for an empty list', () => {
     expect(sumObligations([], NOW)).toBe(0)
+  })
+  it('returns 0 when every row is weak attribution', () => {
+    const rows = [
+      { planMrrCents: 5000, attributionEndsAt: daysFromNow(90), stillActive: true, attributionType: 'weak' },
+      { planMrrCents: 12000, attributionEndsAt: daysFromNow(180), stillActive: true, attributionType: 'weak' },
+    ]
+    expect(sumObligations(rows, NOW)).toBe(0)
   })
 })

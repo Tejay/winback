@@ -6,7 +6,7 @@ import { FlowIllustration } from '@/components/landing/flow-illustration'
 import Image from 'next/image'
 import { StepCard } from '@/components/landing/step-card'
 import { RevealOnScroll } from '@/components/landing/reveal-on-scroll'
-import { Zap, Brain, Send, CheckCircle } from 'lucide-react'
+import { Zap, Brain, Send, CheckCircle, CreditCard } from 'lucide-react'
 
 export default function LandingPage() {
   return (
@@ -35,6 +35,11 @@ export default function LandingPage() {
             <span className="text-slate-900 font-medium">
               Not a template. Not a broadcast.
             </span>
+          </p>
+
+          <p className="mt-3 text-sm sm:text-base text-slate-500 max-w-2xl text-center leading-relaxed">
+            Plus automatic card-recovery emails when payments fail — two kinds
+            of lost revenue, one Stripe connection.
           </p>
 
           <div className="flex flex-col items-center gap-2 mt-8">
@@ -161,6 +166,30 @@ export default function LandingPage() {
               Start recovering customers today →
             </Link>
           </div>
+        </div>
+      </section>
+
+      {/* Section 3a — Card recovery (dunning) */}
+      <section className="bg-white py-20 sm:py-24 border-t border-slate-100">
+        <div className="max-w-3xl mx-auto px-6 text-center">
+          <RevealOnScroll>
+            <div className="inline-flex items-center justify-center bg-blue-50 rounded-2xl w-12 h-12 mb-5">
+              <CreditCard className="w-5 h-5 text-blue-600" />
+            </div>
+            <div className="text-xs font-semibold tracking-widest uppercase text-blue-600">
+              And when cards fail
+            </div>
+            <h2 className="text-3xl sm:text-4xl font-bold text-slate-900 mt-3">
+              Card recovery, on autopilot.
+            </h2>
+            <p className="text-base sm:text-lg text-slate-500 mt-5 max-w-2xl mx-auto leading-relaxed">
+              Involuntary churn is half the problem. When a subscriber&rsquo;s
+              card fails, Winback emails them a one-click link to update it
+              &mdash; before Stripe&rsquo;s retries run out. No AI needed here,
+              just friction removal. One Stripe connection, two kinds of lost
+              revenue, one dashboard.
+            </p>
+          </RevealOnScroll>
         </div>
       </section>
 
