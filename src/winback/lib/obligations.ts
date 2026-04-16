@@ -12,6 +12,18 @@ export const SUCCESS_FEE_RATE = 0.15
 export const MAX_ATTRIBUTION_MONTHS = 12
 
 /**
+ * Billing policy: we only invoice recoveries we can provably attribute to
+ * our action (i.e. the subscriber clicked a tracked Winback link — a
+ * reactivate link for voluntary churn or an update-payment link for a
+ * failed card). "Weak" recoveries — where attribution is circumstantial
+ * (payment method changed after our email but no click) — are shown in the
+ * dashboard so the founder sees the full funnel, but never billed. See
+ * /faq for the founder-facing explanation and /specs/07-billing.md for the
+ * attribution model.
+ */
+export const BILLABLE_ATTRIBUTION = 'strong' as const
+
+/**
  * Months of billing left on an attribution window.
  *
  * We round UP — partial months are billed whole (matches how we invoice) —
@@ -29,15 +41,29 @@ export function monthsRemaining(attributionEndsAt: Date, now: Date = new Date())
   return Math.min(months, MAX_ATTRIBUTION_MONTHS)
 }
 
+interface BillableRecovery {
+  planMrrCents: number
+  attributionEndsAt: Date
+  stillActive: boolean | null
+  attributionType: string | null
+}
+
 /**
  * Fee owed on a single recovery line, in integer cents.
- * Inactive recoveries (subscriber cancelled again) owe nothing going forward.
+ * Returns zero when:
+ *   - the recovery is inactive (subscriber cancelled again), or
+ *   - attribution isn't `BILLABLE_ATTRIBUTION` (we can't prove we caused it).
+ *
+ * We keep this second check belt-and-braces alongside the SQL filter in
+ * `computeOpenObligations` — if a future query forgets the WHERE clause,
+ * the pure function still refuses to bill weak rows.
  */
 export function obligationForRecovery(
-  recovery: { planMrrCents: number; attributionEndsAt: Date; stillActive: boolean | null },
+  recovery: BillableRecovery,
   now: Date = new Date(),
 ): number {
   if (!recovery.stillActive) return 0
+  if (recovery.attributionType !== BILLABLE_ATTRIBUTION) return 0
   const months = monthsRemaining(recovery.attributionEndsAt, now)
   // Integer maths — keeps us clear of float drift on fractional pence.
   // 15% → multiply by 15, divide by 100.
@@ -45,7 +71,7 @@ export function obligationForRecovery(
 }
 
 export function sumObligations(
-  rows: Array<{ planMrrCents: number; attributionEndsAt: Date; stillActive: boolean | null }>,
+  rows: Array<BillableRecovery>,
   now: Date = new Date(),
 ): number {
   return rows.reduce((acc, r) => acc + obligationForRecovery(r, now), 0)
@@ -89,12 +115,14 @@ export async function computeOpenObligations(
       planMrrCents: recoveries.planMrrCents,
       attributionEndsAt: recoveries.attributionEndsAt,
       stillActive: recoveries.stillActive,
+      attributionType: recoveries.attributionType,
     })
     .from(recoveries)
     .where(
       and(
         eq(recoveries.customerId, customerId),
         eq(recoveries.stillActive, true),
+        eq(recoveries.attributionType, BILLABLE_ATTRIBUTION),
         gt(recoveries.attributionEndsAt, now),
       ),
     )
