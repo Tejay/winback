@@ -97,9 +97,11 @@ const SECTIONS: Array<{ heading: string; items: QA[] }> = [
           <p>
             It&rsquo;s sent with your name on the &ldquo;From&rdquo; line
             (e.g., <em>Alex Smith &lt;reply+&hellip;@winbackflow.co&gt;</em>)
-            from our sending domain. Replies route straight back to your real
-            inbox &mdash; which is the whole point: a win-back becomes a
-            conversation.
+            from our sending domain. When a subscriber replies, Winback
+            captures it, re-reads the conversation with the same AI, and
+            surfaces the reply plus the updated classification in your
+            dashboard &mdash; so new context (they changed their mind,
+            clarified a reason, pushed back) shapes whatever happens next.
           </p>
         ),
       },

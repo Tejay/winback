@@ -17,7 +17,7 @@ export function PricingCalculator() {
   const keep = mrr - fee
 
   return (
-    <div className="mt-16 max-w-2xl mx-auto text-left">
+    <div className="mt-16 max-w-2xl mx-auto text-left bg-white rounded-2xl shadow-sm border border-slate-100 p-7 sm:p-8">
       {/* Split bar */}
       <div className="h-3 rounded-full overflow-hidden flex">
         <div className="bg-green-500" style={{ width: '85%' }} />
