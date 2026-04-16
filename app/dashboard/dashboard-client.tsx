@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { StatusBadge } from '@/components/status-badge'
-import { TrendingUp, CheckCircle, DollarSign, Users, Search, Zap, X, RotateCcw, Check, Loader2 } from 'lucide-react'
+import { TrendingUp, CheckCircle, DollarSign, Users, Search, Zap, X, RotateCcw, Check, Loader2, Sparkles } from 'lucide-react'
 
 interface Subscriber {
   id: string
@@ -60,12 +60,15 @@ export function DashboardClient({ changelog, isTrial, firstRecovery }: Dashboard
   const [bannerDismissed, setBannerDismissed] = useState(false)
   const [backfill, setBackfill] = useState<BackfillStatus | null>(null)
   const [backfillBannerDismissed, setBackfillBannerDismissed] = useState(false)
+  const [changelogNudgeDismissed, setChangelogNudgeDismissed] = useState(false)
 
   useEffect(() => {
     const dismissed = localStorage.getItem('winback_banner_dismissed')
     if (dismissed) setBannerDismissed(true)
     const bfDismissed = localStorage.getItem('winback_backfill_dismissed')
     if (bfDismissed) setBackfillBannerDismissed(true)
+    const clDismissed = localStorage.getItem('winback_changelog_nudge_dismissed')
+    if (clDismissed) setChangelogNudgeDismissed(true)
   }, [])
 
   // Poll backfill status while in progress
@@ -232,6 +235,40 @@ export function DashboardClient({ changelog, isTrial, firstRecovery }: Dashboard
               </button>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Changelog empty-state nudge */}
+      {!changelogText.trim() && subscribers.length > 0 && !changelogNudgeDismissed && (
+        <div className="bg-white border border-slate-200 rounded-2xl p-5 mb-6 flex items-start justify-between gap-4">
+          <div className="flex items-start gap-4">
+            <div className="bg-blue-50 rounded-full p-2 flex-shrink-0">
+              <Sparkles className="w-4 h-4 text-blue-600" />
+            </div>
+            <div>
+              <p className="text-sm font-medium text-slate-900">
+                Add what you&apos;ve shipped recently
+              </p>
+              <p className="text-sm text-slate-500 mt-1">
+                Winback uses your changelog to write win-back emails that reference the exact thing a subscriber asked for. Takes 30 seconds — one line per shipment.
+              </p>
+              <button
+                onClick={() => setChangelogOpen(true)}
+                className="mt-3 bg-[#0f172a] text-white rounded-full px-5 py-2 text-sm font-medium hover:bg-[#1e293b]"
+              >
+                Add what you&apos;ve shipped →
+              </button>
+            </div>
+          </div>
+          <button
+            onClick={() => {
+              setChangelogNudgeDismissed(true)
+              localStorage.setItem('winback_changelog_nudge_dismissed', 'true')
+            }}
+            className="text-slate-400 hover:text-slate-600 flex-shrink-0"
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
       )}
 
@@ -457,13 +494,44 @@ export function DashboardClient({ changelog, isTrial, firstRecovery }: Dashboard
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <div className="bg-white rounded-2xl border border-slate-100 shadow-xl p-8 w-full max-w-lg">
               <h2 className="text-xl font-bold text-slate-900 mb-2">Update changelog</h2>
-              <p className="text-sm text-slate-500 mb-4">Paste your latest improvements. Winback uses this to write specific win-back messages.</p>
+              <p className="text-sm text-slate-500 mb-4">What have you shipped recently? Winback uses this to write win-back emails that reference the exact things a cancelled subscriber asked for. Edit in place — add new lines on top, prune old ones as they become irrelevant.</p>
               <textarea
                 value={changelogText}
                 onChange={(e) => setChangelogText(e.target.value)}
-                placeholder="e.g.&#10;- Fixed the calendar sync bug&#10;- Added CSV export for all reports"
+                placeholder={`Examples:
+- Team workspaces — share with up to 5 people, $5/seat (Apr)
+- Fixed iOS share extension — images no longer drop
+- Offline mode — notes sync when you reconnect
+
+One line per shipment. Plain English. What customers would actually notice.`}
                 className="min-h-[200px] w-full border border-slate-200 rounded-2xl p-4 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
               />
+              {(() => {
+                const n = changelogText.length
+                const state: 'empty' | 'sparse' | 'good' | 'long' =
+                  n === 0 ? 'empty'
+                  : n < 200 ? 'sparse'
+                  : n <= 2000 ? 'good'
+                  : 'long'
+                const hint = {
+                  empty: '',
+                  sparse: 'A bit sparse — a few more lines will help',
+                  good: 'Looking good',
+                  long: 'Consider trimming older entries',
+                }[state]
+                const hintColor = {
+                  empty: 'text-slate-400',
+                  sparse: 'text-slate-400',
+                  good: 'text-green-600',
+                  long: 'text-amber-600',
+                }[state]
+                return (
+                  <div className="flex items-center justify-between mt-2 text-xs">
+                    <span className={hintColor}>{hint}</span>
+                    <span className="text-slate-400">{n.toLocaleString()} chars</span>
+                  </div>
+                )
+              })()}
               <div className="flex justify-end gap-3 mt-4">
                 <button
                   onClick={() => setChangelogOpen(false)}
