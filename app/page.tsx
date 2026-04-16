@@ -180,14 +180,14 @@ export default function LandingPage() {
               And when cards fail
             </div>
             <h2 className="text-3xl sm:text-4xl font-bold text-slate-900 mt-3">
-              Card recovery, on autopilot.
+              Failed payments, quietly recovered.
             </h2>
             <p className="text-base sm:text-lg text-slate-500 mt-5 max-w-2xl mx-auto leading-relaxed">
-              Involuntary churn is half the problem. When a subscriber&rsquo;s
-              card fails, Winback emails them a one-click link to update it
-              &mdash; before Stripe&rsquo;s retries run out. No AI needed here,
-              just friction removal. One Stripe connection, two kinds of lost
-              revenue, one dashboard.
+              Cards expire. Banks decline. Customers replace a stolen card and
+              forget to tell you. The moment a payment fails, Winback emails
+              the customer a one-click link to update it &mdash; before the
+              retry window closes and the subscription is gone. One short
+              email per failure, in the same dashboard as your cancellations.
             </p>
           </RevealOnScroll>
         </div>
