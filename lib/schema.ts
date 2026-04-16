@@ -20,10 +20,14 @@ export const customers = pgTable('wb_customers', {
   changelogText:      text('changelog_text'),
   onboardingComplete: boolean('onboarding_complete').default(false),
   plan:               text('plan').default('trial'),
-  pausedAt:           timestamp('paused_at'),
-  settlementPaidAt:   timestamp('settlement_paid_at'),
-  createdAt:          timestamp('created_at').defaultNow(),
-  updatedAt:          timestamp('updated_at').defaultNow(),
+  pausedAt:             timestamp('paused_at'),
+  settlementPaidAt:     timestamp('settlement_paid_at'),
+  backfillTotal:        integer('backfill_total').default(0),
+  backfillProcessed:    integer('backfill_processed').default(0),
+  backfillStartedAt:    timestamp('backfill_started_at'),
+  backfillCompletedAt:  timestamp('backfill_completed_at'),
+  createdAt:            timestamp('created_at').defaultNow(),
+  updatedAt:            timestamp('updated_at').defaultNow(),
 })
 
 export const churnedSubscribers = pgTable('wb_churned_subscribers', {
@@ -55,6 +59,7 @@ export const churnedSubscribers = pgTable('wb_churned_subscribers', {
   billingPortalClickedAt: timestamp('billing_portal_clicked_at'),
   paymentMethodAtFailure: text('payment_method_at_failure'),
   cancelledAt:          timestamp('cancelled_at'),
+  source:               text('source').notNull().default('webhook'),
   doNotContact:         boolean('do_not_contact').notNull().default(false),
   unsubscribedAt:       timestamp('unsubscribed_at'),
   createdAt:            timestamp('created_at').defaultNow(),

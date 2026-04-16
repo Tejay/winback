@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { StatusBadge } from '@/components/status-badge'
-import { TrendingUp, CheckCircle, DollarSign, Users, Search, Zap, X, RotateCcw, Check } from 'lucide-react'
+import { TrendingUp, CheckCircle, DollarSign, Users, Search, Zap, X, RotateCcw, Check, Loader2, Sparkles } from 'lucide-react'
 
 interface Subscriber {
   id: string
@@ -32,6 +32,17 @@ interface Stats {
   pending: number
 }
 
+interface BackfillStatus {
+  total: number
+  processed: number
+  complete: boolean
+  startedAt: string | null
+  completedAt: string | null
+  lostMrrCents: number
+  contacted: number
+  skipped: number
+}
+
 interface DashboardClientProps {
   changelog: string
   isTrial: boolean
@@ -47,10 +58,43 @@ export function DashboardClient({ changelog, isTrial, firstRecovery }: Dashboard
   const [changelogOpen, setChangelogOpen] = useState(false)
   const [changelogText, setChangelogText] = useState(changelog)
   const [bannerDismissed, setBannerDismissed] = useState(false)
+  const [backfill, setBackfill] = useState<BackfillStatus | null>(null)
+  const [backfillBannerDismissed, setBackfillBannerDismissed] = useState(false)
+  const [changelogNudgeDismissed, setChangelogNudgeDismissed] = useState(false)
 
   useEffect(() => {
     const dismissed = localStorage.getItem('winback_banner_dismissed')
     if (dismissed) setBannerDismissed(true)
+    const bfDismissed = localStorage.getItem('winback_backfill_dismissed')
+    if (bfDismissed) setBackfillBannerDismissed(true)
+    const clDismissed = localStorage.getItem('winback_changelog_nudge_dismissed')
+    if (clDismissed) setChangelogNudgeDismissed(true)
+  }, [])
+
+  // Poll backfill status while in progress
+  useEffect(() => {
+    let interval: ReturnType<typeof setInterval> | null = null
+
+    function pollBackfill() {
+      fetch('/api/backfill/status')
+        .then((r) => r.json())
+        .then((data: BackfillStatus) => {
+          setBackfill(data)
+          if (data.complete && interval) {
+            clearInterval(interval)
+            interval = null
+            // Refresh subscriber list when backfill finishes
+            fetchData()
+          }
+        })
+        .catch(() => {})
+    }
+
+    pollBackfill()
+    interval = setInterval(pollBackfill, 3000)
+
+    return () => { if (interval) clearInterval(interval) }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const fetchData = useCallback(() => {
@@ -83,7 +127,7 @@ export function DashboardClient({ changelog, isTrial, firstRecovery }: Dashboard
     fetchData()
   }
 
-  const filters = ['all', 'pending', 'contacted', 'recovered', 'lost']
+  const filters = ['all', 'pending', 'contacted', 'recovered', 'skipped', 'lost']
   const showBanner = isTrial && firstRecovery && !bannerDismissed
 
   return (
@@ -127,6 +171,102 @@ export function DashboardClient({ changelog, isTrial, firstRecovery }: Dashboard
             </div>
           </div>
           <button onClick={dismissBanner} className="text-slate-400 hover:text-slate-600">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
+      {/* Backfill banner */}
+      {backfill && backfill.startedAt && !backfillBannerDismissed && (
+        <div className="bg-white border border-slate-200 rounded-2xl p-5 mb-6">
+          {!backfill.complete ? (
+            <div className="flex items-start gap-4">
+              <div className="bg-blue-50 rounded-full p-2 flex-shrink-0">
+                <Loader2 className="w-4 h-4 text-blue-600 animate-spin" />
+              </div>
+              <div className="flex-1">
+                <p className="text-sm font-medium text-slate-900">
+                  Reviewing your cancellation history...
+                </p>
+                <p className="text-sm text-slate-500 mt-1">
+                  Found {backfill.total} cancelled subscriber{backfill.total !== 1 ? 's' : ''} so far.
+                  Winback is reviewing each one — we&apos;ll only reach out where it makes sense.
+                </p>
+                {backfill.total > 0 && (
+                  <div className="mt-3">
+                    <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-blue-500 rounded-full transition-all duration-500"
+                        style={{ width: `${Math.round((backfill.processed / backfill.total) * 100)}%` }}
+                      />
+                    </div>
+                    <div className="mt-1 text-xs text-slate-400">
+                      {backfill.processed} / {backfill.total} reviewed
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex items-start gap-4">
+                <div className="bg-green-50 rounded-full p-2 flex-shrink-0">
+                  <CheckCircle className="w-4 h-4 text-green-600" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-slate-900">
+                    We found {backfill.total} cancelled subscriber{backfill.total !== 1 ? 's' : ''} — £{Math.round(backfill.lostMrrCents / 100).toLocaleString()}/mo in lost revenue.
+                  </p>
+                  <p className="text-sm text-slate-500 mt-1">
+                    Winback contacted {backfill.contacted} where a recovery looked possible.
+                    {backfill.skipped > 0 && ` ${backfill.skipped} were too old or unlikely to convert.`}
+                    {' '}New cancellations will be recovered automatically from here.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setBackfillBannerDismissed(true)
+                  localStorage.setItem('winback_backfill_dismissed', 'true')
+                }}
+                className="text-slate-400 hover:text-slate-600 flex-shrink-0"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Changelog empty-state nudge */}
+      {!changelogText.trim() && subscribers.length > 0 && !changelogNudgeDismissed && (
+        <div className="bg-white border border-slate-200 rounded-2xl p-5 mb-6 flex items-start justify-between gap-4">
+          <div className="flex items-start gap-4">
+            <div className="bg-blue-50 rounded-full p-2 flex-shrink-0">
+              <Sparkles className="w-4 h-4 text-blue-600" />
+            </div>
+            <div>
+              <p className="text-sm font-medium text-slate-900">
+                Add what you&apos;ve shipped recently
+              </p>
+              <p className="text-sm text-slate-500 mt-1">
+                Winback uses your changelog to write win-back emails that reference the exact thing a subscriber asked for. Takes 30 seconds — one line per shipment.
+              </p>
+              <button
+                onClick={() => setChangelogOpen(true)}
+                className="mt-3 bg-[#0f172a] text-white rounded-full px-5 py-2 text-sm font-medium hover:bg-[#1e293b]"
+              >
+                Add what you&apos;ve shipped →
+              </button>
+            </div>
+          </div>
+          <button
+            onClick={() => {
+              setChangelogNudgeDismissed(true)
+              localStorage.setItem('winback_changelog_nudge_dismissed', 'true')
+            }}
+            className="text-slate-400 hover:text-slate-600 flex-shrink-0"
+          >
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -229,7 +369,7 @@ export function DashboardClient({ changelog, isTrial, firstRecovery }: Dashboard
                     : '—'}
                 </td>
                 <td className="py-4 px-4">
-                  <StatusBadge status={sub.status as 'pending' | 'contacted' | 'recovered' | 'lost'} />
+                  <StatusBadge status={sub.status as 'pending' | 'contacted' | 'recovered' | 'lost' | 'skipped'} />
                 </td>
                 <td className="text-sm font-medium text-slate-900 py-4 px-4 text-right">
                   ${(sub.mrrCents / 100).toFixed(2)}
@@ -264,7 +404,7 @@ export function DashboardClient({ changelog, isTrial, firstRecovery }: Dashboard
 
             <div className="px-6 py-4 flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <StatusBadge status={selected.status as 'pending' | 'contacted' | 'recovered' | 'lost'} />
+                <StatusBadge status={selected.status as 'pending' | 'contacted' | 'recovered' | 'lost' | 'skipped'} />
                 {selected.status === 'recovered' && selected.attributionType && (
                   <span className={`text-xs font-medium ${
                     selected.attributionType === 'strong'
@@ -354,13 +494,44 @@ export function DashboardClient({ changelog, isTrial, firstRecovery }: Dashboard
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <div className="bg-white rounded-2xl border border-slate-100 shadow-xl p-8 w-full max-w-lg">
               <h2 className="text-xl font-bold text-slate-900 mb-2">Update changelog</h2>
-              <p className="text-sm text-slate-500 mb-4">Paste your latest improvements. Winback uses this to write specific win-back messages.</p>
+              <p className="text-sm text-slate-500 mb-4">What have you shipped recently? Winback uses this to write win-back emails that reference the exact things a cancelled subscriber asked for. Edit in place — add new lines on top, prune old ones as they become irrelevant.</p>
               <textarea
                 value={changelogText}
                 onChange={(e) => setChangelogText(e.target.value)}
-                placeholder="e.g.&#10;- Fixed the calendar sync bug&#10;- Added CSV export for all reports"
+                placeholder={`Examples:
+- Team workspaces — share with up to 5 people, $5/seat (Apr)
+- Fixed iOS share extension — images no longer drop
+- Offline mode — notes sync when you reconnect
+
+One line per shipment. Plain English. What customers would actually notice.`}
                 className="min-h-[200px] w-full border border-slate-200 rounded-2xl p-4 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
               />
+              {(() => {
+                const n = changelogText.length
+                const state: 'empty' | 'sparse' | 'good' | 'long' =
+                  n === 0 ? 'empty'
+                  : n < 200 ? 'sparse'
+                  : n <= 2000 ? 'good'
+                  : 'long'
+                const hint = {
+                  empty: '',
+                  sparse: 'A bit sparse — a few more lines will help',
+                  good: 'Looking good',
+                  long: 'Consider trimming older entries',
+                }[state]
+                const hintColor = {
+                  empty: 'text-slate-400',
+                  sparse: 'text-slate-400',
+                  good: 'text-green-600',
+                  long: 'text-amber-600',
+                }[state]
+                return (
+                  <div className="flex items-center justify-between mt-2 text-xs">
+                    <span className={hintColor}>{hint}</span>
+                    <span className="text-slate-400">{n.toLocaleString()} chars</span>
+                  </div>
+                )
+              })()}
               <div className="flex justify-end gap-3 mt-4">
                 <button
                   onClick={() => setChangelogOpen(false)}

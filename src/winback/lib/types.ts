@@ -1,4 +1,4 @@
-export type SubscriberStatus = 'pending' | 'contacted' | 'recovered' | 'lost'
+export type SubscriberStatus = 'pending' | 'contacted' | 'recovered' | 'lost' | 'skipped'
 export type EmailType        = 'exit' | 'win_back' | 'followup'
 
 export interface SubscriberSignals {
@@ -42,5 +42,5 @@ export interface DashboardStats {
   recoveryRate:       number
   recovered:          number
   mrrRecoveredCents:  number
-  atRisk:             number
+  pending:            number
 }
