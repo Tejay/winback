@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { customers } from '@/lib/schema'
 import { eq } from 'drizzle-orm'
+import { logEvent } from '@/src/winback/lib/events'
 
 export async function GET() {
   const session = await auth()
@@ -34,6 +35,16 @@ export async function GET() {
     stripe_landing: 'login',
     state: customer.id,
     redirect_uri: `${process.env.NEXT_PUBLIC_APP_URL}/api/stripe/callback`,
+  })
+
+  // Log the redirect for the conversion funnel. This is the last server-side
+  // checkpoint before we hand off to Stripe's consent screen — if a user
+  // bounces at that screen we'll see it as a gap between this event and
+  // `oauth_completed` / `oauth_denied` at the callback.
+  await logEvent({
+    name: 'oauth_redirect',
+    customerId: customer.id,
+    userId: session.user.id,
   })
 
   return NextResponse.redirect(

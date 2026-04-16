@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, integer, boolean, decimal, timestamp } from 'drizzle-orm/pg-core'
+import { pgTable, uuid, text, integer, boolean, decimal, timestamp, jsonb, index } from 'drizzle-orm/pg-core'
 
 export const users = pgTable('wb_users', {
   id:           uuid('id').primaryKey().defaultRandom(),
@@ -96,6 +96,21 @@ export const settlementRequests = pgTable('wb_settlement_requests', {
   stripeSessionId:  text('stripe_session_id'),
   notes:            text('notes'),
 })
+
+// First-party events table for conversion funnels. See migration 010 and
+// src/winback/lib/events.ts for the logEvent helper. Properties is a free-form
+// jsonb blob (error type, stripe account id, etc.) — keep it small.
+export const wbEvents = pgTable('wb_events', {
+  id:         uuid('id').primaryKey().defaultRandom(),
+  customerId: uuid('customer_id').references(() => customers.id, { onDelete: 'cascade' }),
+  userId:     uuid('user_id').references(() => users.id, { onDelete: 'set null' }),
+  name:       text('name').notNull(),
+  properties: jsonb('properties').$type<Record<string, unknown>>().notNull().default({}),
+  createdAt:  timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  nameCreatedIdx:     index('wb_events_name_created_idx').on(t.name, t.createdAt),
+  customerCreatedIdx: index('wb_events_customer_created_idx').on(t.customerId, t.createdAt),
+}))
 
 export const recoveries = pgTable('wb_recoveries', {
   id:                uuid('id').primaryKey().defaultRandom(),
