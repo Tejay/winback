@@ -4,7 +4,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { customers, churnedSubscribers, emailsSent } from '@/lib/schema'
-import { eq, and, isNotNull, inArray, sql } from 'drizzle-orm'
+import { eq, and, isNotNull, isNull, inArray, sql } from 'drizzle-orm'
 import { sendEmail } from '@/src/winback/lib/email'
 
 const changelogSchema = z.object({
@@ -95,6 +95,7 @@ export async function POST(req: Request) {
         eq(churnedSubscribers.doNotContact, false),
         isNotNull(churnedSubscribers.triggerKeyword),
         isNotNull(churnedSubscribers.winBackBody),
+        isNull(churnedSubscribers.reengagementSentAt),
         sql`${content} ILIKE '%' || ${churnedSubscribers.triggerKeyword} || '%'`
       )
     )

@@ -60,7 +60,7 @@ describe('classifySubscriber', () => {
       suppress: false,
       firstMessage: { subject: 's', body: 'b', sendDelaySecs: 60 },
       triggerKeyword: null,
-      fallbackDays: 90,
+
       winBackSubject: 'w',
       winBackBody: 'b',
     })
@@ -81,7 +81,7 @@ describe('classifySubscriber', () => {
       suppress: false,
       firstMessage: { subject: 'About the API speed', body: 'We heard you...', sendDelaySecs: 60 },
       triggerKeyword: 'api speed',
-      fallbackDays: 90,
+
       winBackSubject: 'API just got faster',
       winBackBody: 'We rebuilt the API...',
     })
@@ -97,7 +97,7 @@ describe('classifySubscriber', () => {
       tier: 3, tierReason: 't', cancellationReason: 'r', cancellationCategory: 'Other',
       confidence: 0.5, suppress: false,
       firstMessage: { subject: 's', body: 'b', sendDelaySecs: 60 },
-      triggerKeyword: null, fallbackDays: 90, winBackSubject: 'w', winBackBody: 'b',
+      triggerKeyword: null, winBackSubject: 'w', winBackBody: 'b',
     })
     await classifySubscriber(signals, {})
     const userPrompt = mockCreate.mock.calls[0][0].messages[0].content as string
@@ -110,7 +110,7 @@ describe('classifySubscriber', () => {
       tier: 1, tierReason: 't', cancellationReason: 'r', cancellationCategory: 'Other',
       confidence: 0.8, suppress: false,
       firstMessage: { subject: 's', body: 'b', sendDelaySecs: 60 },
-      triggerKeyword: null, fallbackDays: 90, winBackSubject: 'w', winBackBody: 'b',
+      triggerKeyword: null, winBackSubject: 'w', winBackBody: 'b',
     })
     await classifySubscriber(signals, {})
     const userPrompt = mockCreate.mock.calls[0][0].messages[0].content as string
@@ -123,7 +123,7 @@ describe('classifySubscriber', () => {
       tier: 1, tierReason: 't', cancellationReason: 'r', cancellationCategory: 'Other',
       confidence: 0.9, suppress: false,
       firstMessage: { subject: 's', body: 'b', sendDelaySecs: 60 },
-      triggerKeyword: null, fallbackDays: 90, winBackSubject: 'w', winBackBody: 'b',
+      triggerKeyword: null, winBackSubject: 'w', winBackBody: 'b',
     })
     await classifySubscriber(signals, {})
     const systemPrompt = mockCreate.mock.calls[0][0].system as string
@@ -149,7 +149,7 @@ describe('classifySubscriber', () => {
         sendDelaySecs: 60,
       },
       triggerKeyword: 'zapier',
-      fallbackDays: 90,
+
       winBackSubject: 'We just shipped Zapier integration',
       winBackBody: 'Hi Test User,\n\nRemember when you mentioned needing Zapier?...',
     })
@@ -179,7 +179,7 @@ describe('classifySubscriber', () => {
         sendDelaySecs: 60,
       },
       triggerKeyword: 'csv export',
-      fallbackDays: 90,
+
       winBackSubject: 'CSV export just got a major upgrade',
       winBackBody: 'Hi Test User,\n\nWe rebuilt CSV export from scratch...',
     })
@@ -210,7 +210,6 @@ describe('classifySubscriber', () => {
         sendDelaySecs: 60,
       },
       triggerKeyword: null,
-      fallbackDays: 30,
       winBackSubject: 'New pricing that might work better',
       winBackBody: 'Hi Test User,\n\nWe recently adjusted our pricing...',
     })
@@ -244,7 +243,6 @@ describe('classifySubscriber', () => {
         sendDelaySecs: 60,
       },
       triggerKeyword: null,
-      fallbackDays: 180,
       winBackSubject: 'A lot has changed since you left',
       winBackBody: 'Hi Test User,\n\nWe have been busy shipping improvements...',
     })
@@ -277,7 +275,6 @@ describe('classifySubscriber', () => {
         sendDelaySecs: 0,
       },
       triggerKeyword: null,
-      fallbackDays: 180,
       winBackSubject: '',
       winBackBody: '',
     })

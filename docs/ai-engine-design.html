@@ -101,8 +101,8 @@
 <div class="summary">
   <div class="summary-card">
     <div class="label">Working</div>
-    <div class="value green">8</div>
-    <div class="sub">Classifier, signals, email gen, changelog keywords, tier suppression, reply text, reply response, portal click signal</div>
+    <div class="value green">9</div>
+    <div class="sub">Classifier, signals, email gen, changelog keywords, tier suppression, reply text, reply response (2-max + founder handoff), portal click signal, time decay (90-day backstop)</div>
   </div>
   <div class="summary-card">
     <div class="label">Broken</div>
@@ -111,8 +111,8 @@
   </div>
   <div class="summary-card">
     <div class="label">Missing</div>
-    <div class="value amber">4</div>
-    <div class="sub">Outcome tracking, cohort learning, semantic matching, adaptive cadence</div>
+    <div class="value amber">3</div>
+    <div class="sub">Outcome tracking, cohort learning, semantic matching</div>
   </div>
   <div class="summary-card">
     <div class="label">Total nodes</div>
@@ -187,12 +187,20 @@
 
       <div class="node signal" onclick="toggle(this)">
         <div class="node-title"><span class="node-icon">&#128336;</span> Time Decay</div>
-        <div class="node-subtitle">Scheduled re-engagement after fallbackDays</div>
-        <div class="node-status missing">&#9679; Missing &mdash; fallbackDays written but never read</div>
+        <div class="node-subtitle">90-day backstop re-engagement for passive churners</div>
+        <div class="node-status working">&#10003; Working (spec 16)</div>
         <div class="detail">
-          <strong>What the classifier outputs:</strong> <code>fallbackDays: 30 | 90 | 180</code><br>
-          <strong>What happens today:</strong> The value is returned by the LLM but there is no cron job or scheduler that reads it and triggers a re-engagement email at that interval.<br>
-          <strong>To build:</strong> A cron job that queries subscribers where <code>cancelledAt + fallbackDays &lt; now()</code> and status is still <code>'pending'</code>, then re-evaluates.
+          <strong>File:</strong> <code>app/api/cron/reengagement/route.ts</code><br>
+          <strong>How it works:</strong> Fixed 90-day backstop (not LLM-picked). Daily cron at 09:00 UTC finds subscribers where <code>cancelledAt + 90 days &le; now()</code> and status is <code>'contacted'</code>.<br>
+          <strong>What it does:</strong>
+          <ul>
+            <li>Re-classifies with fresh context (current changelog, elapsed time)</li>
+            <li>If AI says contact &rarr; sends re-engagement email via Resend</li>
+            <li>If AI says suppress &rarr; marks done, no email</li>
+            <li>Max 1 re-engagement per subscriber</li>
+            <li>Skips if changelog already triggered a win-back email</li>
+          </ul>
+          <strong>Design choice:</strong> Single fixed interval, not LLM-driven 30/90/180. We can't predict passive subscriber receptivity &mdash; this is a "one last try" backstop.
         </div>
       </div>
 
@@ -247,7 +255,7 @@
             <li><code>confidence</code>: 0&ndash;1</li>
             <li><code>suppress</code>: boolean (Tier 4 = true)</li>
           </ul>
-          <strong>Model:</strong> <code>claude-haiku-4-5-20251001</code>, temp 0, max 1500 tokens, zero-retention header.<br>
+          <strong>Model:</strong> <code>claude-haiku-4-5-20251001</code>, temp 0, max 1500 tokens. Zero-data-retention is an org-level setting (the deprecated <code>anthropic-beta: zero-retention</code> header was removed).<br>
           <strong>Zod-validated output.</strong> Throws on parse failure &mdash; caller catches.
         </div>
       </div>
@@ -310,7 +318,7 @@
       <div class="node action" onclick="toggle(this)">
         <div class="node-title"><span class="node-icon">&#128172;</span> Send Reply Response</div>
         <div class="node-subtitle">When subscriber replies, send a follow-up that addresses what they said</div>
-        <div class="node-status working">&#10003; Fixed (spec 15) &mdash; sendReplyEmail() sends threaded follow-up</div>
+        <div class="node-status working">&#10003; Fixed (spec 15) &mdash; threaded follow-up with guardrails</div>
         <div class="detail">
           <strong>What happens now:</strong>
           <ul>
@@ -318,6 +326,12 @@
             <li><code>sendReplyEmail()</code> sends it as a threaded follow-up using <code>In-Reply-To</code> / <code>References</code> headers</li>
             <li>Respects DNC + customer-paused + Tier 4 suppress checks</li>
             <li>Recorded as type <code>'followup'</code> in <code>emailsSent</code></li>
+            <li>Reactivation link + unsubscribe link appended to every follow-up</li>
+          </ul>
+          <strong>Guardrails:</strong>
+          <ul>
+            <li><strong>Max 2 follow-ups per subscriber</strong> (<code>MAX_FOLLOWUPS = 2</code>). After that, AI stops replying.</li>
+            <li>When the limit is hit, the <strong>founder is notified by email</strong> with the subscriber's details and latest reply &mdash; "this one needs your personal touch."</li>
           </ul>
           <strong>File:</strong> <code>src/winback/lib/email.ts</code> &rarr; <code>sendReplyEmail()</code>
         </div>
@@ -367,7 +381,7 @@
     </div>
 
     <div class="loop-detail" id="ld1">
-      <strong>Status: Working.</strong> <code>emailsSent</code> table records every email with type (<code>exit</code> / <code>dunning</code> / <code>win_back</code>), subject, and timestamp.
+      <strong>Status: Working.</strong> <code>emailsSent</code> table records every email with type (<code>exit</code> / <code>followup</code> / <code>dunning</code> / <code>win_back</code>), subject, and timestamp. Follow-up count is tracked per subscriber (max 2 before founder handoff).
     </div>
     <div class="loop-detail" id="ld2">
       <strong>Status: Partially working.</strong> Replies update <code>repliedAt</code>. Portal clicks tracked via <code>billingPortalClickedAt</code>. Recovery tracked in <code>recoveries</code> table. But <strong>unsubscribes, email opens, and link clicks are not tracked.</strong>
@@ -407,10 +421,10 @@
           </tr>
           <tr style="border-bottom:1px solid #f8fafc;">
             <td style="padding:8px 12px; font-weight:600; color:#16a34a;">&#10003;</td>
-            <td style="padding:8px 12px;"><strong style="text-decoration: line-through;">Send the re-classified email after a reply</strong> <span style="background:#dcfce7; color:#166534; font-size:10px; font-weight:600; padding:1px 6px; border-radius:99px;">DONE</span><br><span style="color:#64748b; font-size:11px;">sendReplyEmail() with In-Reply-To threading</span></td>
+            <td style="padding:8px 12px;"><strong style="text-decoration: line-through;">Send the re-classified email after a reply</strong> <span style="background:#dcfce7; color:#166534; font-size:10px; font-weight:600; padding:1px 6px; border-radius:99px;">DONE</span><br><span style="color:#64748b; font-size:11px;">sendReplyEmail() with In-Reply-To threading, 2-max follow-up limit, founder notification, reactivation link</span></td>
             <td style="padding:8px 12px; color:#16a34a;">Small</td>
             <td style="padding:8px 12px; color:#16a34a;">Fixed</td>
-            <td style="padding:8px 12px; font-size:12px; color:#64748b;">"Tunes the next move" &mdash; the conversation actually happens</td>
+            <td style="padding:8px 12px; font-size:12px; color:#64748b;">"Tunes the next move" &mdash; the conversation actually happens (with guardrails)</td>
           </tr>
           <tr style="border-bottom:1px solid #f8fafc;">
             <td style="padding:8px 12px; font-weight:600; color:#d97706;">3</td>
@@ -427,11 +441,11 @@
             <td style="padding:8px 12px; font-size:12px; color:#64748b;">Honest dashboard &mdash; know which recoveries we actually caused</td>
           </tr>
           <tr style="border-bottom:1px solid #f8fafc;">
-            <td style="padding:8px 12px; font-weight:600; color:#2563eb;">5</td>
-            <td style="padding:8px 12px;"><strong>Implement fallbackDays re-engagement cron</strong><br><span style="color:#64748b; font-size:11px;">New cron job that reads the LLM's fallback window</span></td>
-            <td style="padding:8px 12px; color:#d97706;">Medium</td>
-            <td style="padding:8px 12px; color:#d97706;">High</td>
-            <td style="padding:8px 12px; font-size:12px; color:#64748b;">Time-based re-engagement actually works</td>
+            <td style="padding:8px 12px; font-weight:600; color:#16a34a;">&#10003;</td>
+            <td style="padding:8px 12px;"><strong style="text-decoration: line-through;">Implement time-decay re-engagement cron</strong> <span style="background:#dcfce7; color:#166534; font-size:10px; font-weight:600; padding:1px 6px; border-radius:99px;">DONE</span><br><span style="color:#64748b; font-size:11px;">Fixed 90-day backstop cron, smart backfill (skip LLM for silent churn), 7-day email cutoff for historical data</span></td>
+            <td style="padding:8px 12px; color:#16a34a;">Medium</td>
+            <td style="padding:8px 12px; color:#16a34a;">Fixed</td>
+            <td style="padding:8px 12px; font-size:12px; color:#64748b;">Time-based re-engagement works &mdash; plus smarter first-connect handling</td>
           </tr>
           <tr style="border-bottom:1px solid #f8fafc;">
             <td style="padding:8px 12px; font-weight:600; color:#2563eb;">6</td>

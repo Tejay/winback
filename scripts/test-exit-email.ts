@@ -41,7 +41,6 @@ async function main() {
       sendDelaySecs: 0,
     },
     triggerKeyword: null,
-    fallbackDays: 90,
     winBackSubject: '',
     winBackBody: '',
   }

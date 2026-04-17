@@ -129,6 +129,7 @@ async function processChurn(event: Stripe.Event) {
       winBackSubject: classification.winBackSubject,
       winBackBody: classification.winBackBody,
       status: classification.suppress ? 'lost' : 'pending',
+      fallbackDays: 90,
       cancelledAt: signals.cancelledAt,
     })
     .returning({ id: churnedSubscribers.id })

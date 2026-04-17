@@ -41,7 +41,6 @@ const ClassificationSchema = z.object({
     sendDelaySecs: z.number().default(60),
   }).nullable().default(null),
   triggerKeyword: z.string().nullable().default(null),
-  fallbackDays:   z.union([z.literal(30), z.literal(90), z.literal(180)]).default(90),
   winBackSubject: z.string().default(''),
   winBackBody:    z.string().default(''),
 })

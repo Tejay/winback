@@ -170,7 +170,6 @@ describe('scheduleExitEmail', () => {
     suppress: false,
     firstMessage: { subject: 'S', body: 'B', sendDelaySecs: 60 },
     triggerKeyword: null,
-    fallbackDays: 90,
     winBackSubject: 'W',
     winBackBody: 'B',
   }
