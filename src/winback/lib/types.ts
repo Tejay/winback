@@ -1,5 +1,5 @@
 export type SubscriberStatus = 'pending' | 'contacted' | 'recovered' | 'lost' | 'skipped'
-export type EmailType        = 'exit' | 'win_back' | 'followup'
+export type EmailType        = 'exit' | 'win_back' | 'followup' | 'reengagement'
 
 export interface SubscriberSignals {
   stripeCustomerId:     string
@@ -35,7 +35,6 @@ export interface ClassificationResult {
     sendDelaySecs:  number
   } | null
   triggerKeyword:  string | null
-  fallbackDays:    30 | 90 | 180
   winBackSubject:  string
   winBackBody:     string
 }

@@ -62,6 +62,9 @@ export const churnedSubscribers = pgTable('wb_churned_subscribers', {
   source:               text('source').notNull().default('webhook'),
   doNotContact:         boolean('do_not_contact').notNull().default(false),
   unsubscribedAt:       timestamp('unsubscribed_at'),
+  fallbackDays:         integer('fallback_days').default(90),
+  reengagementSentAt:   timestamp('reengagement_sent_at'),
+  reengagementCount:    integer('reengagement_count').notNull().default(0),
   createdAt:            timestamp('created_at').defaultNow(),
   updatedAt:            timestamp('updated_at').defaultNow(),
 })
