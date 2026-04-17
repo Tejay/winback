@@ -16,6 +16,8 @@ export interface SubscriberSignals {
   previousSubs:         number
   stripeEnum:           string | null
   stripeComment:        string | null
+  replyText?:           string | null
+  billingPortalClicked?: boolean
   cancelledAt:          Date
 }
 

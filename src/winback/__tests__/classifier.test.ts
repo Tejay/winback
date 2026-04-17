@@ -49,7 +49,7 @@ describe('classifySubscriber', () => {
     process.env.ANTHROPIC_API_KEY = 'sk-test-key'
   })
 
-  it('sets anthropic-beta: zero-retention header on the client', async () => {
+  it('creates the Anthropic client with an API key', async () => {
     const signals = makeSignals()
     mockLLMResponse({
       tier: 3,
@@ -66,8 +66,69 @@ describe('classifySubscriber', () => {
     })
     await classifySubscriber(signals, {})
     expect(mockCtor).toHaveBeenCalled()
-    const opts = mockCtor.mock.calls[0][0] as { defaultHeaders?: Record<string, string> }
-    expect(opts.defaultHeaders?.['anthropic-beta']).toBe('zero-retention')
+    const opts = mockCtor.mock.calls[0][0] as { apiKey?: string }
+    expect(opts.apiKey).toBe('sk-test-key')
+  })
+
+  it('includes reply_text in prompt when provided', async () => {
+    const signals = makeSignals({ replyText: 'I left because the API was too slow' })
+    mockLLMResponse({
+      tier: 1,
+      tierReason: 'Reply with explicit reason',
+      cancellationReason: 'API too slow',
+      cancellationCategory: 'Quality',
+      confidence: 0.95,
+      suppress: false,
+      firstMessage: { subject: 'About the API speed', body: 'We heard you...', sendDelaySecs: 60 },
+      triggerKeyword: 'api speed',
+      fallbackDays: 90,
+      winBackSubject: 'API just got faster',
+      winBackBody: 'We rebuilt the API...',
+    })
+    await classifySubscriber(signals, {})
+    const userPrompt = mockCreate.mock.calls[0][0].messages[0].content as string
+    expect(userPrompt).toContain('reply_text: I left because the API was too slow')
+    expect(userPrompt).not.toContain('reply_text: not_provided')
+  })
+
+  it('defaults reply_text to not_provided when absent', async () => {
+    const signals = makeSignals()
+    mockLLMResponse({
+      tier: 3, tierReason: 't', cancellationReason: 'r', cancellationCategory: 'Other',
+      confidence: 0.5, suppress: false,
+      firstMessage: { subject: 's', body: 'b', sendDelaySecs: 60 },
+      triggerKeyword: null, fallbackDays: 90, winBackSubject: 'w', winBackBody: 'b',
+    })
+    await classifySubscriber(signals, {})
+    const userPrompt = mockCreate.mock.calls[0][0].messages[0].content as string
+    expect(userPrompt).toContain('reply_text: not_provided')
+  })
+
+  it('includes billing_portal_clicked in prompt', async () => {
+    const signals = makeSignals({ billingPortalClicked: true })
+    mockLLMResponse({
+      tier: 1, tierReason: 't', cancellationReason: 'r', cancellationCategory: 'Other',
+      confidence: 0.8, suppress: false,
+      firstMessage: { subject: 's', body: 'b', sendDelaySecs: 60 },
+      triggerKeyword: null, fallbackDays: 90, winBackSubject: 'w', winBackBody: 'b',
+    })
+    await classifySubscriber(signals, {})
+    const userPrompt = mockCreate.mock.calls[0][0].messages[0].content as string
+    expect(userPrompt).toContain('billing_portal_clicked: true')
+  })
+
+  it('includes re-classification rules in system prompt when reply_text present', async () => {
+    const signals = makeSignals({ replyText: 'Some reply' })
+    mockLLMResponse({
+      tier: 1, tierReason: 't', cancellationReason: 'r', cancellationCategory: 'Other',
+      confidence: 0.9, suppress: false,
+      firstMessage: { subject: 's', body: 'b', sendDelaySecs: 60 },
+      triggerKeyword: null, fallbackDays: 90, winBackSubject: 'w', winBackBody: 'b',
+    })
+    await classifySubscriber(signals, {})
+    const systemPrompt = mockCreate.mock.calls[0][0].system as string
+    expect(systemPrompt).toContain('RE-CLASSIFICATION')
+    expect(systemPrompt).toContain('highest-signal input')
   })
 
   it('Scenario A — Tier 1, feature complaint in stripe_comment', async () => {

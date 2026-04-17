@@ -15,13 +15,16 @@ function getClient() {
       const path = require('path')
       const envFile = fs.readFileSync(path.join(process.cwd(), '.env.local'), 'utf8')
       const match = envFile.match(/^ANTHROPIC_API_KEY="?([^"\n]+)"?$/m)
-      if (match?.[1]) return new Anthropic({ apiKey: match[1], defaultHeaders: { 'anthropic-beta': 'zero-retention' } })
+      // Zero-retention is now the default for Anthropic API usage (no training on API data).
+      // The 'anthropic-beta: zero-retention' header was deprecated — verify your org settings
+      // at console.anthropic.com to confirm zero-data-retention is enabled at the org level.
+      if (match?.[1]) return new Anthropic({ apiKey: match[1] })
     } catch {}
 
     throw new Error('ANTHROPIC_API_KEY is not set or empty')
   }
 
-  return new Anthropic({ apiKey: key, defaultHeaders: { 'anthropic-beta': 'zero-retention' } })
+  return new Anthropic({ apiKey: key })
 }
 
 const ClassificationSchema = z.object({
@@ -60,6 +63,15 @@ RULES:
 - cancellationCategory: exactly one of: Competitor|Price|Quality|Unused|Feature|Other
 - For Tier 2 and Tier 3, always end firstMessage.body with a single genuine question asking why they left. Keep it to one sentence. Frame it as curiosity, not a survey. Good example: "Would you mind sharing what happened? Hit reply — one line is enough." Bad example: "Please complete our exit survey." Do NOT add this question to Tier 1 — they already told you why they left.
 - Return ONLY valid JSON with no preamble and no markdown code fences
+
+RE-CLASSIFICATION (when reply_text is present):
+- When reply_text is provided, this is a RE-CLASSIFICATION. The subscriber replied to our earlier email.
+  Read their reply carefully — it is the highest-signal input. Re-assess tier, reason, and generate a
+  new firstMessage that directly responds to what they said. The new firstMessage will be sent as a
+  follow-up in the same email thread.
+- When billing_portal_clicked is true, the subscriber clicked the reactivation link but did not complete.
+  This indicates high intent blocked by friction. Factor this into your tier and message — a gentle
+  follow-up addressing potential friction is appropriate.
 
 CANCELLATION AGE (check cancelled_at):
 - Recent (< 14 days): treat as fresh — standard win-back approach
@@ -142,7 +154,8 @@ SUBSCRIBER SIGNALS:
 - previous_subs: ${signals.previousSubs}
 - stripe_enum: ${signals.stripeEnum ?? 'not_provided'}
 - stripe_comment: ${signals.stripeComment ?? 'not_provided'}
-- reply_text: not_provided
+- reply_text: ${signals.replyText ?? 'not_provided'}
+- billing_portal_clicked: ${signals.billingPortalClicked ?? false}
 - cancelled_at: ${signals.cancelledAt.toISOString()}
 
 BUSINESS CONTEXT:
