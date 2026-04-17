@@ -1,9 +1,12 @@
 import { Resend } from 'resend'
 import { db } from '@/lib/db'
 import { emailsSent, churnedSubscribers, customers } from '@/lib/schema'
-import { eq } from 'drizzle-orm'
+import { eq, and, count } from 'drizzle-orm'
 import { ClassificationResult } from './types'
 import { generateUnsubscribeToken } from './unsubscribe-token'
+
+/** Maximum follow-up emails per subscriber. After this, flag for founder. */
+const MAX_FOLLOWUPS = 2
 
 function getResendClient() {
   const key = process.env.RESEND_API_KEY
@@ -144,6 +147,140 @@ export async function scheduleExitEmail(params: {
     .update(churnedSubscribers)
     .set({ status: 'contacted', updatedAt: new Date() })
     .where(eq(churnedSubscribers.id, subscriberId))
+}
+
+/**
+ * Send a follow-up email in the same thread after re-classification.
+ * Uses In-Reply-To / References headers so email clients thread it.
+ * Respects DNC, customer-paused, and max follow-up limits.
+ *
+ * Returns `{ sent: true }` if email was sent, `{ sent: false, reason }` otherwise.
+ * When the follow-up limit is reached, notifies the founder via email.
+ */
+export async function sendReplyEmail(params: {
+  subscriberId: string
+  email: string
+  classification: ClassificationResult
+  fromName: string
+  founderEmail?: string
+}): Promise<{ sent: boolean; reason?: string }> {
+  const { subscriberId, email, classification, fromName, founderEmail } = params
+
+  if (!classification.firstMessage) {
+    console.log('No firstMessage after re-classification, skipping reply email')
+    return { sent: false, reason: 'no_first_message' }
+  }
+
+  if (classification.tier === 4) {
+    console.log('Tier 4 on re-classification, suppressing reply email:', subscriberId)
+    return { sent: false, reason: 'tier_4_suppress' }
+  }
+
+  if (await isDoNotContact(subscriberId)) {
+    console.log('Skipping reply email — subscriber unsubscribed:', subscriberId)
+    return { sent: false, reason: 'do_not_contact' }
+  }
+
+  if (await isCustomerPausedForSubscriber(subscriberId)) {
+    console.log('Skipping reply email — customer has paused sending:', subscriberId)
+    return { sent: false, reason: 'customer_paused' }
+  }
+
+  // Check follow-up limit — max 2 per subscriber
+  const [followupCount] = await db
+    .select({ total: count() })
+    .from(emailsSent)
+    .where(
+      and(
+        eq(emailsSent.subscriberId, subscriberId),
+        eq(emailsSent.type, 'followup'),
+      )
+    )
+
+  if ((followupCount?.total ?? 0) >= MAX_FOLLOWUPS) {
+    console.log(`Follow-up limit reached (${MAX_FOLLOWUPS}) for subscriber:`, subscriberId, '— flagging for founder')
+
+    // Notify the founder that this subscriber needs personal attention
+    if (founderEmail) {
+      try {
+        const resend = getResendClient()
+        await resend.emails.send({
+          from: `Winback <noreply@winbackflow.co>`,
+          to: founderEmail,
+          subject: `[Winback] ${email} needs your attention`,
+          text: `A subscriber has replied ${MAX_FOLLOWUPS}+ times and the AI follow-up limit has been reached.
+
+Subscriber: ${email}
+Their latest reply: "${classification.firstMessage.body.slice(0, 200)}..."
+
+The AI generated a response but didn't send it. This one needs your personal touch — reply to them directly.
+
+You can see the full thread in your Resend dashboard or your inbox.`,
+        })
+        console.log('Flagged subscriber to founder:', founderEmail)
+      } catch (notifyErr) {
+        console.error('Failed to notify founder:', notifyErr)
+      }
+    }
+
+    return { sent: false, reason: 'followup_limit_reached' }
+  }
+
+  // Look up the original email to thread the reply
+  const [originalEmail] = await db
+    .select({ messageId: emailsSent.gmailMessageId })
+    .from(emailsSent)
+    .where(eq(emailsSent.subscriberId, subscriberId))
+    .orderBy(emailsSent.sentAt)
+    .limit(1)
+
+  const { subject, body } = classification.firstMessage
+  const resend = getResendClient()
+
+  const from = `${fromName} <reply+${subscriberId}@winbackflow.co>`
+  const reactivationLink = `${process.env.NEXT_PUBLIC_APP_URL}/api/reactivate/${subscriberId}`
+  const unsubLink = unsubscribeUrl(subscriberId)
+  const fullBody = `${body}
+
+Ready to give us another try? Resubscribe here:
+${reactivationLink}
+
+— ${fromName}
+
+— — —
+If you'd rather not hear from us, unsubscribe: ${unsubLink}`
+
+  // Thread headers — if we have the original message ID, use it
+  const headers: Record<string, string> = {
+    ...listUnsubscribeHeaders(subscriberId),
+  }
+  if (originalEmail?.messageId) {
+    headers['In-Reply-To'] = `<${originalEmail.messageId}>`
+    headers['References'] = `<${originalEmail.messageId}>`
+  }
+
+  const res = await resend.emails.send({
+    from,
+    to: email,
+    subject: subject.startsWith('Re:') ? subject : `Re: ${subject}`,
+    text: fullBody,
+    headers,
+  })
+
+  if (res.error) {
+    throw new Error(`Resend error: ${res.error.message}`)
+  }
+
+  await db.insert(emailsSent).values({
+    subscriberId,
+    gmailMessageId: res.data?.id ?? '',
+    gmailThreadId: originalEmail?.messageId ?? null,
+    type: 'followup',
+    subject,
+  })
+
+  console.log('Sent follow-up reply email to subscriber:', subscriberId)
+  return { sent: true }
 }
 
 export async function sendDunningEmail(params: {

@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Winback AI Engine — Design Map</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f8fafc; color: #0f172a; }
+
+  .header { padding: 24px 32px; background: #fff; border-bottom: 1px solid #e2e8f0; }
+  .header h1 { font-size: 22px; font-weight: 700; }
+  .header p { font-size: 13px; color: #64748b; margin-top: 4px; }
+
+  .legend { display: flex; gap: 20px; padding: 16px 32px; background: #fff; border-bottom: 1px solid #e2e8f0; flex-wrap: wrap; }
+  .legend-item { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #64748b; }
+  .legend-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+  .legend-dot.signal { background: #3b82f6; }
+  .legend-dot.ai { background: #7c3aed; }
+  .legend-dot.action { background: #059669; }
+  .legend-dot.feedback { background: #d97706; }
+  .legend-dot.broken { background: #ef4444; }
+  .legend-dot.working { background: #22c55e; }
+
+  .canvas { padding: 32px; overflow-x: auto; }
+
+  /* Flow container */
+  .flow { display: flex; gap: 24px; min-width: 1100px; align-items: flex-start; }
+  .column { flex: 1; min-width: 0; }
+  .column-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #94a3b8; margin-bottom: 12px; padding-left: 4px; }
+
+  /* Nodes */
+  .node { background: #fff; border: 1.5px solid #e2e8f0; border-radius: 12px; padding: 16px; margin-bottom: 12px; cursor: pointer; transition: all 0.2s; position: relative; }
+  .node:hover { border-color: #94a3b8; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+  .node.active { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59,130,246,0.1); }
+  .node.signal { border-left: 4px solid #3b82f6; }
+  .node.ai { border-left: 4px solid #7c3aed; }
+  .node.action { border-left: 4px solid #059669; }
+  .node.feedback { border-left: 4px solid #d97706; }
+
+  .node-title { font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+  .node-subtitle { font-size: 12px; color: #64748b; margin-top: 4px; line-height: 1.5; }
+  .node-status { display: inline-flex; align-items: center; gap: 4px; font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: 99px; margin-top: 8px; }
+  .node-status.working { background: #dcfce7; color: #166534; }
+  .node-status.broken { background: #fef2f2; color: #991b1b; }
+  .node-status.missing { background: #fefce8; color: #854d0e; }
+  .node-status.planned { background: #f0f9ff; color: #1e40af; }
+
+  .node-icon { font-size: 18px; }
+
+  /* Detail panel */
+  .detail { display: none; margin-top: 12px; padding-top: 12px; border-top: 1px solid #f1f5f9; font-size: 12px; line-height: 1.7; color: #475569; }
+  .node.active .detail { display: block; }
+  .detail code { background: #f1f5f9; padding: 1px 5px; border-radius: 4px; font-size: 11px; font-family: 'SF Mono', Monaco, Consolas, monospace; color: #6366f1; }
+  .detail strong { color: #0f172a; font-weight: 600; }
+  .detail ul { padding-left: 16px; margin-top: 4px; }
+  .detail li { margin-bottom: 2px; }
+
+  /* Arrows between columns */
+  .arrow-col { display: flex; flex-direction: column; justify-content: center; align-items: center; width: 40px; flex-shrink: 0; padding-top: 30px; }
+  .arrow { color: #cbd5e1; font-size: 24px; margin: 8px 0; }
+  .arrow-label { font-size: 9px; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.05em; writing-mode: vertical-rl; text-orientation: mixed; }
+
+  /* Feedback loop visual */
+  .feedback-loop { margin-top: 24px; padding: 20px 32px; background: #fffbeb; border: 1px solid #fde68a; border-radius: 12px; }
+  .feedback-loop h3 { font-size: 13px; font-weight: 600; color: #92400e; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
+  .feedback-loop .loop-flow { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+  .loop-step { background: #fff; border: 1px solid #fde68a; border-radius: 8px; padding: 8px 14px; font-size: 12px; color: #78350f; cursor: pointer; transition: all 0.2s; }
+  .loop-step:hover { background: #fef3c7; }
+  .loop-step.active { border-color: #d97706; box-shadow: 0 0 0 2px rgba(217,119,6,0.15); }
+  .loop-arrow { color: #d97706; font-size: 16px; }
+  .loop-detail { display: none; margin-top: 12px; font-size: 12px; color: #78350f; line-height: 1.6; padding: 12px; background: #fff; border-radius: 8px; border: 1px solid #fde68a; }
+  .loop-detail.visible { display: block; }
+
+  /* Connection lines (CSS-drawn) */
+  .connections { position: relative; margin-top: -8px; margin-bottom: 8px; height: 2px; }
+
+  /* Responsive hint */
+  .scroll-hint { display: none; padding: 8px 32px; font-size: 11px; color: #94a3b8; }
+  @media (max-width: 1200px) { .scroll-hint { display: block; } }
+
+  /* Status summary bar */
+  .summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; padding: 20px 32px; }
+  .summary-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px 16px; }
+  .summary-card .label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: #94a3b8; }
+  .summary-card .value { font-size: 24px; font-weight: 700; margin-top: 2px; }
+  .summary-card .value.green { color: #16a34a; }
+  .summary-card .value.red { color: #dc2626; }
+  .summary-card .value.amber { color: #d97706; }
+  .summary-card .value.blue { color: #2563eb; }
+  .summary-card .sub { font-size: 11px; color: #94a3b8; margin-top: 2px; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Winback AI Engine.</h1>
+  <p>Click any node to see what it does, where it lives in the code, and what's working / broken / missing. This is the design map for the ideal system.</p>
+</div>
+
+<div class="summary">
+  <div class="summary-card">
+    <div class="label">Working</div>
+    <div class="value green">8</div>
+    <div class="sub">Classifier, signals, email gen, changelog keywords, tier suppression, reply text, reply response, portal click signal</div>
+  </div>
+  <div class="summary-card">
+    <div class="label">Broken</div>
+    <div class="value red">0</div>
+    <div class="sub">All signal source errors fixed (spec 15)</div>
+  </div>
+  <div class="summary-card">
+    <div class="label">Missing</div>
+    <div class="value amber">4</div>
+    <div class="sub">Outcome tracking, cohort learning, semantic matching, adaptive cadence</div>
+  </div>
+  <div class="summary-card">
+    <div class="label">Total nodes</div>
+    <div class="value blue">11</div>
+    <div class="sub">Signal sources + AI layers + actions + feedback</div>
+  </div>
+</div>
+
+<div class="legend">
+  <div class="legend-item"><div class="legend-dot signal"></div> Signal source</div>
+  <div class="legend-item"><div class="legend-dot ai"></div> AI reasoning</div>
+  <div class="legend-item"><div class="legend-dot working"></div> Action (working)</div>
+  <div class="legend-item"><div class="legend-dot broken"></div> Broken / not wired</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#d97706"></div> Feedback loop</div>
+  <div class="legend-item"><div class="legend-dot missing"></div> Missing (to build)</div>
+</div>
+
+<div class="scroll-hint">Scroll horizontally to see the full flow &rarr;</div>
+
+<div class="canvas">
+  <div class="flow">
+
+    <!-- COLUMN 1: Signal Sources -->
+    <div class="column">
+      <div class="column-label">Signal Sources</div>
+
+      <div class="node signal" onclick="toggle(this)">
+        <div class="node-title"><span class="node-icon">&#9889;</span> Stripe Cancellation</div>
+        <div class="node-subtitle">Webhook fires when a subscription is cancelled</div>
+        <div class="node-status working">&#10003; Working</div>
+        <div class="detail">
+          <strong>File:</strong> <code>app/api/stripe/webhook/route.ts</code><br>
+          <strong>What it captures:</strong>
+          <ul>
+            <li>Plan name, MRR, tenure, ever_upgraded, near_renewal</li>
+            <li>Payment failures, previous subscriptions count</li>
+            <li>Stripe cancellation enum + free-text comment</li>
+            <li>Customer email and name</li>
+          </ul>
+          <strong>Extracted by:</strong> <code>extractSignals()</code> in <code>src/winback/lib/stripe.ts</code><br>
+          <strong>Stored in:</strong> <code>churnedSubscribers</code> row
+        </div>
+      </div>
+
+      <div class="node signal" onclick="toggle(this)">
+        <div class="node-title"><span class="node-icon">&#9993;</span> Customer Reply</div>
+        <div class="node-subtitle">Inbound email from the subscriber replying to our message</div>
+        <div class="node-status working">&#10003; Fixed (spec 15) &mdash; reply text now reaches LLM + response sent</div>
+        <div class="detail">
+          <strong>File:</strong> <code>app/api/email/inbound/route.ts</code><br>
+          <strong>What happens now:</strong>
+          <ul>
+            <li>Reply text is stripped of quotes and saved to <code>subscriber.replyText</code></li>
+            <li><code>replyText</code> is passed in <code>SubscriberSignals</code> and interpolated into the classifier prompt</li>
+            <li>System prompt has RE-CLASSIFICATION rules: treat reply as highest-signal input</li>
+            <li>After re-classification, <code>sendReplyEmail()</code> sends the new <code>firstMessage</code> as a threaded follow-up</li>
+          </ul>
+          <strong>Fixed in:</strong> <code>types.ts</code>, <code>classifier.ts</code>, <code>email.ts</code>, <code>inbound/route.ts</code>
+        </div>
+      </div>
+
+      <div class="node signal" onclick="toggle(this)">
+        <div class="node-title"><span class="node-icon">&#128221;</span> Changelog Update</div>
+        <div class="node-subtitle">Founder posts what they've shipped</div>
+        <div class="node-status working">&#10003; Working (keyword extraction)</div>
+        <div class="detail">
+          <strong>File:</strong> <code>app/api/changelog/route.ts</code><br>
+          <strong>What it does:</strong> LLM extracts 3&ndash;8 keywords from the changelog text. Then SQL <code>ILIKE</code> matches those keywords against each subscriber's <code>triggerKeyword</code>.<br>
+          <strong>Weakness:</strong> Substring match only. "CSV export" won't match "spreadsheet improvements." Semantic matching (embeddings or LLM re-rank) would catch these.
+        </div>
+      </div>
+
+      <div class="node signal" onclick="toggle(this)">
+        <div class="node-title"><span class="node-icon">&#128336;</span> Time Decay</div>
+        <div class="node-subtitle">Scheduled re-engagement after fallbackDays</div>
+        <div class="node-status missing">&#9679; Missing &mdash; fallbackDays written but never read</div>
+        <div class="detail">
+          <strong>What the classifier outputs:</strong> <code>fallbackDays: 30 | 90 | 180</code><br>
+          <strong>What happens today:</strong> The value is returned by the LLM but there is no cron job or scheduler that reads it and triggers a re-engagement email at that interval.<br>
+          <strong>To build:</strong> A cron job that queries subscribers where <code>cancelledAt + fallbackDays &lt; now()</code> and status is still <code>'pending'</code>, then re-evaluates.
+        </div>
+      </div>
+
+      <div class="node signal" onclick="toggle(this)">
+        <div class="node-title"><span class="node-icon">&#128179;</span> Billing Portal Click</div>
+        <div class="node-subtitle">Subscriber clicked the reactivation link in our email</div>
+        <div class="node-status working">&#10003; Fixed (spec 15) &mdash; now fed to AI as billing_portal_clicked signal</div>
+        <div class="detail">
+          <strong>Stored in:</strong> <code>churnedSubscribers.billingPortalClickedAt</code><br>
+          <strong>Now:</strong> Passed as <code>billingPortalClicked: boolean</code> in <code>SubscriberSignals</code>. The classifier system prompt has rules for high-intent subscribers who clicked but didn't complete.<br>
+          <strong>Future:</strong> Could trigger a proactive follow-up without waiting for a reply.
+        </div>
+      </div>
+    </div>
+
+    <!-- Arrow column -->
+    <div class="arrow-col">
+      <div class="arrow">&rarr;</div>
+      <div class="arrow-label">feeds into</div>
+    </div>
+
+    <!-- COLUMN 2: AI Reasoning -->
+    <div class="column">
+      <div class="column-label">AI Reasoning (Claude Haiku)</div>
+
+      <div class="node ai" onclick="toggle(this)">
+        <div class="node-title"><span class="node-icon">&#129504;</span> Signal Fusion</div>
+        <div class="node-subtitle">Merge all available signals into one prompt context</div>
+        <div class="node-status working">&#10003; Working &mdash; reply text + billing portal click now fused</div>
+        <div class="detail">
+          <strong>File:</strong> <code>src/winback/lib/classifier.ts</code> &rarr; <code>buildPrompt()</code><br>
+          <strong>What's fused now:</strong> 12 Stripe signals + reply text + billing portal click + business context (product name, founder name, changelog text).<br>
+          <strong>Still missing (future work):</strong>
+          <ul>
+            <li>Number of emails already sent to this subscriber</li>
+            <li>Cohort stats (what worked for similar subscribers)</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="node ai" onclick="toggle(this)">
+        <div class="node-title"><span class="node-icon">&#127919;</span> Classification</div>
+        <div class="node-subtitle">Tier 1&ndash;4 + reason + confidence + category</div>
+        <div class="node-status working">&#10003; Working</div>
+        <div class="detail">
+          <strong>File:</strong> <code>src/winback/lib/classifier.ts</code> (system prompt, lines 46&ndash;72)<br>
+          <strong>Output:</strong>
+          <ul>
+            <li><code>tier</code>: 1 (targeted), 2 (ask for detail), 3 (generic re-engage), 4 (suppress)</li>
+            <li><code>cancellationReason</code>: short phrase for dashboard</li>
+            <li><code>cancellationCategory</code>: Competitor | Price | Quality | Unused | Feature | Other</li>
+            <li><code>confidence</code>: 0&ndash;1</li>
+            <li><code>suppress</code>: boolean (Tier 4 = true)</li>
+          </ul>
+          <strong>Model:</strong> <code>claude-haiku-4-5-20251001</code>, temp 0, max 1500 tokens, zero-retention header.<br>
+          <strong>Zod-validated output.</strong> Throws on parse failure &mdash; caller catches.
+        </div>
+      </div>
+
+      <div class="node ai" onclick="toggle(this)">
+        <div class="node-title"><span class="node-icon">&#9997;</span> Content Generation</div>
+        <div class="node-subtitle">Exit email + win-back email + trigger keyword</div>
+        <div class="node-status working">&#10003; Working (single-shot)</div>
+        <div class="detail">
+          <strong>Generated in same call as classification</strong> (one prompt, one response).<br>
+          <strong>Outputs:</strong>
+          <ul>
+            <li><code>firstMessage</code>: { subject, body, sendDelaySecs } &mdash; the immediate exit email</li>
+            <li><code>triggerKeyword</code>: matched against future changelog entries</li>
+            <li><code>winBackSubject</code> + <code>winBackBody</code>: sent when changelog matches</li>
+            <li><code>fallbackDays</code>: 30/90/180 re-engagement window (not yet consumed)</li>
+          </ul>
+          <strong>Tone rules in system prompt:</strong> Fresh (&lt;7d), Medium (7&ndash;30d), Older (30d+). Email signed with founder's name when available.
+        </div>
+      </div>
+
+      <div class="node ai" onclick="toggle(this)">
+        <div class="node-title"><span class="node-icon">&#128257;</span> Re-classification on New Signal</div>
+        <div class="node-subtitle">Re-run classifier when new info arrives</div>
+        <div class="node-status working">&#10003; Fixed (spec 15) &mdash; reply text + portal click now feed re-classification</div>
+        <div class="detail">
+          <strong>Now:</strong> Triggered by inbound reply. Reply text and billing portal click are passed in signals. System prompt has RE-CLASSIFICATION rules that treat reply as highest-signal input.<br>
+          <strong>Future triggers for re-classification:</strong>
+          <ul>
+            <li>New changelog posted (re-evaluate trigger keyword match)</li>
+            <li>fallbackDays elapsed (scheduled re-engagement)</li>
+            <li>Portal click without completion (proactive follow-up)</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- Arrow column -->
+    <div class="arrow-col">
+      <div class="arrow">&rarr;</div>
+      <div class="arrow-label">decides</div>
+    </div>
+
+    <!-- COLUMN 3: Actions -->
+    <div class="column">
+      <div class="column-label">Actions</div>
+
+      <div class="node action" onclick="toggle(this)">
+        <div class="node-title"><span class="node-icon">&#128232;</span> Send Exit Email</div>
+        <div class="node-subtitle">Personalised first email within ~60 seconds of cancellation</div>
+        <div class="node-status working">&#10003; Working</div>
+        <div class="detail">
+          <strong>File:</strong> <code>src/winback/lib/email.ts</code> &rarr; <code>scheduleExitEmail()</code><br>
+          <strong>Content source:</strong> <code>classification.firstMessage</code> (LLM-generated, unique per subscriber)<br>
+          <strong>Delivery:</strong> Resend API. Reactivation link + unsubscribe link appended automatically.<br>
+          <strong>Reply-to:</strong> <code>reply+{subscriberId}@winbackflow.co</code> for inbound routing.
+        </div>
+      </div>
+
+      <div class="node action" onclick="toggle(this)">
+        <div class="node-title"><span class="node-icon">&#128172;</span> Send Reply Response</div>
+        <div class="node-subtitle">When subscriber replies, send a follow-up that addresses what they said</div>
+        <div class="node-status working">&#10003; Fixed (spec 15) &mdash; sendReplyEmail() sends threaded follow-up</div>
+        <div class="detail">
+          <strong>What happens now:</strong>
+          <ul>
+            <li>Reply arrives &rarr; re-classifies with reply text &rarr; new <code>firstMessage</code> generated</li>
+            <li><code>sendReplyEmail()</code> sends it as a threaded follow-up using <code>In-Reply-To</code> / <code>References</code> headers</li>
+            <li>Respects DNC + customer-paused + Tier 4 suppress checks</li>
+            <li>Recorded as type <code>'followup'</code> in <code>emailsSent</code></li>
+          </ul>
+          <strong>File:</strong> <code>src/winback/lib/email.ts</code> &rarr; <code>sendReplyEmail()</code>
+        </div>
+      </div>
+
+      <div class="node action" onclick="toggle(this)">
+        <div class="node-title"><span class="node-icon">&#127775;</span> Send Win-back Email</div>
+        <div class="node-subtitle">Triggered when a changelog entry matches the subscriber's trigger keyword</div>
+        <div class="node-status working">&#10003; Working (substring match)</div>
+        <div class="detail">
+          <strong>File:</strong> <code>app/api/changelog/route.ts</code> (lines 85&ndash;132)<br>
+          <strong>Flow:</strong> Changelog posted &rarr; LLM extracts keywords &rarr; SQL <code>ILIKE</code> matches <code>triggerKeyword</code> &rarr; sends <code>winBackSubject</code>/<code>winBackBody</code> via Resend.<br>
+          <strong>Weakness:</strong> Substring match misses semantic near-matches. Future: embedding similarity or LLM re-rank.
+        </div>
+      </div>
+
+      <div class="node action" onclick="toggle(this)">
+        <div class="node-title"><span class="node-icon">&#128683;</span> Suppress (Silence)</div>
+        <div class="node-subtitle">Tier 4: don't email, don't follow up</div>
+        <div class="node-status working">&#10003; Working</div>
+        <div class="detail">
+          <strong>Logic:</strong> <code>classifier.ts:106</code> &mdash; Tier 4 auto-sets <code>suppress: true</code>. Subscriber created with status <code>'skipped'</code>.<br>
+          <strong>Rules (from system prompt):</strong>
+          <ul>
+            <li>Cancel age &gt; 60 days with no compelling reason</li>
+            <li>Contact would do more harm than good (abuse, legal, etc.)</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /flow -->
+
+  <!-- FEEDBACK LOOP -->
+  <div class="feedback-loop">
+    <h3><span style="font-size:18px">&#128260;</span> Feedback Loop (mostly missing &mdash; this is the biggest gap)</h3>
+    <div class="loop-flow">
+      <div class="loop-step" onclick="toggleLoop(this, 'ld1')">Email sent</div>
+      <div class="loop-arrow">&rarr;</div>
+      <div class="loop-step" onclick="toggleLoop(this, 'ld2')">Reply / click / recover / silence</div>
+      <div class="loop-arrow">&rarr;</div>
+      <div class="loop-step" onclick="toggleLoop(this, 'ld3')">Outcome logged to wb_events</div>
+      <div class="loop-arrow">&rarr;</div>
+      <div class="loop-step" onclick="toggleLoop(this, 'ld4')">Cohort stats updated</div>
+      <div class="loop-arrow">&rarr;</div>
+      <div class="loop-step" onclick="toggleLoop(this, 'ld5')">Fed back into next classification</div>
+    </div>
+
+    <div class="loop-detail" id="ld1">
+      <strong>Status: Working.</strong> <code>emailsSent</code> table records every email with type (<code>exit</code> / <code>dunning</code> / <code>win_back</code>), subject, and timestamp.
+    </div>
+    <div class="loop-detail" id="ld2">
+      <strong>Status: Partially working.</strong> Replies update <code>repliedAt</code>. Portal clicks tracked via <code>billingPortalClickedAt</code>. Recovery tracked in <code>recoveries</code> table. But <strong>unsubscribes, email opens, and link clicks are not tracked.</strong>
+    </div>
+    <div class="loop-detail" id="ld3">
+      <strong>Status: Missing.</strong> The <code>wb_events</code> table exists (spec 14) but only has onboarding funnel events. Need to add: <code>email_sent</code>, <code>email_replied</code>, <code>email_clicked</code>, <code>portal_opened</code>, <code>subscriber_recovered</code>, <code>subscriber_unsubscribed</code>.
+    </div>
+    <div class="loop-detail" id="ld4">
+      <strong>Status: Missing.</strong> No aggregation of outcomes by cohort (reason &times; tier &times; tenure &times; plan). The AI can't learn what works because it has no summary to reference.
+    </div>
+    <div class="loop-detail" id="ld5">
+      <strong>Status: Missing.</strong> The classifier prompt is static. It doesn't know that "price-cited cancellations with tenure&gt;180d recover at 12% with an offer and 3% without." Feeding cohort stats into the system prompt is the unlock for genuine AI learning.
+    </div>
+  </div>
+
+  <!-- Priority summary -->
+  <div style="padding: 24px 32px;">
+    <div style="background:#fff; border:1.5px solid #e2e8f0; border-radius:12px; padding:20px;">
+      <h3 style="font-size:14px; font-weight:700; margin-bottom:12px;">Fix priority (ordered by leverage)</h3>
+      <table style="width:100%; font-size:13px; border-collapse:collapse;">
+        <thead>
+          <tr style="text-align:left; border-bottom:2px solid #f1f5f9;">
+            <th style="padding:8px 12px; color:#94a3b8; font-size:11px; font-weight:600; text-transform:uppercase;">#</th>
+            <th style="padding:8px 12px; color:#94a3b8; font-size:11px; font-weight:600; text-transform:uppercase;">Fix</th>
+            <th style="padding:8px 12px; color:#94a3b8; font-size:11px; font-weight:600; text-transform:uppercase;">Effort</th>
+            <th style="padding:8px 12px; color:#94a3b8; font-size:11px; font-weight:600; text-transform:uppercase;">Impact</th>
+            <th style="padding:8px 12px; color:#94a3b8; font-size:11px; font-weight:600; text-transform:uppercase;">Earns back</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr style="border-bottom:1px solid #f8fafc;">
+            <td style="padding:8px 12px; font-weight:600; color:#16a34a;">&#10003;</td>
+            <td style="padding:8px 12px;"><strong style="text-decoration: line-through;">Feed reply text into the classifier prompt</strong> <span style="background:#dcfce7; color:#166534; font-size:10px; font-weight:600; padding:1px 6px; border-radius:99px;">DONE</span><br><span style="color:#64748b; font-size:11px;">classifier.ts + SubscriberSignals type + billing portal click</span></td>
+            <td style="padding:8px 12px; color:#16a34a;">Small</td>
+            <td style="padding:8px 12px; color:#16a34a;">Fixed</td>
+            <td style="padding:8px 12px; font-size:12px; color:#64748b;">"AI reads the reply, new context flows back in"</td>
+          </tr>
+          <tr style="border-bottom:1px solid #f8fafc;">
+            <td style="padding:8px 12px; font-weight:600; color:#16a34a;">&#10003;</td>
+            <td style="padding:8px 12px;"><strong style="text-decoration: line-through;">Send the re-classified email after a reply</strong> <span style="background:#dcfce7; color:#166534; font-size:10px; font-weight:600; padding:1px 6px; border-radius:99px;">DONE</span><br><span style="color:#64748b; font-size:11px;">sendReplyEmail() with In-Reply-To threading</span></td>
+            <td style="padding:8px 12px; color:#16a34a;">Small</td>
+            <td style="padding:8px 12px; color:#16a34a;">Fixed</td>
+            <td style="padding:8px 12px; font-size:12px; color:#64748b;">"Tunes the next move" &mdash; the conversation actually happens</td>
+          </tr>
+          <tr style="border-bottom:1px solid #f8fafc;">
+            <td style="padding:8px 12px; font-weight:600; color:#d97706;">3</td>
+            <td style="padding:8px 12px;"><strong>Instrument outcomes in wb_events</strong><br><span style="color:#64748b; font-size:11px;">Extend event logging to email lifecycle events</span></td>
+            <td style="padding:8px 12px; color:#d97706;">Medium</td>
+            <td style="padding:8px 12px; color:#d97706;">High</td>
+            <td style="padding:8px 12px; font-size:12px; color:#64748b;">Unblocks learning loop &mdash; can't improve what we can't measure</td>
+          </tr>
+          <tr style="border-bottom:1px solid #f8fafc;">
+            <td style="padding:8px 12px; font-weight:600; color:#d97706;">4</td>
+            <td style="padding:8px 12px;"><strong>Fix attribution &mdash; replace hardcoded 'weak'</strong><br><span style="color:#64748b; font-size:11px;">webhook/route.ts line 213</span></td>
+            <td style="padding:8px 12px; color:#16a34a;">Small</td>
+            <td style="padding:8px 12px; color:#d97706;">High</td>
+            <td style="padding:8px 12px; font-size:12px; color:#64748b;">Honest dashboard &mdash; know which recoveries we actually caused</td>
+          </tr>
+          <tr style="border-bottom:1px solid #f8fafc;">
+            <td style="padding:8px 12px; font-weight:600; color:#2563eb;">5</td>
+            <td style="padding:8px 12px;"><strong>Implement fallbackDays re-engagement cron</strong><br><span style="color:#64748b; font-size:11px;">New cron job that reads the LLM's fallback window</span></td>
+            <td style="padding:8px 12px; color:#d97706;">Medium</td>
+            <td style="padding:8px 12px; color:#d97706;">High</td>
+            <td style="padding:8px 12px; font-size:12px; color:#64748b;">Time-based re-engagement actually works</td>
+          </tr>
+          <tr style="border-bottom:1px solid #f8fafc;">
+            <td style="padding:8px 12px; font-weight:600; color:#2563eb;">6</td>
+            <td style="padding:8px 12px;"><strong>Semantic changelog matching</strong><br><span style="color:#64748b; font-size:11px;">Replace ILIKE with embedding similarity or LLM re-rank</span></td>
+            <td style="padding:8px 12px; color:#dc2626;">Large</td>
+            <td style="padding:8px 12px; color:#d97706;">High</td>
+            <td style="padding:8px 12px; font-size:12px; color:#64748b;">"Reads what you've shipped" &mdash; actually catches near-matches</td>
+          </tr>
+          <tr>
+            <td style="padding:8px 12px; font-weight:600; color:#2563eb;">7</td>
+            <td style="padding:8px 12px;"><strong>Cohort stats in prompt</strong><br><span style="color:#64748b; font-size:11px;">Feed aggregate recovery rates back into classifier system prompt</span></td>
+            <td style="padding:8px 12px; color:#dc2626;">Large</td>
+            <td style="padding:8px 12px; color:#2563eb;">Transformative</td>
+            <td style="padding:8px 12px; font-size:12px; color:#64748b;">AI that learns what works for <em>your</em> business</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div><!-- /canvas -->
+
+<script>
+function toggle(el) {
+  const wasActive = el.classList.contains('active');
+  document.querySelectorAll('.node.active').forEach(n => n.classList.remove('active'));
+  if (!wasActive) el.classList.add('active');
+}
+
+function toggleLoop(el, detailId) {
+  const detail = document.getElementById(detailId);
+  const wasVisible = detail.classList.contains('visible');
+  document.querySelectorAll('.loop-detail').forEach(d => d.classList.remove('visible'));
+  document.querySelectorAll('.loop-step.active').forEach(s => s.classList.remove('active'));
+  if (!wasVisible) {
+    detail.classList.add('visible');
+    el.classList.add('active');
+  }
+}
+</script>
+
+</body>
+</html>
