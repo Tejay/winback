@@ -101,8 +101,8 @@
 <div class="summary">
   <div class="summary-card">
     <div class="label">Working</div>
-    <div class="value green">9</div>
-    <div class="sub">Classifier, signals, email gen, changelog keywords, tier suppression, reply text, reply response (2-max + founder handoff), portal click signal, time decay (90-day backstop)</div>
+    <div class="value green">11</div>
+    <div class="sub">Classifier, signals, email gen, changelog keywords, tier suppression, reply text, reply response (2-max + founder handoff), portal click signal, time decay (90-day backstop), outcome event tracking, evidence-based attribution</div>
   </div>
   <div class="summary-card">
     <div class="label">Broken</div>
@@ -111,8 +111,8 @@
   </div>
   <div class="summary-card">
     <div class="label">Missing</div>
-    <div class="value amber">3</div>
-    <div class="sub">Outcome tracking, cohort learning, semantic matching</div>
+    <div class="value amber">1</div>
+    <div class="sub">Cohort learning, semantic matching</div>
   </div>
   <div class="summary-card">
     <div class="label">Total nodes</div>
@@ -271,7 +271,6 @@
             <li><code>firstMessage</code>: { subject, body, sendDelaySecs } &mdash; the immediate exit email</li>
             <li><code>triggerKeyword</code>: matched against future changelog entries</li>
             <li><code>winBackSubject</code> + <code>winBackBody</code>: sent when changelog matches</li>
-            <li><code>fallbackDays</code>: 30/90/180 re-engagement window (not yet consumed)</li>
           </ul>
           <strong>Tone rules in system prompt:</strong> Fresh (&lt;7d), Medium (7&ndash;30d), Older (30d+). Email signed with founder's name when available.
         </div>
@@ -367,7 +366,7 @@
 
   <!-- FEEDBACK LOOP -->
   <div class="feedback-loop">
-    <h3><span style="font-size:18px">&#128260;</span> Feedback Loop (mostly missing &mdash; this is the biggest gap)</h3>
+    <h3><span style="font-size:18px">&#128260;</span> Feedback Loop (instrumented &mdash; cohort learning is the remaining gap)</h3>
     <div class="loop-flow">
       <div class="loop-step" onclick="toggleLoop(this, 'ld1')">Email sent</div>
       <div class="loop-arrow">&rarr;</div>
@@ -384,10 +383,10 @@
       <strong>Status: Working.</strong> <code>emailsSent</code> table records every email with type (<code>exit</code> / <code>followup</code> / <code>dunning</code> / <code>win_back</code>), subject, and timestamp. Follow-up count is tracked per subscriber (max 2 before founder handoff).
     </div>
     <div class="loop-detail" id="ld2">
-      <strong>Status: Partially working.</strong> Replies update <code>repliedAt</code>. Portal clicks tracked via <code>billingPortalClickedAt</code>. Recovery tracked in <code>recoveries</code> table. But <strong>unsubscribes, email opens, and link clicks are not tracked.</strong>
+      <strong>Status: Working (spec 17).</strong> Replies update <code>repliedAt</code>. Portal clicks tracked via <code>billingPortalClickedAt</code>. Recovery tracked in <code>recoveries</code> table with evidence-based attribution (spec 18): strong (portal click / reply), weak (emailed within 14 days), organic (no evidence). Unsubscribes and link clicks now logged to <code>wb_events</code>. Email opens not trackable (plain-text emails).
     </div>
     <div class="loop-detail" id="ld3">
-      <strong>Status: Missing.</strong> The <code>wb_events</code> table exists (spec 14) but only has onboarding funnel events. Need to add: <code>email_sent</code>, <code>email_replied</code>, <code>email_clicked</code>, <code>portal_opened</code>, <code>subscriber_recovered</code>, <code>subscriber_unsubscribed</code>.
+      <strong>Status: Working (spec 17).</strong> Five lifecycle events now logged to <code>wb_events</code>: <code>email_sent</code> (exit/followup/dunning/reengagement/win_back), <code>email_replied</code>, <code>link_clicked</code> (billing_portal/reactivate), <code>subscriber_recovered</code> (4 paths with attribution type), <code>subscriber_unsubscribed</code> (html/one_click). All fire-and-forget via <code>logEvent()</code>.
     </div>
     <div class="loop-detail" id="ld4">
       <strong>Status: Missing.</strong> No aggregation of outcomes by cohort (reason &times; tier &times; tenure &times; plan). The AI can't learn what works because it has no summary to reference.
@@ -427,17 +426,17 @@
             <td style="padding:8px 12px; font-size:12px; color:#64748b;">"Tunes the next move" &mdash; the conversation actually happens (with guardrails)</td>
           </tr>
           <tr style="border-bottom:1px solid #f8fafc;">
-            <td style="padding:8px 12px; font-weight:600; color:#d97706;">3</td>
-            <td style="padding:8px 12px;"><strong>Instrument outcomes in wb_events</strong><br><span style="color:#64748b; font-size:11px;">Extend event logging to email lifecycle events</span></td>
-            <td style="padding:8px 12px; color:#d97706;">Medium</td>
-            <td style="padding:8px 12px; color:#d97706;">High</td>
+            <td style="padding:8px 12px; font-weight:600; color:#16a34a;">&#10003;</td>
+            <td style="padding:8px 12px;"><strong style="text-decoration: line-through;">Instrument outcomes in wb_events</strong> <span style="background:#dcfce7; color:#166534; font-size:10px; font-weight:600; padding:1px 6px; border-radius:99px;">DONE</span><br><span style="color:#64748b; font-size:11px;">5 event types: email_sent, email_replied, link_clicked, subscriber_recovered, subscriber_unsubscribed</span></td>
+            <td style="padding:8px 12px; color:#16a34a;">Medium</td>
+            <td style="padding:8px 12px; color:#16a34a;">Fixed</td>
             <td style="padding:8px 12px; font-size:12px; color:#64748b;">Unblocks learning loop &mdash; can't improve what we can't measure</td>
           </tr>
           <tr style="border-bottom:1px solid #f8fafc;">
-            <td style="padding:8px 12px; font-weight:600; color:#d97706;">4</td>
-            <td style="padding:8px 12px;"><strong>Fix attribution &mdash; replace hardcoded 'weak'</strong><br><span style="color:#64748b; font-size:11px;">webhook/route.ts line 213</span></td>
+            <td style="padding:8px 12px; font-weight:600; color:#16a34a;">&#10003;</td>
+            <td style="padding:8px 12px;"><strong style="text-decoration: line-through;">Fix attribution &mdash; replace hardcoded 'weak'</strong> <span style="background:#dcfce7; color:#166534; font-size:10px; font-weight:600; padding:1px 6px; border-radius:99px;">DONE</span><br><span style="color:#64748b; font-size:11px;">Evidence-based: strong (portal click / reply), weak (emailed &le;14 days), organic (no evidence)</span></td>
             <td style="padding:8px 12px; color:#16a34a;">Small</td>
-            <td style="padding:8px 12px; color:#d97706;">High</td>
+            <td style="padding:8px 12px; color:#16a34a;">Fixed</td>
             <td style="padding:8px 12px; font-size:12px; color:#64748b;">Honest dashboard &mdash; know which recoveries we actually caused</td>
           </tr>
           <tr style="border-bottom:1px solid #f8fafc;">
@@ -448,14 +447,14 @@
             <td style="padding:8px 12px; font-size:12px; color:#64748b;">Time-based re-engagement works &mdash; plus smarter first-connect handling</td>
           </tr>
           <tr style="border-bottom:1px solid #f8fafc;">
-            <td style="padding:8px 12px; font-weight:600; color:#2563eb;">6</td>
+            <td style="padding:8px 12px; font-weight:600; color:#2563eb;">3</td>
             <td style="padding:8px 12px;"><strong>Semantic changelog matching</strong><br><span style="color:#64748b; font-size:11px;">Replace ILIKE with embedding similarity or LLM re-rank</span></td>
             <td style="padding:8px 12px; color:#dc2626;">Large</td>
             <td style="padding:8px 12px; color:#d97706;">High</td>
             <td style="padding:8px 12px; font-size:12px; color:#64748b;">"Reads what you've shipped" &mdash; actually catches near-matches</td>
           </tr>
           <tr>
-            <td style="padding:8px 12px; font-weight:600; color:#2563eb;">7</td>
+            <td style="padding:8px 12px; font-weight:600; color:#2563eb;">4</td>
             <td style="padding:8px 12px;"><strong>Cohort stats in prompt</strong><br><span style="color:#64748b; font-size:11px;">Feed aggregate recovery rates back into classifier system prompt</span></td>
             <td style="padding:8px 12px; color:#dc2626;">Large</td>
             <td style="padding:8px 12px; color:#2563eb;">Transformative</td>
