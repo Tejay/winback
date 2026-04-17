@@ -1,11 +1,12 @@
 import Stripe from 'stripe'
 import { db } from '@/lib/db'
 import { users, customers, churnedSubscribers, recoveries, emailsSent } from '@/lib/schema'
-import { eq, and, ne, inArray } from 'drizzle-orm'
+import { eq, and, ne, inArray, desc } from 'drizzle-orm'
 import { decrypt } from '@/src/winback/lib/encryption'
 import { extractSignals } from '@/src/winback/lib/stripe'
 import { classifySubscriber } from '@/src/winback/lib/classifier'
 import { scheduleExitEmail, sendDunningEmail } from '@/src/winback/lib/email'
+import { logEvent } from '@/src/winback/lib/events'
 
 function getStripe() {
   return new Stripe(process.env.STRIPE_SECRET_KEY!)
@@ -188,16 +189,43 @@ async function processRecovery(event: Stripe.Event) {
 
   if (!churned) return
 
-  // Only count as weak recovery if we actually emailed them
-  const [emailRecord] = await db
-    .select({ id: emailsSent.id })
+  // Only count as recovery if we actually emailed them
+  const [recentEmail] = await db
+    .select({ id: emailsSent.id, sentAt: emailsSent.sentAt, repliedAt: emailsSent.repliedAt })
     .from(emailsSent)
     .where(eq(emailsSent.subscriberId, churned.id))
+    .orderBy(desc(emailsSent.sentAt))
     .limit(1)
 
-  if (!emailRecord) {
+  if (!recentEmail) {
     console.log('Resubscription but no emails sent — not counting as recovery:', churned.email)
     return
+  }
+
+  // Determine attribution based on evidence of engagement
+  let attributionType: string
+
+  if (churned.billingPortalClickedAt) {
+    // Subscriber clicked our billing portal link — strong evidence
+    attributionType = 'strong'
+  } else if (recentEmail.repliedAt) {
+    // They replied to our email — strong causation signal
+    attributionType = 'strong'
+  } else if (recentEmail.sentAt) {
+    // We emailed but no tracked engagement — check recency
+    const daysSinceEmail = Math.floor(
+      (Date.now() - recentEmail.sentAt.getTime()) / (1000 * 60 * 60 * 24)
+    )
+    if (daysSinceEmail <= 14) {
+      // Resubscribed within 14 days of our email — likely influenced
+      attributionType = 'weak'
+    } else {
+      // Resubscribed long after our email — probably organic
+      attributionType = 'organic'
+    }
+  } else {
+    // No sent date (shouldn't happen, but defensive)
+    attributionType = 'organic'
   }
 
   const planItem = subscription.items?.data[0]
@@ -211,7 +239,7 @@ async function processRecovery(event: Stripe.Event) {
     planMrrCents: mrrCents,
     newStripeSubId: subscription.id,
     attributionEndsAt,
-    attributionType: 'weak',
+    attributionType,
   })
 
   await db
@@ -219,7 +247,19 @@ async function processRecovery(event: Stripe.Event) {
     .set({ status: 'recovered', updatedAt: new Date() })
     .where(eq(churnedSubscribers.id, churned.id))
 
-  console.log('WEAK RECOVERY:', churned.email, 'at', mrrCents, 'cents/mo')
+  // Log recovery event
+  logEvent({
+    name: 'subscriber_recovered',
+    customerId: customer.id,
+    properties: {
+      subscriberId: churned.id,
+      attributionType,
+      planMrrCents: mrrCents,
+      recoveryMethod: 'subscription_created',
+    },
+  })
+
+  console.log(`${attributionType.toUpperCase()} RECOVERY:`, churned.email, 'at', mrrCents, 'cents/mo')
 }
 
 async function processCheckoutRecovery(event: Stripe.Event) {
@@ -255,6 +295,18 @@ async function processCheckoutRecovery(event: Stripe.Event) {
     .update(churnedSubscribers)
     .set({ status: 'recovered', updatedAt: new Date() })
     .where(eq(churnedSubscribers.id, subscriberId))
+
+  // Log recovery event
+  logEvent({
+    name: 'subscriber_recovered',
+    customerId,
+    properties: {
+      subscriberId,
+      attributionType: 'strong',
+      planMrrCents: mrrCents,
+      recoveryMethod: 'checkout',
+    },
+  })
 
   console.log('STRONG RECOVERY:', subscriber.email, 'at', mrrCents, 'cents/mo')
 }
@@ -464,6 +516,18 @@ async function processPaymentSucceeded(event: Stripe.Event) {
     .update(churnedSubscribers)
     .set({ status: 'recovered', updatedAt: new Date() })
     .where(eq(churnedSubscribers.id, subscriber.id))
+
+  // Log recovery event
+  logEvent({
+    name: 'subscriber_recovered',
+    customerId: customer.id,
+    properties: {
+      subscriberId: subscriber.id,
+      attributionType,
+      planMrrCents: subscriber.mrrCents,
+      recoveryMethod: 'payment_succeeded',
+    },
+  })
 
   console.log(`${attributionType.toUpperCase()} DUNNING RECOVERY:`, subscriber.email)
 }

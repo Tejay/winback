@@ -4,6 +4,7 @@ import { db } from '@/lib/db'
 import { customers, churnedSubscribers, recoveries, emailsSent } from '@/lib/schema'
 import { eq } from 'drizzle-orm'
 import { decrypt } from '@/src/winback/lib/encryption'
+import { logEvent } from '@/src/winback/lib/events'
 
 export async function GET(
   req: NextRequest,
@@ -39,6 +40,11 @@ export async function GET(
     return NextResponse.redirect(`${baseUrl}/welcome-back?recovered=false`)
   }
 
+  logEvent({
+    name: 'link_clicked',
+    properties: { subscriberId, linkType: 'reactivate' },
+  })
+
   const accessToken = decrypt(customer.stripeAccessToken)
   const stripe = new Stripe(accessToken)
 
@@ -68,6 +74,17 @@ export async function GET(
             .update(churnedSubscribers)
             .set({ status: 'recovered', updatedAt: new Date() })
             .where(eq(churnedSubscribers.id, subscriberId))
+
+          logEvent({
+            name: 'subscriber_recovered',
+            customerId: customer.id,
+            properties: {
+              subscriberId,
+              attributionType: 'strong',
+              planMrrCents: subscriber.mrrCents,
+              recoveryMethod: 'reactivate_resume',
+            },
+          })
 
           console.log('STRONG RECOVERY (resume):', subscriber.email)
           return NextResponse.redirect(`${baseUrl}/welcome-back?recovered=true`)

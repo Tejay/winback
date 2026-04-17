@@ -4,6 +4,7 @@ import { emailsSent, churnedSubscribers, customers } from '@/lib/schema'
 import { eq, and, count } from 'drizzle-orm'
 import { ClassificationResult } from './types'
 import { generateUnsubscribeToken } from './unsubscribe-token'
+import { logEvent } from './events'
 
 /** Maximum follow-up emails per subscriber. After this, flag for founder. */
 const MAX_FOLLOWUPS = 2
@@ -147,6 +148,11 @@ export async function scheduleExitEmail(params: {
     .update(churnedSubscribers)
     .set({ status: 'contacted', updatedAt: new Date() })
     .where(eq(churnedSubscribers.id, subscriberId))
+
+  logEvent({
+    name: 'email_sent',
+    properties: { subscriberId, emailType: 'exit', subject, messageId },
+  })
 }
 
 /**
@@ -279,6 +285,11 @@ If you'd rather not hear from us, unsubscribe: ${unsubLink}`
     subject,
   })
 
+  logEvent({
+    name: 'email_sent',
+    properties: { subscriberId, emailType: 'followup', subject, messageId: res.data?.id ?? '' },
+  })
+
   console.log('Sent follow-up reply email to subscriber:', subscriberId)
   return { sent: true }
 }
@@ -366,4 +377,9 @@ If you'd rather not hear from us, unsubscribe: ${unsubLink}`
     .update(churnedSubscribers)
     .set({ status: 'contacted', updatedAt: new Date() })
     .where(eq(churnedSubscribers.id, subscriberId))
+
+  logEvent({
+    name: 'email_sent',
+    properties: { subscriberId, emailType: 'dunning', subject, messageId: res.data?.id ?? '' },
+  })
 }
