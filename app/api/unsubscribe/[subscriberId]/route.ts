@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { churnedSubscribers } from '@/lib/schema'
 import { eq } from 'drizzle-orm'
 import { verifyUnsubscribeToken } from '@/src/winback/lib/unsubscribe-token'
+import { logEvent } from '@/src/winback/lib/events'
 
 export async function GET(
   req: NextRequest,
@@ -20,6 +21,11 @@ export async function GET(
     .update(churnedSubscribers)
     .set({ doNotContact: true, unsubscribedAt: new Date(), updatedAt: new Date() })
     .where(eq(churnedSubscribers.id, subscriberId))
+
+  logEvent({
+    name: 'subscriber_unsubscribed',
+    properties: { subscriberId, method: 'html' },
+  })
 
   return NextResponse.redirect(`${baseUrl}/unsubscribed`)
 }
@@ -40,6 +46,11 @@ export async function POST(
     .update(churnedSubscribers)
     .set({ doNotContact: true, unsubscribedAt: new Date(), updatedAt: new Date() })
     .where(eq(churnedSubscribers.id, subscriberId))
+
+  logEvent({
+    name: 'subscriber_unsubscribed',
+    properties: { subscriberId, method: 'one_click' },
+  })
 
   return new NextResponse('Unsubscribed', { status: 200 })
 }

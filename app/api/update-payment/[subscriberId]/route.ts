@@ -4,6 +4,7 @@ import { db } from '@/lib/db'
 import { customers, churnedSubscribers } from '@/lib/schema'
 import { eq } from 'drizzle-orm'
 import { decrypt } from '@/src/winback/lib/encryption'
+import { logEvent } from '@/src/winback/lib/events'
 
 export async function GET(
   req: NextRequest,
@@ -37,6 +38,11 @@ export async function GET(
     .update(churnedSubscribers)
     .set({ billingPortalClickedAt: new Date(), updatedAt: new Date() })
     .where(eq(churnedSubscribers.id, subscriberId))
+
+  logEvent({
+    name: 'link_clicked',
+    properties: { subscriberId, linkType: 'billing_portal' },
+  })
 
   console.log('Billing portal click recorded:', subscriberId)
 

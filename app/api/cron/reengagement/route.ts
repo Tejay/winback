@@ -5,6 +5,7 @@ import { eq, and, lt, isNotNull, inArray, sql } from 'drizzle-orm'
 import { classifySubscriber } from '@/src/winback/lib/classifier'
 import { sendEmail, isCustomerPausedForSubscriber } from '@/src/winback/lib/email'
 import { SubscriberSignals } from '@/src/winback/lib/types'
+import { logEvent } from '@/src/winback/lib/events'
 
 export const maxDuration = 60
 
@@ -168,6 +169,17 @@ export async function GET(req: NextRequest) {
         .update(churnedSubscribers)
         .set({ ...updateFields, status: 'contacted' })
         .where(eq(churnedSubscribers.id, sub.id))
+
+      logEvent({
+        name: 'email_sent',
+        customerId: sub.customerId,
+        properties: {
+          subscriberId: sub.id,
+          emailType: 'reengagement',
+          subject: classification.firstMessage.subject,
+          messageId: messageId ?? '',
+        },
+      })
 
       console.log('Reengagement email sent to:', sub.email)
       sent++

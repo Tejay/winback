@@ -6,6 +6,7 @@ import { db } from '@/lib/db'
 import { customers, churnedSubscribers, emailsSent } from '@/lib/schema'
 import { eq, and, isNotNull, isNull, inArray, sql } from 'drizzle-orm'
 import { sendEmail } from '@/src/winback/lib/email'
+import { logEvent } from '@/src/winback/lib/events'
 
 const changelogSchema = z.object({
   content: z.string().min(1),
@@ -125,6 +126,17 @@ export async function POST(req: Request) {
           .update(churnedSubscribers)
           .set({ status: 'contacted', updatedAt: new Date() })
           .where(eq(churnedSubscribers.id, sub.id))
+
+        logEvent({
+          name: 'email_sent',
+          customerId: customer.id,
+          properties: {
+            subscriberId: sub.id,
+            emailType: 'win_back',
+            subject: sub.winBackSubject,
+            messageId,
+          },
+        })
 
         matchesFound++
     } catch (err) {

@@ -5,6 +5,7 @@ import { eq } from 'drizzle-orm'
 import { classifySubscriber } from '@/src/winback/lib/classifier'
 import { sendReplyEmail } from '@/src/winback/lib/email'
 import { SubscriberSignals } from '@/src/winback/lib/types'
+import { logEvent } from '@/src/winback/lib/events'
 
 export async function POST(req: Request) {
   const body = await req.json()
@@ -41,6 +42,11 @@ export async function POST(req: Request) {
     .update(emailsSent)
     .set({ repliedAt: new Date() })
     .where(eq(emailsSent.subscriberId, subscriberId))
+
+  logEvent({
+    name: 'email_replied',
+    properties: { subscriberId, replyTextLength: replyText.length },
+  })
 
   // Save reply text
   const [subscriber] = await db
