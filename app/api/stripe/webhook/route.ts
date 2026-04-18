@@ -127,6 +127,7 @@ async function processChurn(event: Stripe.Event) {
       tier: classification.tier,
       confidence: String(classification.confidence),
       triggerKeyword: classification.triggerKeyword,
+      triggerNeed: classification.triggerNeed,
       winBackSubject: classification.winBackSubject,
       winBackBody: classification.winBackBody,
       status: classification.suppress ? 'lost' : 'pending',

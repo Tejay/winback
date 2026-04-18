@@ -52,9 +52,10 @@ export const churnedSubscribers = pgTable('wb_churned_subscribers', {
   cancellationCategory: text('cancellation_category'),
   tier:                 integer('tier'),
   confidence:           decimal('confidence', { precision: 3, scale: 2 }),
-  triggerKeyword:       text('trigger_keyword'),
-  winBackSubject:       text('win_back_subject'),
-  winBackBody:          text('win_back_body'),
+  triggerKeyword:       text('trigger_keyword'),         // Legacy — kept during transition (spec 19b)
+  triggerNeed:          text('trigger_need'),            // Rich 1-2 sentence description used by LLM matcher (spec 19b)
+  winBackSubject:       text('win_back_subject'),        // Legacy — generated at churn (deprecated by spec 19c)
+  winBackBody:          text('win_back_body'),           // Legacy — generated at churn (deprecated by spec 19c)
   status:               text('status').default('pending'),
   billingPortalClickedAt: timestamp('billing_portal_clicked_at'),
   paymentMethodAtFailure: text('payment_method_at_failure'),

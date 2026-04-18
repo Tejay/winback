@@ -34,9 +34,10 @@ export interface ClassificationResult {
     body:           string
     sendDelaySecs:  number
   } | null
-  triggerKeyword:  string | null
-  winBackSubject:  string
-  winBackBody:     string
+  triggerKeyword:  string | null  // Legacy — kept during transition (spec 19b)
+  triggerNeed:     string | null  // Rich description of subscriber's stated need (spec 19b)
+  winBackSubject:  string         // Deprecated by spec 19c — generated at match time now
+  winBackBody:     string         // Deprecated by spec 19c — generated at match time now
 }
 
 export interface DashboardStats {

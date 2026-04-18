@@ -41,6 +41,7 @@ async function main() {
       sendDelaySecs: 0,
     },
     triggerKeyword: null,
+    triggerNeed: null,
     winBackSubject: '',
     winBackBody: '',
   }

@@ -39,6 +39,7 @@ function classifySilentChurn(): Omit<ClassificationResult, 'firstMessage'> & { f
     suppress: false,
     firstMessage: null,
     triggerKeyword: null,
+    triggerNeed: null,
     winBackSubject: '',
     winBackBody: '',
   }
@@ -217,6 +218,7 @@ export async function backfillCancellations(customerId: string): Promise<void> {
           tier: classification.tier,
           confidence: String(classification.confidence),
           triggerKeyword: classification.triggerKeyword,
+          triggerNeed: classification.triggerNeed,
           winBackSubject: classification.winBackSubject,
           winBackBody: classification.winBackBody,
           status,

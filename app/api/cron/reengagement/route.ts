@@ -125,6 +125,7 @@ export async function GET(req: NextRequest) {
         cancellationReason: classification.cancellationReason,
         cancellationCategory: classification.cancellationCategory,
         triggerKeyword: classification.triggerKeyword,
+        triggerNeed: classification.triggerNeed,
         winBackSubject: classification.winBackSubject,
         winBackBody: classification.winBackBody,
         reengagementSentAt: new Date(),

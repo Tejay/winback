@@ -7,6 +7,7 @@ import { customers, churnedSubscribers, emailsSent } from '@/lib/schema'
 import { eq, and, isNotNull, isNull, inArray, sql } from 'drizzle-orm'
 import { sendEmail } from '@/src/winback/lib/email'
 import { logEvent } from '@/src/winback/lib/events'
+import { matchChangelogToSubscribers, generateWinBackEmail } from '@/src/winback/lib/changelog-match'
 
 const changelogSchema = z.object({
   content: z.string().min(1),
@@ -83,10 +84,11 @@ export async function POST(req: Request) {
     console.error('Keyword extraction failed:', err)
   }
 
-  // Find matching subscribers with trigger keywords
+  // Spec 19a — broaden the candidate query (no ILIKE substring filter).
+  // Prefer triggerNeed (rich description); fall back to triggerKeyword for legacy rows.
   let matchesFound = 0
 
-  const matchedSubs = await db
+  const candidates = await db
     .select()
     .from(churnedSubscribers)
     .where(
@@ -94,23 +96,62 @@ export async function POST(req: Request) {
         eq(churnedSubscribers.customerId, customer.id),
         inArray(churnedSubscribers.status, ['pending', 'contacted']),
         eq(churnedSubscribers.doNotContact, false),
-        isNotNull(churnedSubscribers.triggerKeyword),
-        isNotNull(churnedSubscribers.winBackBody),
         isNull(churnedSubscribers.reengagementSentAt),
-        sql`${content} ILIKE '%' || ${churnedSubscribers.triggerKeyword} || '%'`
+        // Subscriber must have SOMETHING for the matcher to read
+        sql`(${churnedSubscribers.triggerNeed} IS NOT NULL OR ${churnedSubscribers.triggerKeyword} IS NOT NULL)`
       )
     )
 
+  if (candidates.length === 0) {
+    return NextResponse.json({ success: true, keywordsFound, matchesFound: 0 })
+  }
+
+  // Spec 19a — single LLM re-rank call decides which subscribers' needs are addressed
+  const matchedIds = await matchChangelogToSubscribers(
+    content,
+    candidates.map(c => ({
+      id: c.id,
+      need: c.triggerNeed ?? c.triggerKeyword!,
+    }))
+  )
+
+  if (matchedIds.size === 0) {
+    // Either honest no-matches or an LLM failure (logged inside the matcher).
+    return NextResponse.json({ success: true, keywordsFound, matchesFound: 0 })
+  }
+
+  const matchedSubs = candidates.filter(c => matchedIds.has(c.id))
   const fromName = customer.founderName ?? 'The team'
 
   for (const sub of matchedSubs) {
-    if (!sub.email || !sub.winBackBody || !sub.winBackSubject) continue
+    if (!sub.email) continue
 
     try {
+      // Spec 19c — generate a concrete win-back email at match time.
+      // Falls back to legacy pre-written winBackBody if generation fails or
+      // the subscriber predates spec 19c (unlikely after backfill).
+      const need = sub.triggerNeed ?? sub.triggerKeyword ?? ''
+      const generated = need
+        ? await generateWinBackEmail({
+            changelogText: content,
+            triggerNeed: need,
+            subscriberName: sub.name,
+            founderName: fromName,
+          })
+        : null
+
+      const subject = generated?.subject ?? sub.winBackSubject
+      const body    = generated?.body    ?? sub.winBackBody
+
+      if (!subject || !body) {
+        console.warn(`Skipping win-back to ${sub.email} — no generated email and no legacy body`)
+        continue
+      }
+
       const { messageId } = await sendEmail({
         to: sub.email,
-        subject: sub.winBackSubject,
-        body: sub.winBackBody,
+        subject,
+        body,
         fromName,
         subscriberId: sub.id,
       })
@@ -119,26 +160,27 @@ export async function POST(req: Request) {
         subscriberId: sub.id,
         gmailMessageId: messageId,
         type: 'win_back',
-        subject: sub.winBackSubject,
+        subject,
       })
 
-        await db
-          .update(churnedSubscribers)
-          .set({ status: 'contacted', updatedAt: new Date() })
-          .where(eq(churnedSubscribers.id, sub.id))
+      await db
+        .update(churnedSubscribers)
+        .set({ status: 'contacted', updatedAt: new Date() })
+        .where(eq(churnedSubscribers.id, sub.id))
 
-        logEvent({
-          name: 'email_sent',
-          customerId: customer.id,
-          properties: {
-            subscriberId: sub.id,
-            emailType: 'win_back',
-            subject: sub.winBackSubject,
-            messageId,
-          },
-        })
+      logEvent({
+        name: 'email_sent',
+        customerId: customer.id,
+        properties: {
+          subscriberId: sub.id,
+          emailType: 'win_back',
+          subject,
+          messageId,
+          generatedAtMatchTime: !!generated,
+        },
+      })
 
-        matchesFound++
+      matchesFound++
     } catch (err) {
       console.error(`Failed to send win-back email to ${sub.email}:`, err)
     }
