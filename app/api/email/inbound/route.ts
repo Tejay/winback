@@ -105,6 +105,7 @@ export async function POST(req: Request) {
         tier: classification.tier,
         confidence: String(classification.confidence),
         triggerKeyword: classification.triggerKeyword,
+        triggerNeed: classification.triggerNeed,
         winBackSubject: classification.winBackSubject,
         winBackBody: classification.winBackBody,
         cancellationReason: classification.cancellationReason,

@@ -40,9 +40,10 @@ const ClassificationSchema = z.object({
     body:          z.string(),
     sendDelaySecs: z.number().default(60),
   }).nullable().default(null),
-  triggerKeyword: z.string().nullable().default(null),
-  winBackSubject: z.string().default(''),
-  winBackBody:    z.string().default(''),
+  triggerKeyword: z.string().nullable().default(null),  // Legacy (spec 19b)
+  triggerNeed:    z.string().nullable().default(null),  // Rich description (spec 19b)
+  winBackSubject: z.string().default(''),                // Deprecated (spec 19c)
+  winBackBody:    z.string().default(''),                // Deprecated (spec 19c)
 })
 
 const SYSTEM_PROMPT = `You are a win-back classification engine for subscription businesses.
@@ -60,6 +61,12 @@ RULES:
 - Never offer a discount unless price was explicitly mentioned by the subscriber
 - cancellationReason: short phrase shown in a dashboard table (e.g. "Switched to a competitor")
 - cancellationCategory: exactly one of: Competitor|Price|Quality|Unused|Feature|Other
+- triggerNeed: a 1-2 sentence natural-language description of what the subscriber wanted, in their own words where possible. This is used to match against future product updates via an LLM, so be specific enough that another LLM can decide whether a future feature addresses it. Set to null only when there is no actionable need (Tier 3 silent churn, Tier 4 suppress, or pure billing issues). Examples:
+  * "Wants to export their data to a spreadsheet for their accountant"
+  * "Asked for Slack notifications when new orders come in"
+  * "Wants to connect to other tools via Zapier or any general workflow automation platform"
+- triggerKeyword: legacy field kept for backwards compatibility — set to a short 1-3 word phrase summarising triggerNeed, or null
+- winBackSubject + winBackBody: legacy fields — set to empty strings. Win-back emails are now generated at match time using the actual changelog text.
 - For Tier 2 and Tier 3, always end firstMessage.body with a single genuine question asking why they left. Keep it to one sentence. Frame it as curiosity, not a survey. Good example: "Would you mind sharing what happened? Hit reply — one line is enough." Bad example: "Please complete our exit survey." Do NOT add this question to Tier 1 — they already told you why they left.
 - Return ONLY valid JSON with no preamble and no markdown code fences
 

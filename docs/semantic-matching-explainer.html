@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Semantic Changelog Matching — Visual Explainer</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f8fafc; color: #0f172a; line-height: 1.5; }
+  code { background: #f1f5f9; padding: 1px 6px; border-radius: 4px; font-size: 0.9em; font-family: 'SF Mono', Monaco, Consolas, monospace; color: #6366f1; }
+
+  .header { padding: 28px 32px; background: #fff; border-bottom: 1px solid #e2e8f0; }
+  .header h1 { font-size: 24px; font-weight: 700; }
+  .header p { font-size: 14px; color: #64748b; margin-top: 6px; max-width: 720px; }
+
+  /* Tabs */
+  .tabs { display: flex; gap: 4px; padding: 16px 32px 0; background: #fff; border-bottom: 1px solid #e2e8f0; }
+  .tab { padding: 10px 18px; font-size: 13px; font-weight: 600; color: #64748b; background: transparent; border: none; cursor: pointer; border-bottom: 3px solid transparent; transition: all 0.15s; margin-bottom: -1px; }
+  .tab:hover { color: #0f172a; }
+  .tab.active { color: #2563eb; border-bottom-color: #2563eb; }
+
+  /* Stage container */
+  .stage { display: none; padding: 32px; }
+  .stage.active { display: block; }
+  .stage h2 { font-size: 18px; font-weight: 700; margin-bottom: 8px; }
+  .stage .lede { font-size: 14px; color: #64748b; margin-bottom: 24px; max-width: 760px; }
+
+  /* Scenario card */
+  .scenario { background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 24px; margin-bottom: 20px; }
+  .scenario-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #94a3b8; margin-bottom: 8px; }
+
+  /* Changelog box */
+  .changelog-box { background: #fef9c3; border: 1.5px solid #fde047; border-radius: 12px; padding: 16px 20px; font-size: 14px; color: #713f12; }
+  .changelog-box .label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #a16207; margin-bottom: 4px; }
+
+  /* Arrow */
+  .arrow-down { display: flex; justify-content: center; padding: 14px 0; color: #cbd5e1; font-size: 28px; }
+
+  /* Matcher box */
+  .matcher { border-radius: 12px; padding: 18px 20px; font-size: 14px; }
+  .matcher.ilike { background: #fef2f2; border: 1.5px solid #fecaca; color: #991b1b; }
+  .matcher.llm { background: #eff6ff; border: 1.5px solid #bfdbfe; color: #1e40af; }
+  .matcher .label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 6px; }
+  .matcher .desc { font-size: 13px; line-height: 1.6; }
+
+  /* Subscribers grid */
+  .subs-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; margin-top: 18px; }
+  .sub-card { background: #fff; border: 2px solid #e2e8f0; border-radius: 12px; padding: 14px; cursor: pointer; transition: all 0.2s; position: relative; }
+  .sub-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.06); }
+  .sub-card.match { border-color: #22c55e; background: #f0fdf4; }
+  .sub-card.miss { border-color: #ef4444; background: #fef2f2; }
+  .sub-card.fp { border-color: #f59e0b; background: #fffbeb; }
+  .sub-card.pending { border-color: #cbd5e1; background: #fff; }
+
+  .sub-name { font-size: 14px; font-weight: 700; margin-bottom: 4px; }
+  .sub-keyword { font-size: 12px; color: #64748b; font-family: 'SF Mono', Monaco, monospace; }
+  .sub-keyword .keyword-text { background: #f1f5f9; padding: 1px 6px; border-radius: 4px; color: #6366f1; }
+
+  .sub-decision { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: 99px; margin-top: 10px; }
+  .sub-decision.match { background: #dcfce7; color: #166534; }
+  .sub-decision.miss { background: #fee2e2; color: #991b1b; }
+  .sub-decision.fp { background: #fef3c7; color: #92400e; }
+  .sub-decision.pending { background: #e2e8f0; color: #475569; }
+
+  .sub-reason { font-size: 12px; color: #475569; margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(0,0,0,0.06); display: none; }
+  .sub-card.expanded .sub-reason { display: block; }
+
+  /* Result bar */
+  .result { margin-top: 18px; padding: 14px 18px; border-radius: 10px; font-size: 13px; font-weight: 600; }
+  .result.bad { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
+  .result.good { background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0; }
+
+  /* Hint */
+  .hint { font-size: 12px; color: #94a3b8; font-style: italic; margin-top: 12px; }
+
+  /* Side-by-side comparison */
+  .compare-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  @media (max-width: 880px) { .compare-grid { grid-template-columns: 1fr; } }
+
+  .compare-col { background: #fff; border: 1.5px solid #e2e8f0; border-radius: 14px; padding: 22px; }
+  .compare-col h3 { font-size: 16px; font-weight: 700; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+  .compare-col.before h3 { color: #991b1b; }
+  .compare-col.after h3 { color: #15803d; }
+  .compare-col table { width: 100%; font-size: 13px; border-collapse: collapse; }
+  .compare-col td { padding: 8px 0; border-bottom: 1px solid #f1f5f9; vertical-align: top; }
+  .compare-col td:first-child { color: #64748b; width: 45%; }
+  .compare-col td:last-child { color: #0f172a; font-weight: 500; }
+
+  /* Pillar diagram */
+  .pillars { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-top: 20px; }
+  @media (max-width: 880px) { .pillars { grid-template-columns: 1fr; } }
+  .pillar { background: #fff; border: 1.5px solid #e2e8f0; border-radius: 14px; padding: 20px; cursor: pointer; transition: all 0.2s; position: relative; }
+  .pillar:hover { border-color: #2563eb; box-shadow: 0 4px 12px rgba(0,0,0,0.06); }
+  .pillar.active { border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37,99,235,0.15); }
+  .pillar-num { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; background: #2563eb; color: #fff; border-radius: 50%; font-size: 13px; font-weight: 700; margin-bottom: 10px; }
+  .pillar-title { font-size: 15px; font-weight: 700; margin-bottom: 4px; }
+  .pillar-sub { font-size: 12px; color: #64748b; }
+  .pillar-detail { display: none; margin-top: 14px; padding-top: 14px; border-top: 1px solid #f1f5f9; font-size: 13px; color: #475569; line-height: 1.7; }
+  .pillar.active .pillar-detail { display: block; }
+  .pillar-detail strong { color: #0f172a; }
+  .pillar-detail .example { background: #f8fafc; padding: 10px 12px; border-radius: 8px; margin: 8px 0; font-size: 12px; font-family: 'SF Mono', Monaco, monospace; }
+
+  /* Cost diagram */
+  .cost-row { display: grid; grid-template-columns: 200px 1fr 80px; gap: 12px; align-items: center; padding: 8px 0; border-bottom: 1px solid #f1f5f9; }
+  .cost-bar { height: 22px; background: #e2e8f0; border-radius: 4px; position: relative; overflow: hidden; }
+  .cost-bar-fill { height: 100%; background: linear-gradient(90deg, #3b82f6, #2563eb); border-radius: 4px; }
+  .cost-label { font-size: 13px; color: #475569; }
+  .cost-value { font-size: 13px; color: #0f172a; font-weight: 600; text-align: right; font-family: 'SF Mono', Monaco, monospace; }
+
+  /* Choice prompt */
+  .choice { background: #f0f9ff; border: 1.5px solid #bae6fd; border-radius: 14px; padding: 20px 24px; margin-top: 24px; }
+  .choice h3 { font-size: 15px; font-weight: 700; color: #075985; margin-bottom: 8px; }
+  .choice p { font-size: 13px; color: #0c4a6e; line-height: 1.6; }
+
+  /* Funnel */
+  .funnel { display: flex; flex-direction: column; align-items: stretch; gap: 0; }
+  .funnel-stage { background: #fff; border: 1.5px solid #e2e8f0; border-radius: 12px; padding: 16px 20px; cursor: pointer; transition: all 0.2s; }
+  .funnel-stage:hover { border-color: #2563eb; box-shadow: 0 2px 8px rgba(0,0,0,0.04); }
+  .funnel-stage.active { border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37,99,235,0.12); }
+  .funnel-step { display: flex; gap: 14px; align-items: flex-start; }
+  .funnel-num { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; background: #eff6ff; color: #2563eb; border-radius: 50%; font-size: 14px; font-weight: 700; flex-shrink: 0; }
+  .funnel-info { flex: 1; }
+  .funnel-title { font-size: 15px; font-weight: 700; color: #0f172a; margin-bottom: 2px; }
+  .funnel-sub { font-size: 13px; color: #64748b; font-style: italic; }
+  .funnel-detail { display: none; margin-top: 14px; padding-top: 14px; border-top: 1px solid #f1f5f9; font-size: 13px; color: #475569; line-height: 1.7; }
+  .funnel-stage.active .funnel-detail { display: block; }
+  .funnel-detail .example { background: #f8fafc; padding: 10px 12px; border-radius: 8px; margin: 8px 0; font-size: 12px; color: #334155; border-left: 3px solid #cbd5e1; line-height: 1.5; }
+  .funnel-arrow { display: flex; justify-content: center; padding: 6px 0; color: #cbd5e1; font-size: 22px; }
+
+  /* Buttons for changing scenarios */
+  .scenario-toggle { display: inline-flex; gap: 6px; margin-bottom: 14px; flex-wrap: wrap; }
+  .scenario-toggle button { padding: 6px 12px; font-size: 12px; font-weight: 600; background: #fff; border: 1.5px solid #e2e8f0; border-radius: 8px; color: #64748b; cursor: pointer; transition: all 0.15s; }
+  .scenario-toggle button:hover { border-color: #94a3b8; color: #0f172a; }
+  .scenario-toggle button.active { background: #0f172a; color: #fff; border-color: #0f172a; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Semantic Changelog Matching</h1>
+  <p>An interactive walkthrough of why <code>ILIKE</code> substring matching breaks, how an LLM re-rank fixes it, what the recovery funnel actually looks like (spoiler: subscribers don't come back from the email itself), and what else should change once we move from "matching letters" to "matching meaning." <strong>Click anything that looks clickable.</strong></p>
+</div>
+
+<div class="tabs">
+  <button class="tab active" onclick="showTab('ilike')">1. Today (ILIKE)</button>
+  <button class="tab" onclick="showTab('llm')">2. New (LLM Re-rank)</button>
+  <button class="tab" onclick="showTab('compare')">3. Side by side</button>
+  <button class="tab" onclick="showTab('funnel')">4. How recovery actually works</button>
+  <button class="tab" onclick="showTab('deeper')">5. The deeper question</button>
+  <button class="tab" onclick="showTab('cost')">6. Cost analysis</button>
+</div>
+
+<!-- TAB 1: ILIKE -->
+<div class="stage active" id="stage-ilike">
+  <h2>Today: <code>ILIKE</code> compares letters, not meaning</h2>
+  <p class="lede">When the founder posts a changelog, we run <code>changelog_text ILIKE '%' || trigger_keyword || '%'</code> against every subscriber. It only matches if the literal substring appears. <strong>Click each subscriber</strong> to see what ILIKE decides.</p>
+
+  <div class="scenario">
+    <div class="scenario-label">Step 1 — Founder posts changelog</div>
+    <div class="changelog-box">
+      <div class="label">Changelog text</div>
+      "We shipped <strong>Slack alerts</strong> this week, plus <strong>spreadsheet downloads</strong> for your data, and a fix for the <strong>happy path</strong> of the onboarding flow."
+    </div>
+
+    <div class="arrow-down">&darr;</div>
+
+    <div class="matcher ilike">
+      <div class="label">Step 2 — PostgreSQL ILIKE substring match</div>
+      <div class="desc">For each subscriber, check: does <code>changelog</code> contain the literal letters of <code>trigger_keyword</code>?</div>
+    </div>
+
+    <div class="subs-grid">
+      <div class="sub-card pending" onclick="reveal(this, 'match')">
+        <div class="sub-name">Alice</div>
+        <div class="sub-keyword">trigger_keyword: <span class="keyword-text">slack</span></div>
+        <div class="sub-decision pending">click to reveal</div>
+        <div class="sub-reason"><strong>✅ Match.</strong> Letters "slack" appear in "Slack alerts." Win-back email sent. <em>Correct outcome.</em></div>
+      </div>
+
+      <div class="sub-card pending" onclick="reveal(this, 'miss')">
+        <div class="sub-name">Bob</div>
+        <div class="sub-keyword">trigger_keyword: <span class="keyword-text">csv export</span></div>
+        <div class="sub-decision pending">click to reveal</div>
+        <div class="sub-reason"><strong>❌ Miss.</strong> Letters "csv export" don't appear anywhere in the changelog. But "spreadsheet downloads" is exactly what Bob wanted. <em>Wrong outcome — recovery missed.</em></div>
+      </div>
+
+      <div class="sub-card pending" onclick="reveal(this, 'miss')">
+        <div class="sub-name">Carol</div>
+        <div class="sub-keyword">trigger_keyword: <span class="keyword-text">zapier</span></div>
+        <div class="sub-decision pending">click to reveal</div>
+        <div class="sub-reason"><strong>❌ Miss.</strong> Letters "zapier" don't appear. Carol wanted workflow automation — Slack alerts kind of count. ILIKE has no idea. <em>Maybe a missed recovery.</em></div>
+      </div>
+
+      <div class="sub-card pending" onclick="reveal(this, 'fp')">
+        <div class="sub-name">Dave</div>
+        <div class="sub-keyword">trigger_keyword: <span class="keyword-text">happy</span></div>
+        <div class="sub-decision pending">click to reveal</div>
+        <div class="sub-reason"><strong>⚠️ False positive.</strong> Letters "happy" appear inside "happy path" — but that's a developer phrase about onboarding, not what Dave asked for. <em>Sends an irrelevant email and burns trust.</em></div>
+      </div>
+    </div>
+
+    <div class="result bad">
+      <strong>Result with ILIKE:</strong> 1 correct, 2 missed, 1 wrong email sent. We're leaving real recoveries on the table and occasionally annoying the wrong people.
+    </div>
+
+    <div class="hint">The fundamental problem: ILIKE compares <em>letters</em>. Recovery requires comparing <em>meaning</em>.</div>
+  </div>
+</div>
+
+<!-- TAB 2: LLM Re-rank -->
+<div class="stage" id="stage-llm">
+  <h2>New: LLM re-rank reads meaning</h2>
+  <p class="lede">Replace the substring filter with one Claude Haiku call that reads the changelog and judges each subscriber's stated need. <strong>Click each subscriber</strong> to see what the LLM decides — and why.</p>
+
+  <div class="scenario">
+    <div class="scenario-label">Step 1 — Founder posts changelog (same as before)</div>
+    <div class="changelog-box">
+      <div class="label">Changelog text</div>
+      "We shipped <strong>Slack alerts</strong> this week, plus <strong>spreadsheet downloads</strong> for your data, and a fix for the <strong>happy path</strong> of the onboarding flow."
+    </div>
+
+    <div class="arrow-down">&darr;</div>
+
+    <div class="matcher llm">
+      <div class="label">Step 2 — Single LLM call evaluates all candidates at once</div>
+      <div class="desc">Prompt: <code>"Here's the changelog and 4 subscribers' stated needs. For each, return true/false: does the changelog address their concern?"</code> One call. JSON output.</div>
+    </div>
+
+    <div class="subs-grid">
+      <div class="sub-card pending" onclick="reveal(this, 'match')">
+        <div class="sub-name">Alice</div>
+        <div class="sub-keyword">need: <span class="keyword-text">slack</span></div>
+        <div class="sub-decision pending">click to reveal</div>
+        <div class="sub-reason"><strong>✅ Match.</strong> LLM: "The changelog ships Slack alerts, which directly addresses Alice's request." <em>Correct.</em></div>
+      </div>
+
+      <div class="sub-card pending" onclick="reveal(this, 'match')">
+        <div class="sub-name">Bob</div>
+        <div class="sub-keyword">need: <span class="keyword-text">csv export</span></div>
+        <div class="sub-decision pending">click to reveal</div>
+        <div class="sub-reason"><strong>✅ Match.</strong> LLM: "Spreadsheet downloads is the same thing as CSV export — the changelog addresses Bob's concern." <em>Recovery captured.</em></div>
+      </div>
+
+      <div class="sub-card pending" onclick="reveal(this, 'miss')">
+        <div class="sub-name">Carol</div>
+        <div class="sub-keyword">need: <span class="keyword-text">zapier</span></div>
+        <div class="sub-decision pending">click to reveal</div>
+        <div class="sub-reason"><strong>❌ No match.</strong> LLM: "Slack alerts is one notification channel, but Carol asked for general workflow automation via Zapier. Not really the same." <em>Honest decision — don't send a misleading email.</em></div>
+      </div>
+
+      <div class="sub-card pending" onclick="reveal(this, 'match')">
+        <div class="sub-name">Dave</div>
+        <div class="sub-keyword">need: <span class="keyword-text">happy</span></div>
+        <div class="sub-decision pending">click to reveal</div>
+        <div class="sub-reason"><strong>❌ No match.</strong> LLM: "'Happy path' is a developer term meaning the default code flow. Dave's keyword 'happy' likely refers to something else entirely — definitely not addressed here." <em>False positive avoided.</em></div>
+      </div>
+    </div>
+
+    <div class="result good">
+      <strong>Result with LLM re-rank:</strong> 2 correct matches (one ILIKE missed), 1 honest no-match, 1 false positive avoided. Better outcomes across the board.
+    </div>
+
+    <div class="hint">One Claude Haiku call (~$0.001) handles all candidates in a single batched JSON response. Cost is constant per changelog post, not per subscriber.</div>
+  </div>
+</div>
+
+<!-- TAB 3: Side by side -->
+<div class="stage" id="stage-compare">
+  <h2>Side-by-side comparison</h2>
+  <p class="lede">Same changelog, same 4 subscribers — different matching strategy.</p>
+
+  <div class="compare-grid">
+    <div class="compare-col before">
+      <h3>❌ ILIKE (today)</h3>
+      <table>
+        <tr><td>Alice — "slack"</td><td>✅ Match (substring)</td></tr>
+        <tr><td>Bob — "csv export"</td><td>❌ Missed</td></tr>
+        <tr><td>Carol — "zapier"</td><td>❌ Missed</td></tr>
+        <tr><td>Dave — "happy"</td><td>⚠️ False positive</td></tr>
+        <tr><td><strong>Recoveries captured</strong></td><td><strong>1 of 3 possible</strong></td></tr>
+        <tr><td><strong>Wrong emails sent</strong></td><td><strong>1</strong></td></tr>
+        <tr><td><strong>Cost</strong></td><td>$0 (just SQL)</td></tr>
+      </table>
+    </div>
+
+    <div class="compare-col after">
+      <h3>✅ LLM re-rank (new)</h3>
+      <table>
+        <tr><td>Alice — "slack"</td><td>✅ Match (semantic)</td></tr>
+        <tr><td>Bob — "csv export"</td><td>✅ Match (synonym caught)</td></tr>
+        <tr><td>Carol — "zapier"</td><td>❌ Honest no-match</td></tr>
+        <tr><td>Dave — "happy"</td><td>❌ FP avoided (context understood)</td></tr>
+        <tr><td><strong>Recoveries captured</strong></td><td><strong>2 of 3 possible</strong></td></tr>
+        <tr><td><strong>Wrong emails sent</strong></td><td><strong>0</strong></td></tr>
+        <tr><td><strong>Cost</strong></td><td>$0.001 per changelog post</td></tr>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- TAB 4: How recovery actually works -->
+<div class="stage" id="stage-funnel">
+  <h2>Subscribers don't come back from the email itself</h2>
+  <p class="lede">It's tempting to think "we send an amazing email and they come back." Reality is more honest: emails are <strong>conversation hooks</strong>. Recovery happens through replies and clicks. <strong>Click each stage</strong> to see what the email is actually trying to do.</p>
+
+  <div class="scenario">
+    <div class="scenario-label">The actual recovery funnel</div>
+
+    <div class="funnel">
+      <div class="funnel-stage" onclick="toggleFunnel(this)">
+        <div class="funnel-step">
+          <div class="funnel-num">1</div>
+          <div class="funnel-info">
+            <div class="funnel-title">First email — opens the conversation</div>
+            <div class="funnel-sub">"What specifically went wrong? Hit reply — one line is enough."</div>
+          </div>
+        </div>
+        <div class="funnel-detail">
+          The first email's job <strong>is not to convert</strong>. It's to prove a human is paying attention so the subscriber feels comfortable replying. Look at the actual classifier prompt rule:
+          <div class="example">"For Tier 2 and Tier 3, always end firstMessage.body with a single genuine question asking why they left. Frame it as curiosity, not a survey."</div>
+          A small percentage of recipients reply. That reply is the goldmine — real signal about why they actually left.
+        </div>
+      </div>
+
+      <div class="funnel-arrow">&darr;</div>
+
+      <div class="funnel-stage" onclick="toggleFunnel(this)">
+        <div class="funnel-step">
+          <div class="funnel-num">2</div>
+          <div class="funnel-info">
+            <div class="funnel-title">Reply triggers re-classification</div>
+            <div class="funnel-sub">"Read their reply carefully — it is the highest-signal input."</div>
+          </div>
+        </div>
+        <div class="funnel-detail">
+          The reply is sent back into the classifier. Now the AI knows <strong>specifically</strong> what's blocking them — not from Stripe enums and tenure days, but from the subscriber's own words. The follow-up email responds to those words directly.
+          <div class="example">Reply: "honestly the price felt high for what I was using"<br>Follow-up: "Totally fair — most people on the Pro plan use it heavily. The Starter plan at $9/mo might fit better. Want me to switch you over?"</div>
+          This is where most of the actual recoveries happen.
+        </div>
+      </div>
+
+      <div class="funnel-arrow">&darr;</div>
+
+      <div class="funnel-stage" onclick="toggleFunnel(this)">
+        <div class="funnel-step">
+          <div class="funnel-num">3</div>
+          <div class="funnel-info">
+            <div class="funnel-title">For non-repliers: changelog match → win-back email</div>
+            <div class="funnel-sub">Months later, when something they wanted ships</div>
+          </div>
+        </div>
+        <div class="funnel-detail">
+          For subscribers who didn't reply but mentioned a specific concern, we wait. When the founder ships something matching that concern, we send a win-back email. <strong>Same goal as email #1</strong> — open a conversation or get a click. Most won't engage. A small percentage will reply ("oh interesting, how does it handle X?") or click the reactivation link.
+          <div class="example">This is where today's <code>winBackBody</code> lives. And where ILIKE → LLM re-rank improves the matching, and where "concrete vs generic" improves the email content.</div>
+        </div>
+      </div>
+
+      <div class="funnel-arrow">&darr;</div>
+
+      <div class="funnel-stage" onclick="toggleFunnel(this)">
+        <div class="funnel-step">
+          <div class="funnel-num">4</div>
+          <div class="funnel-info">
+            <div class="funnel-title">Click → reactivation link → checkout</div>
+            <div class="funnel-sub">The actual recovery action</div>
+          </div>
+        </div>
+        <div class="funnel-detail">
+          Every email ends with a reactivation link. Clicking it opens Stripe Checkout (for fully cancelled subscribers) or resumes a still-active subscription. <strong>This is the moment of recovery</strong> — the email's job was just to get them to this link.
+          <div class="example">Tracked as <code>billingPortalClickedAt</code> on the subscriber row. Strong attribution signal.</div>
+        </div>
+      </div>
+
+      <div class="funnel-arrow">&darr;</div>
+
+      <div class="funnel-stage" onclick="toggleFunnel(this)">
+        <div class="funnel-step">
+          <div class="funnel-num">5</div>
+          <div class="funnel-info">
+            <div class="funnel-title">90-day backstop</div>
+            <div class="funnel-sub">One last attempt for everyone else</div>
+          </div>
+        </div>
+        <div class="funnel-detail">
+          Subscribers who never replied, never clicked, and never matched a changelog get one final re-engagement email at 90 days. Tiny conversion rate, but cheap to send and a small slice do come back if context has changed. After this, we accept they're gone.
+        </div>
+      </div>
+    </div>
+
+    <div class="result good" style="margin-top: 24px;">
+      <strong>Key insight:</strong> Every email is a hook to start a conversation or trigger a click. Subscribers rarely come back because an email was eloquent — they come back because we surfaced the small percentage who were ever going to reconsider, and made it easy for them to take the next step.
+    </div>
+
+    <div class="hint">This is why "concrete vs generic" matters in pillar 3 of the next tab. Concrete emails generate more replies and clicks. They don't magically convert.</div>
+  </div>
+</div>
+
+<!-- TAB 5: The deeper question -->
+<div class="stage" id="stage-deeper">
+  <h2>If matching changes — should the rest of the pipeline change too?</h2>
+  <p class="lede">Three things were designed together, for the ILIKE world. Two of them might no longer fit. <strong>Click each pillar</strong> to see why.</p>
+
+  <div class="pillars">
+    <div class="pillar" onclick="togglePillar(this)">
+      <div class="pillar-num">1</div>
+      <div class="pillar-title">Matching</div>
+      <div class="pillar-sub">ILIKE → LLM re-rank</div>
+      <div class="pillar-detail">
+        <strong>This is the change we're proposing.</strong> Read the first 3 tabs above.
+        <div class="example">SQL ILIKE → 1 Haiku call returning JSON of true/false per subscriber.</div>
+      </div>
+    </div>
+
+    <div class="pillar" onclick="togglePillar(this)">
+      <div class="pillar-num">2</div>
+      <div class="pillar-title">What we store</div>
+      <div class="pillar-sub">trigger_keyword → trigger_need</div>
+      <div class="pillar-detail">
+        <strong>Why it should also change:</strong> A single short keyword exists <em>only because ILIKE needs literal text</em>. With an LLM, we can store a richer description and match more accurately.
+        <div class="example">
+          Before: "csv export"<br>
+          After: "Wants to export their data to a spreadsheet for their accountant"
+        </div>
+        With the richer description, the LLM has more signal — Carol's "zapier" need could be stored as "wants workflow automation via Zapier or similar tools" and would correctly match a Zapier-adjacent feature.
+      </div>
+    </div>
+
+    <div class="pillar" onclick="togglePillar(this)">
+      <div class="pillar-num">3</div>
+      <div class="pillar-title">When we write the email</div>
+      <div class="pillar-sub">generic template → concrete & specific</div>
+      <div class="pillar-detail">
+        <strong>Why it should also change:</strong> Today's <code>winBackBody</code> is written at cancellation time, before any fix has shipped. The classifier doesn't know <em>how</em> the founder will fix the issue, so it writes a vague template ("we made improvements"). Generic emails open fewer conversations than concrete ones with real specifics.
+        <div class="example">
+          Pre-written at churn (generic):<br>
+          "Hi Bob, you mentioned CSV export. We've made improvements. Come back?"<br><br>
+          Generated at match (concrete):<br>
+          "Hi Bob, you mentioned needing CSV export. We just shipped spreadsheet downloads — here's a 30-second walkthrough of how it works for your data..."
+        </div>
+        The point isn't that the second email "converts" better in some magical way. It's that <strong>specific, concrete emails get more replies and clicks</strong> than vague templates — and replies/clicks are the real recovery mechanism (see "How recovery actually works" tab).
+      </div>
+    </div>
+  </div>
+
+  <div class="choice">
+    <h3>The shippable sequence</h3>
+    <p>
+      Each piece is independently shippable:
+      <br>• <strong>Spec 19a</strong> — LLM re-rank (1) → catches semantic matches today, no schema change
+      <br>• <strong>Spec 19b</strong> — Rich need descriptions (1+2) → higher match quality, small schema rename
+      <br>• <strong>Spec 19c</strong> — Generate at match time (1+2+3) → accurate, specific emails — full value
+    </p>
+  </div>
+</div>
+
+<!-- TAB 5: Cost analysis -->
+<div class="stage" id="stage-cost">
+  <h2>What does this cost us?</h2>
+  <p class="lede">All three changes use Claude Haiku. Each call is ~$0.001. Here's the per-event breakdown.</p>
+
+  <div class="scenario">
+    <div class="scenario-label">Per cancelled subscriber (one-time, at churn)</div>
+    <div class="cost-row"><div class="cost-label">Today: classify + write win-back body</div><div class="cost-bar"><div class="cost-bar-fill" style="width: 30%"></div></div><div class="cost-value">$0.003</div></div>
+    <div class="cost-row"><div class="cost-label">Spec 19a: same (no change)</div><div class="cost-bar"><div class="cost-bar-fill" style="width: 30%"></div></div><div class="cost-value">$0.003</div></div>
+    <div class="cost-row"><div class="cost-label">Spec 19b: classify with richer need</div><div class="cost-bar"><div class="cost-bar-fill" style="width: 30%"></div></div><div class="cost-value">$0.003</div></div>
+    <div class="cost-row"><div class="cost-label">Spec 19c: classify only (no winBackBody)</div><div class="cost-bar"><div class="cost-bar-fill" style="width: 25%"></div></div><div class="cost-value">$0.002</div></div>
+  </div>
+
+  <div class="scenario">
+    <div class="scenario-label">Per changelog post (every time the founder ships)</div>
+    <div class="cost-row"><div class="cost-label">Today: keyword extraction</div><div class="cost-bar"><div class="cost-bar-fill" style="width: 10%"></div></div><div class="cost-value">$0.001</div></div>
+    <div class="cost-row"><div class="cost-label">Spec 19a: extraction + re-rank (1 call each)</div><div class="cost-bar"><div class="cost-bar-fill" style="width: 20%"></div></div><div class="cost-value">$0.002</div></div>
+  </div>
+
+  <div class="scenario">
+    <div class="scenario-label">Per matched subscriber (rare — only when changelog matches)</div>
+    <div class="cost-row"><div class="cost-label">Today: $0 (uses pre-written body)</div><div class="cost-bar"><div class="cost-bar-fill" style="width: 0%"></div></div><div class="cost-value">$0.000</div></div>
+    <div class="cost-row"><div class="cost-label">Spec 19c: generate fresh email referencing changelog</div><div class="cost-bar"><div class="cost-bar-fill" style="width: 10%"></div></div><div class="cost-value">$0.001</div></div>
+  </div>
+
+  <div class="choice">
+    <h3>Bottom line</h3>
+    <p>
+      <strong>Spec 19a alone</strong> adds ~$0.001 per changelog post. A founder posts changelogs maybe weekly. Negligible.
+      <br><br>
+      <strong>Full design (19c)</strong> shifts cost from "always" (every churn pre-writes a body) to "only when needed" (every match generates a body). Net cost is roughly flat — and matches happen far less often than churns, so the full design is actually <em>cheaper</em> per recovery.
+    </p>
+  </div>
+</div>
+
+<script>
+function showTab(name) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.stage').forEach(s => s.classList.remove('active'));
+  event.target.classList.add('active');
+  document.getElementById('stage-' + name).classList.add('active');
+}
+
+function reveal(card, decision) {
+  card.classList.remove('pending');
+  card.classList.add(decision, 'expanded');
+  const badge = card.querySelector('.sub-decision');
+  badge.classList.remove('pending');
+  badge.classList.add(decision);
+  const labels = {
+    match: '✅ Match',
+    miss: '❌ Miss',
+    fp: '⚠️ False positive',
+  };
+  badge.textContent = labels[decision] || decision;
+}
+
+function togglePillar(el) {
+  const wasActive = el.classList.contains('active');
+  document.querySelectorAll('.pillar').forEach(p => p.classList.remove('active'));
+  if (!wasActive) el.classList.add('active');
+}
+
+function toggleFunnel(el) {
+  el.classList.toggle('active');
+}
+</script>
+
+</body>
+</html>
