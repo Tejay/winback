@@ -81,6 +81,12 @@ export async function GET(
     properties: { subscriberId, linkType: 'reactivate' },
   })
 
+  // Spec 21a — record engagement signal (link click)
+  await db
+    .update(churnedSubscribers)
+    .set({ lastEngagementAt: new Date(), updatedAt: new Date() })
+    .where(eq(churnedSubscribers.id, subscriberId))
+
   const accessToken = decrypt(customer.stripeAccessToken)
   const stripe = new Stripe(accessToken)
 
@@ -108,7 +114,13 @@ export async function GET(
 
           await db
             .update(churnedSubscribers)
-            .set({ status: 'recovered', updatedAt: new Date() })
+            .set({
+              status: 'recovered',
+              founderHandoffResolvedAt: subscriber.founderHandoffAt && !subscriber.founderHandoffResolvedAt
+                ? new Date()
+                : subscriber.founderHandoffResolvedAt,
+              updatedAt: new Date(),
+            })
             .where(eq(churnedSubscribers.id, subscriberId))
 
           logEvent({
@@ -131,7 +143,13 @@ export async function GET(
         if (sub.status === 'active' || sub.status === 'trialing') {
           await db
             .update(churnedSubscribers)
-            .set({ status: 'recovered', updatedAt: new Date() })
+            .set({
+              status: 'recovered',
+              founderHandoffResolvedAt: subscriber.founderHandoffAt && !subscriber.founderHandoffResolvedAt
+                ? new Date()
+                : subscriber.founderHandoffResolvedAt,
+              updatedAt: new Date(),
+            })
             .where(eq(churnedSubscribers.id, subscriberId))
 
           logEvent({

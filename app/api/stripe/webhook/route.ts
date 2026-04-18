@@ -203,30 +203,39 @@ async function processRecovery(event: Stripe.Event) {
     return
   }
 
-  // Determine attribution based on evidence of engagement
-  let attributionType: string
+  // Spec 21b — handoff attribution window. If Winback explicitly handed off
+  // to the founder within the last 30 days, any recovery in that window is
+  // strong (the founder couldn't have known to reach out without us).
+  const HANDOFF_ATTRIBUTION_DAYS = 30
+  let attributionType: string | null = null
 
-  if (churned.billingPortalClickedAt) {
-    // Subscriber clicked our billing portal link — strong evidence
-    attributionType = 'strong'
-  } else if (recentEmail.repliedAt) {
-    // They replied to our email — strong causation signal
-    attributionType = 'strong'
-  } else if (recentEmail.sentAt) {
-    // We emailed but no tracked engagement — check recency
-    const daysSinceEmail = Math.floor(
-      (Date.now() - recentEmail.sentAt.getTime()) / (1000 * 60 * 60 * 24)
+  if (churned.founderHandoffAt) {
+    const daysSinceHandoff = Math.floor(
+      (Date.now() - churned.founderHandoffAt.getTime()) / (1000 * 60 * 60 * 24)
     )
-    if (daysSinceEmail <= 14) {
-      // Resubscribed within 14 days of our email — likely influenced
-      attributionType = 'weak'
+    if (daysSinceHandoff <= HANDOFF_ATTRIBUTION_DAYS) {
+      attributionType = 'strong'
+    }
+  }
+
+  // Fall back to evidence-based attribution (spec 18)
+  if (!attributionType) {
+    if (churned.billingPortalClickedAt) {
+      attributionType = 'strong'
+    } else if (recentEmail.repliedAt) {
+      attributionType = 'strong'
+    } else if (recentEmail.sentAt) {
+      const daysSinceEmail = Math.floor(
+        (Date.now() - recentEmail.sentAt.getTime()) / (1000 * 60 * 60 * 24)
+      )
+      if (daysSinceEmail <= 14) {
+        attributionType = 'weak'
+      } else {
+        attributionType = 'organic'
+      }
     } else {
-      // Resubscribed long after our email — probably organic
       attributionType = 'organic'
     }
-  } else {
-    // No sent date (shouldn't happen, but defensive)
-    attributionType = 'organic'
   }
 
   const planItem = subscription.items?.data[0]
@@ -243,9 +252,16 @@ async function processRecovery(event: Stripe.Event) {
     attributionType,
   })
 
+  // Spec 21b — also resolve any pending handoff
   await db
     .update(churnedSubscribers)
-    .set({ status: 'recovered', updatedAt: new Date() })
+    .set({
+      status: 'recovered',
+      founderHandoffResolvedAt: churned.founderHandoffAt && !churned.founderHandoffResolvedAt
+        ? new Date()
+        : churned.founderHandoffResolvedAt,
+      updatedAt: new Date(),
+    })
     .where(eq(churnedSubscribers.id, churned.id))
 
   // Log recovery event
@@ -292,9 +308,16 @@ async function processCheckoutRecovery(event: Stripe.Event) {
     attributionType: 'strong',
   })
 
+  // Spec 21b — also resolve any pending handoff
   await db
     .update(churnedSubscribers)
-    .set({ status: 'recovered', updatedAt: new Date() })
+    .set({
+      status: 'recovered',
+      founderHandoffResolvedAt: subscriber.founderHandoffAt && !subscriber.founderHandoffResolvedAt
+        ? new Date()
+        : subscriber.founderHandoffResolvedAt,
+      updatedAt: new Date(),
+    })
     .where(eq(churnedSubscribers.id, subscriberId))
 
   // Log recovery event
@@ -478,26 +501,39 @@ async function processPaymentSucceeded(event: Stripe.Event) {
   if (!subscriber) return // Not a dunning case
 
   // Determine attribution
-  let attributionType: string
+  let attributionType: string | null = null
 
-  if (subscriber.billingPortalClickedAt) {
-    // STRONG — they clicked our billing portal link
-    attributionType = 'strong'
-  } else {
-    // Check if payment method changed
-    const accessToken = decrypt(customer.stripeAccessToken!)
-    const stripe = new Stripe(accessToken)
-    const stripeCustomer = await stripe.customers.retrieve(stripeCustomerId) as Stripe.Customer
-    const currentPM = stripeCustomer.invoice_settings?.default_payment_method
-    const currentPMId = typeof currentPM === 'string' ? currentPM : currentPM?.id ?? null
+  // Spec 21b — handoff window check (highest priority for handed-off subscribers)
+  const HANDOFF_ATTRIBUTION_DAYS = 30
+  if (subscriber.founderHandoffAt) {
+    const daysSinceHandoff = Math.floor(
+      (Date.now() - subscriber.founderHandoffAt.getTime()) / (1000 * 60 * 60 * 24)
+    )
+    if (daysSinceHandoff <= HANDOFF_ATTRIBUTION_DAYS) {
+      attributionType = 'strong'
+    }
+  }
 
-    if (currentPMId !== subscriber.paymentMethodAtFailure) {
-      // WEAK — payment method changed after our email
-      attributionType = 'weak'
+  if (!attributionType) {
+    if (subscriber.billingPortalClickedAt) {
+      // STRONG — they clicked our billing portal link
+      attributionType = 'strong'
     } else {
-      // Same card, Stripe retry worked — we didn't help
-      console.log('Payment succeeded via Stripe retry (same card) — no attribution:', stripeCustomerId)
-      return
+      // Check if payment method changed
+      const accessToken = decrypt(customer.stripeAccessToken!)
+      const stripe = new Stripe(accessToken)
+      const stripeCustomer = await stripe.customers.retrieve(stripeCustomerId) as Stripe.Customer
+      const currentPM = stripeCustomer.invoice_settings?.default_payment_method
+      const currentPMId = typeof currentPM === 'string' ? currentPM : currentPM?.id ?? null
+
+      if (currentPMId !== subscriber.paymentMethodAtFailure) {
+        // WEAK — payment method changed after our email
+        attributionType = 'weak'
+      } else {
+        // Same card, Stripe retry worked — we didn't help
+        console.log('Payment succeeded via Stripe retry (same card) — no attribution:', stripeCustomerId)
+        return
+      }
     }
   }
 
@@ -513,9 +549,16 @@ async function processPaymentSucceeded(event: Stripe.Event) {
     attributionType,
   })
 
+  // Spec 21b — also resolve any pending handoff
   await db
     .update(churnedSubscribers)
-    .set({ status: 'recovered', updatedAt: new Date() })
+    .set({
+      status: 'recovered',
+      founderHandoffResolvedAt: subscriber.founderHandoffAt && !subscriber.founderHandoffResolvedAt
+        ? new Date()
+        : subscriber.founderHandoffResolvedAt,
+      updatedAt: new Date(),
+    })
     .where(eq(churnedSubscribers.id, subscriber.id))
 
   // Log recovery event

@@ -1,6 +1,6 @@
 import { Resend } from 'resend'
 import { db } from '@/lib/db'
-import { emailsSent, churnedSubscribers, customers } from '@/lib/schema'
+import { emailsSent, churnedSubscribers, customers, users } from '@/lib/schema'
 import { eq, and, count } from 'drizzle-orm'
 import { ClassificationResult } from './types'
 import { generateUnsubscribeToken } from './unsubscribe-token'
@@ -8,6 +8,28 @@ import { logEvent } from './events'
 
 /** Maximum follow-up emails per subscriber. After this, flag for founder. */
 const MAX_FOLLOWUPS = 2
+
+/**
+ * Resolves the email address that should receive founder notifications
+ * (handoff alerts, reply-after-handoff alerts, etc.) for a customer.
+ *
+ * Order of preference:
+ *   1. customer.notificationEmail (set in Settings — spec 21c)
+ *   2. user.email (the founder's signin email)
+ *   3. null if neither exists (caller should skip sending)
+ */
+export async function resolveFounderNotificationEmail(customerId: string): Promise<string | null> {
+  const [row] = await db
+    .select({
+      notificationEmail: customers.notificationEmail,
+      userEmail: users.email,
+    })
+    .from(customers)
+    .innerJoin(users, eq(customers.userId, users.id))
+    .where(eq(customers.id, customerId))
+    .limit(1)
+  return row?.notificationEmail ?? row?.userEmail ?? null
+}
 
 function getResendClient() {
   const key = process.env.RESEND_API_KEY
@@ -182,9 +204,10 @@ export async function sendReplyEmail(params: {
   email: string
   classification: ClassificationResult
   fromName: string
+  /** @deprecated since spec 21c — recipient now resolved via customers.notificationEmail. Kept for backwards compat. */
   founderEmail?: string
 }): Promise<{ sent: boolean; reason?: string }> {
-  const { subscriberId, email, classification, fromName, founderEmail } = params
+  const { subscriberId, email, classification, fromName } = params
 
   if (!classification.firstMessage) {
     console.log('No firstMessage after re-classification, skipping reply email')
@@ -218,28 +241,61 @@ export async function sendReplyEmail(params: {
     )
 
   if ((followupCount?.total ?? 0) >= MAX_FOLLOWUPS) {
-    console.log(`Follow-up limit reached (${MAX_FOLLOWUPS}) for subscriber:`, subscriberId, '— flagging for founder')
+    console.log(`Follow-up limit reached (${MAX_FOLLOWUPS}) for subscriber:`, subscriberId, '— handing off to founder')
 
-    // Notify the founder that this subscriber needs personal attention
-    if (founderEmail) {
+    // Spec 21b — set handoff state. Skip if already handed off.
+    const [sub] = await db
+      .select()
+      .from(churnedSubscribers)
+      .where(eq(churnedSubscribers.id, subscriberId))
+      .limit(1)
+
+    const alreadyHandedOff = !!sub?.founderHandoffAt
+
+    if (sub && !alreadyHandedOff) {
+      await db
+        .update(churnedSubscribers)
+        .set({ founderHandoffAt: new Date(), updatedAt: new Date() })
+        .where(eq(churnedSubscribers.id, subscriberId))
+
+      logEvent({
+        name: 'founder_handoff_triggered',
+        customerId: sub.customerId,
+        properties: { subscriberId, reason: 'max_followups_reached' },
+      })
+
+      // Build + send the rich notification with full conversation + mailto.
+      // Resolve recipient via spec 21c (notification_email override).
       try {
-        const resend = getResendClient()
-        await resend.emails.send({
-          from: `Winback <noreply@winbackflow.co>`,
-          to: founderEmail,
-          subject: `[Winback] ${email} needs your attention`,
-          text: `A subscriber has replied ${MAX_FOLLOWUPS}+ times and the AI follow-up limit has been reached.
-
-Subscriber: ${email}
-Their latest reply: "${classification.firstMessage.body.slice(0, 200)}..."
-
-The AI generated a response but didn't send it. This one needs your personal touch — reply to them directly.
-
-You can see the full thread in your Resend dashboard or your inbox.`,
-        })
-        console.log('Flagged subscriber to founder:', founderEmail)
+        const recipient = await resolveFounderNotificationEmail(sub.customerId)
+        if (recipient) {
+          const { buildHandoffNotification } = await import('./founder-handoff-email')
+          const { subject, body } = await buildHandoffNotification({
+            subscriber: {
+              id: sub.id,
+              email: sub.email,
+              name: sub.name,
+              planName: sub.planName,
+              mrrCents: sub.mrrCents,
+              cancellationReason: sub.cancellationReason,
+              triggerNeed: sub.triggerNeed,
+              cancelledAt: sub.cancelledAt,
+              stripeComment: sub.stripeComment,
+              replyText: sub.replyText,
+            },
+            founderName: fromName,
+          })
+          const resend = getResendClient()
+          await resend.emails.send({
+            from: `Winback <noreply@winbackflow.co>`,
+            to: recipient,
+            subject,
+            text: body,
+          })
+          console.log('Handoff notification sent to:', recipient)
+        }
       } catch (notifyErr) {
-        console.error('Failed to notify founder:', notifyErr)
+        console.error('Failed to send handoff notification:', notifyErr)
       }
     }
 
