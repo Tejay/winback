@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { churnedSubscribers } from '@/lib/schema'
-import { eq } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
 import { verifyUnsubscribeToken } from '@/src/winback/lib/unsubscribe-token'
 import { logEvent } from '@/src/winback/lib/events'
 
@@ -19,7 +19,13 @@ export async function GET(
 
   await db
     .update(churnedSubscribers)
-    .set({ doNotContact: true, unsubscribedAt: new Date(), updatedAt: new Date() })
+    .set({
+      doNotContact: true,
+      unsubscribedAt: new Date(),
+      // Spec 21b — also resolve any pending handoff
+      founderHandoffResolvedAt: sql`COALESCE(${churnedSubscribers.founderHandoffResolvedAt}, CASE WHEN ${churnedSubscribers.founderHandoffAt} IS NOT NULL THEN now() ELSE NULL END)`,
+      updatedAt: new Date(),
+    })
     .where(eq(churnedSubscribers.id, subscriberId))
 
   logEvent({
@@ -44,7 +50,13 @@ export async function POST(
 
   await db
     .update(churnedSubscribers)
-    .set({ doNotContact: true, unsubscribedAt: new Date(), updatedAt: new Date() })
+    .set({
+      doNotContact: true,
+      unsubscribedAt: new Date(),
+      // Spec 21b — also resolve any pending handoff
+      founderHandoffResolvedAt: sql`COALESCE(${churnedSubscribers.founderHandoffResolvedAt}, CASE WHEN ${churnedSubscribers.founderHandoffAt} IS NOT NULL THEN now() ELSE NULL END)`,
+      updatedAt: new Date(),
+    })
     .where(eq(churnedSubscribers.id, subscriberId))
 
   logEvent({

@@ -6,6 +6,7 @@ import { eq } from 'drizzle-orm'
 import { TopNav } from '@/components/top-nav'
 import { DisconnectButton } from './disconnect-button'
 import { DangerZone } from './danger-zone'
+import { NotificationEmailForm } from './notification-email-form'
 import { CreditCard } from 'lucide-react'
 import { PoweredByStripe } from '@/components/powered-by-stripe'
 
@@ -89,6 +90,23 @@ export default async function SettingsPage() {
               </div>
             </div>
 
+          </div>
+
+          {/* Section 1.5 — Notifications (spec 21c) */}
+          <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 mb-4">
+            <div className="text-xs font-semibold tracking-widest uppercase text-blue-600">
+              Notifications
+            </div>
+            <h2 className="text-lg font-semibold text-slate-900 mt-1">
+              Where we reach you
+            </h2>
+            <p className="text-sm text-slate-500 mt-1 mb-4">
+              When the AI hands off a subscriber for personal follow-up, we'll send the alert here.
+            </p>
+            <NotificationEmailForm
+              initial={customer?.notificationEmail ?? null}
+              fallbackEmail={session.user.email ?? null}
+            />
           </div>
 
           {/* Section 2 — Billing */}

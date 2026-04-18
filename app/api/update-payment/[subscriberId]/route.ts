@@ -33,10 +33,14 @@ export async function GET(
     return NextResponse.redirect(`${baseUrl}/welcome-back?recovered=false`)
   }
 
-  // Record click for attribution
+  // Record click for attribution + engagement (spec 21a)
   await db
     .update(churnedSubscribers)
-    .set({ billingPortalClickedAt: new Date(), updatedAt: new Date() })
+    .set({
+      billingPortalClickedAt: new Date(),
+      lastEngagementAt: new Date(),
+      updatedAt: new Date(),
+    })
     .where(eq(churnedSubscribers.id, subscriberId))
 
   logEvent({

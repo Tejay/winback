@@ -23,6 +23,10 @@ interface Subscriber {
   winBackSubject: string | null
   winBackBody: string | null
   attributionType: string | null
+  // Spec 21b/21c — handoff state
+  founderHandoffAt: string | null
+  founderHandoffResolvedAt: string | null
+  founderHandoffSnoozedUntil: string | null
 }
 
 interface Stats {
@@ -123,6 +127,21 @@ export function DashboardClient({ changelog, isTrial, firstRecovery }: Dashboard
 
   async function handleAction(id: string, action: 'resend' | 'recover') {
     await fetch(`/api/subscribers/${id}/${action}`, { method: 'POST' })
+    setSelected(null)
+    fetchData()
+  }
+
+  // Spec 21c — snooze + resolve actions for handed-off subscribers
+  async function handleHandoffAction(
+    id: string,
+    action: 'snooze' | 'resolve',
+    durationDays?: number,
+  ) {
+    await fetch(`/api/subscribers/${id}/handoff`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(action === 'snooze' ? { action, durationDays } : { action }),
+    })
     setSelected(null)
     fetchData()
   }
@@ -466,6 +485,41 @@ export function DashboardClient({ changelog, isTrial, firstRecovery }: Dashboard
             </div>
 
             <div className="px-6 mt-5 pt-5 border-t border-slate-100 pb-6">
+              {/* Spec 21b/21c — handoff status banner */}
+              {selected.founderHandoffAt && !selected.founderHandoffResolvedAt && (
+                <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-xl">
+                  <div className="text-xs font-semibold uppercase tracking-wider text-amber-800 mb-1">
+                    Founder action needed
+                  </div>
+                  <p className="text-sm text-slate-700 mb-3">
+                    AI follow-ups exhausted. {selected.founderHandoffSnoozedUntil &&
+                      new Date(selected.founderHandoffSnoozedUntil).getTime() > Date.now()
+                      ? `Snoozed until ${new Date(selected.founderHandoffSnoozedUntil).toLocaleDateString()}.`
+                      : 'Reply to them directly — see your inbox for the alert with mailto link.'}
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      onClick={() => handleHandoffAction(selected.id, 'snooze', 1)}
+                      className="border border-slate-200 bg-white text-slate-700 rounded-full px-3 py-1 text-xs font-medium hover:bg-slate-50"
+                    >
+                      Snooze 1 day
+                    </button>
+                    <button
+                      onClick={() => handleHandoffAction(selected.id, 'snooze', 7)}
+                      className="border border-slate-200 bg-white text-slate-700 rounded-full px-3 py-1 text-xs font-medium hover:bg-slate-50"
+                    >
+                      Snooze 1 week
+                    </button>
+                    <button
+                      onClick={() => handleHandoffAction(selected.id, 'resolve')}
+                      className="bg-[#0f172a] text-white rounded-full px-3 py-1 text-xs font-medium hover:bg-[#1e293b]"
+                    >
+                      Mark resolved
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {selected.status !== 'recovered' && selected.status !== 'lost' && (
                 <div className="flex gap-3 mb-3">
                   <button

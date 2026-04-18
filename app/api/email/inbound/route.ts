@@ -3,7 +3,9 @@ import { db } from '@/lib/db'
 import { emailsSent, churnedSubscribers, customers, users } from '@/lib/schema'
 import { eq } from 'drizzle-orm'
 import { classifySubscriber } from '@/src/winback/lib/classifier'
-import { sendReplyEmail } from '@/src/winback/lib/email'
+import { sendReplyEmail, resolveFounderNotificationEmail } from '@/src/winback/lib/email'
+import { buildReplyAfterHandoffNotification } from '@/src/winback/lib/founder-handoff-email'
+import { Resend } from 'resend'
 import { SubscriberSignals } from '@/src/winback/lib/types'
 import { logEvent } from '@/src/winback/lib/events'
 
@@ -62,7 +64,11 @@ export async function POST(req: Request) {
 
   await db
     .update(churnedSubscribers)
-    .set({ replyText, updatedAt: new Date() })
+    .set({
+      replyText,
+      lastEngagementAt: new Date(),  // Spec 21a — engagement signal
+      updatedAt: new Date(),
+    })
     .where(eq(churnedSubscribers.id, subscriberId))
 
   // Re-classify with reply text
@@ -122,6 +128,51 @@ export async function POST(req: Request) {
       ?? (classification.winBackBody
         ? { subject: classification.winBackSubject, body: classification.winBackBody, sendDelaySecs: 0 }
         : null)
+
+    // Spec 21b — if subscriber is handed off, route this reply to the founder
+    // (not the AI). Respects snooze (spec 21c).
+    if (subscriber.founderHandoffAt && !subscriber.founderHandoffResolvedAt) {
+      const snoozedUntil = subscriber.founderHandoffSnoozedUntil
+      const isSnoozed = snoozedUntil && snoozedUntil.getTime() > Date.now()
+
+      if (isSnoozed) {
+        console.log('Reply received for snoozed handed-off subscriber — saved but no notification:', subscriberId)
+      } else {
+        try {
+          const recipient = customer ? await resolveFounderNotificationEmail(customer.id) : null
+          if (recipient) {
+            const { subject, body } = await buildReplyAfterHandoffNotification({
+              subscriber: {
+                id: subscriber.id,
+                email: subscriber.email,
+                name: subscriber.name,
+                planName: subscriber.planName,
+                mrrCents: subscriber.mrrCents,
+                cancellationReason: subscriber.cancellationReason,
+                triggerNeed: subscriber.triggerNeed,
+                cancelledAt: subscriber.cancelledAt,
+                stripeComment: subscriber.stripeComment,
+                replyText,
+              },
+              founderName: customer?.founderName ?? 'there',
+              newReplyText: replyText,
+            })
+            const resend = new Resend(process.env.RESEND_API_KEY!)
+            await resend.emails.send({
+              from: `Winback <noreply@winbackflow.co>`,
+              to: recipient,
+              subject,
+              text: body,
+            })
+            console.log('Reply-after-handoff notification sent to founder:', recipient)
+          }
+        } catch (notifyErr) {
+          console.error('Failed to notify founder of post-handoff reply:', notifyErr)
+        }
+      }
+      // Don't auto-reply when handed off
+      return NextResponse.json({ received: true, processed: true, handedOff: true })
+    }
 
     // Send follow-up email in the same thread with the re-classified content.
     // Respects a max of 2 follow-ups per subscriber — after that, flags the founder.

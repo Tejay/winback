@@ -5,9 +5,11 @@ import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { customers, churnedSubscribers, emailsSent } from '@/lib/schema'
 import { eq, and, isNotNull, isNull, inArray, sql } from 'drizzle-orm'
-import { sendEmail } from '@/src/winback/lib/email'
+import { sendEmail, resolveFounderNotificationEmail } from '@/src/winback/lib/email'
 import { logEvent } from '@/src/winback/lib/events'
 import { matchChangelogToSubscribers, generateWinBackEmail } from '@/src/winback/lib/changelog-match'
+import { buildChangelogMatchAfterHandoffNotification } from '@/src/winback/lib/founder-handoff-email'
+import { Resend } from 'resend'
 
 const changelogSchema = z.object({
   content: z.string().min(1),
@@ -127,6 +129,48 @@ export async function POST(req: Request) {
     if (!sub.email) continue
 
     try {
+      // Spec 21b — if subscriber is handed off, don't auto-send. Notify the
+      // founder instead so they can decide whether to mention this in their
+      // ongoing personal conversation. Respect snooze (spec 21c).
+      if (sub.founderHandoffAt && !sub.founderHandoffResolvedAt) {
+        const snoozedUntil = sub.founderHandoffSnoozedUntil
+        const isSnoozed = snoozedUntil && snoozedUntil.getTime() > Date.now()
+
+        if (!isSnoozed) {
+          const recipient = await resolveFounderNotificationEmail(customer.id)
+          if (recipient) {
+            const { subject, body } = await buildChangelogMatchAfterHandoffNotification({
+              subscriber: {
+                id: sub.id,
+                email: sub.email,
+                name: sub.name,
+                planName: sub.planName,
+                mrrCents: sub.mrrCents,
+                cancellationReason: sub.cancellationReason,
+                triggerNeed: sub.triggerNeed,
+                cancelledAt: sub.cancelledAt,
+                stripeComment: sub.stripeComment,
+                replyText: sub.replyText,
+              },
+              founderName: fromName,
+              changelogText: content,
+            })
+            const resend = new Resend(process.env.RESEND_API_KEY!)
+            await resend.emails.send({
+              from: `Winback <noreply@winbackflow.co>`,
+              to: recipient,
+              subject,
+              text: body,
+            })
+            console.log('Changelog-match-after-handoff notification sent for:', sub.email)
+          }
+        } else {
+          console.log('Changelog match for snoozed handed-off subscriber — no notification:', sub.email)
+        }
+        // Skip auto-send to subscriber regardless of snooze
+        continue
+      }
+
       // Spec 19c — generate a concrete win-back email at match time.
       // Falls back to legacy pre-written winBackBody if generation fails or
       // the subscriber predates spec 19c (unlikely after backfill).

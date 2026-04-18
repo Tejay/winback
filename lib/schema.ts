@@ -20,6 +20,7 @@ export const customers = pgTable('wb_customers', {
   changelogText:      text('changelog_text'),
   onboardingComplete: boolean('onboarding_complete').default(false),
   plan:               text('plan').default('trial'),
+  notificationEmail:  text('notification_email'),  // Spec 21c — overrides user.email for handoff alerts
   pausedAt:             timestamp('paused_at'),
   settlementPaidAt:     timestamp('settlement_paid_at'),
   backfillTotal:        integer('backfill_total').default(0),
@@ -66,6 +67,14 @@ export const churnedSubscribers = pgTable('wb_churned_subscribers', {
   fallbackDays:         integer('fallback_days').default(90),
   reengagementSentAt:   timestamp('reengagement_sent_at'),
   reengagementCount:    integer('reengagement_count').notNull().default(0),
+  // Spec 21a — engagement tracking
+  lastEngagementAt:     timestamp('last_engagement_at'),
+  proactiveNudgeAt:     timestamp('proactive_nudge_at'),
+  // Spec 21b — founder handoff
+  founderHandoffAt:           timestamp('founder_handoff_at'),
+  founderHandoffResolvedAt:   timestamp('founder_handoff_resolved_at'),
+  // Spec 21c — snooze
+  founderHandoffSnoozedUntil: timestamp('founder_handoff_snoozed_until'),
   createdAt:            timestamp('created_at').defaultNow(),
   updatedAt:            timestamp('updated_at').defaultNow(),
 })
