@@ -1,10 +1,36 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
 import { db } from '@/lib/db'
-import { customers, churnedSubscribers, recoveries, emailsSent } from '@/lib/schema'
+import { customers, churnedSubscribers, recoveries } from '@/lib/schema'
 import { eq } from 'drizzle-orm'
 import { decrypt } from '@/src/winback/lib/encryption'
 import { logEvent } from '@/src/winback/lib/events'
+import { signSubscriberToken } from '@/src/winback/lib/unsubscribe-token'
+
+/**
+ * Reactivation entry point clicked from email links.
+ *
+ * Routing (in priority order):
+ *  1. Subscriber not found / customer disconnected → fail with explicit reason
+ *  2. Already recovered → redirect to welcome-back?recovered=true
+ *  3. Subscription resumable (cancel_at_period_end=true) → resume + strong recovery
+ *  4. Subscription already active (status=active|trialing) → mark recovered (no
+ *     new recovery row), redirect to welcome-back?recovered=true (spec 20a)
+ *  5. Multiple active prices on connected account, OR saved price unavailable →
+ *     redirect to chooser page (spec 20c)
+ *  6. Single active price → direct Checkout
+ *  7. No active prices / Checkout failed → fail with explicit reason (spec 20b)
+ */
+
+type FailureReason =
+  | 'subscriber_not_found'
+  | 'account_disconnected'
+  | 'price_unavailable'
+  | 'checkout_failed'
+
+function failureRedirect(baseUrl: string, reason: FailureReason): NextResponse {
+  return NextResponse.redirect(`${baseUrl}/welcome-back?recovered=false&reason=${reason}`)
+}
 
 export async function GET(
   req: NextRequest,
@@ -21,10 +47,14 @@ export async function GET(
     .limit(1)
 
   if (!subscriber) {
-    return NextResponse.redirect(`${baseUrl}/welcome-back?recovered=false`)
+    logEvent({
+      name: 'reactivate_failed',
+      properties: { subscriberId, reason: 'subscriber_not_found' },
+    })
+    return failureRedirect(baseUrl, 'subscriber_not_found')
   }
 
-  // Already recovered — just redirect
+  // Already recovered — just redirect (no changes, no event)
   if (subscriber.status === 'recovered') {
     return NextResponse.redirect(`${baseUrl}/welcome-back?recovered=true`)
   }
@@ -37,11 +67,17 @@ export async function GET(
     .limit(1)
 
   if (!customer?.stripeAccessToken) {
-    return NextResponse.redirect(`${baseUrl}/welcome-back?recovered=false`)
+    logEvent({
+      name: 'reactivate_failed',
+      customerId: subscriber.customerId,
+      properties: { subscriberId, reason: 'account_disconnected' },
+    })
+    return failureRedirect(baseUrl, 'account_disconnected')
   }
 
   logEvent({
     name: 'link_clicked',
+    customerId: customer.id,
     properties: { subscriberId, linkType: 'reactivate' },
   })
 
@@ -49,15 +85,15 @@ export async function GET(
   const stripe = new Stripe(accessToken)
 
   try {
-    // Step 1: Try to resume subscription (not fully expired)
+    // ─── Stage 1: Try to resume existing subscription ───────────────────
     if (subscriber.stripeSubscriptionId) {
       try {
         const sub = await stripe.subscriptions.retrieve(subscriber.stripeSubscriptionId)
+
         if (sub.cancel_at_period_end === true) {
-          // Resume it
+          // Resume: flip the cancel flag → strong recovery
           await stripe.subscriptions.update(sub.id, { cancel_at_period_end: false })
 
-          // Create strong recovery
           const attributionEndsAt = new Date()
           attributionEndsAt.setFullYear(attributionEndsAt.getFullYear() + 1)
 
@@ -89,24 +125,69 @@ export async function GET(
           console.log('STRONG RECOVERY (resume):', subscriber.email)
           return NextResponse.redirect(`${baseUrl}/welcome-back?recovered=true`)
         }
+
+        // Spec 20a — Subscription is already active (data drift). Don't create
+        // a duplicate. Just correct our records and acknowledge the click.
+        if (sub.status === 'active' || sub.status === 'trialing') {
+          await db
+            .update(churnedSubscribers)
+            .set({ status: 'recovered', updatedAt: new Date() })
+            .where(eq(churnedSubscribers.id, subscriberId))
+
+          logEvent({
+            name: 'reactivate_already_active',
+            customerId: customer.id,
+            properties: {
+              subscriberId,
+              stripeSubscriptionId: sub.id,
+              stripeStatus: sub.status,
+            },
+          })
+
+          console.log('REACTIVATE: already active, no-op:', subscriber.email)
+          return NextResponse.redirect(`${baseUrl}/welcome-back?recovered=true`)
+        }
+        // else: status is canceled / incomplete / past_due / unpaid → fall
+        // through to checkout (Stage 2)
       } catch {
-        // Subscription doesn't exist or can't be resumed — fall through to checkout
+        // Subscription doesn't exist or can't be retrieved — fall through
       }
     }
 
-    // Step 2: Create fresh Checkout session
-    let priceId = subscriber.stripePriceId
+    // ─── Stage 2: Look up active prices on the connected account ────────
+    const activePricesList = await stripe.prices.list({
+      active: true,
+      type: 'recurring',
+      limit: 10,
+    })
+    const activePrices = activePricesList.data
 
-    // Fallback: look up prices on connected account
-    if (!priceId) {
-      const prices = await stripe.prices.list({ active: true, type: 'recurring', limit: 1 })
-      priceId = prices.data[0]?.id ?? null
+    if (activePrices.length === 0) {
+      logEvent({
+        name: 'reactivate_failed',
+        customerId: customer.id,
+        properties: { subscriberId, reason: 'price_unavailable' },
+      })
+      return failureRedirect(baseUrl, 'price_unavailable')
     }
 
-    if (!priceId) {
-      console.error('No price found for reactivation:', subscriberId)
-      return NextResponse.redirect(`${baseUrl}/welcome-back?recovered=false`)
+    // ─── Spec 20c routing ───────────────────────────────────────────────
+    // Fast path: only one active price AND it matches the subscriber's saved
+    // price → skip the chooser, go straight to Checkout (no extra friction).
+    const savedPriceStillActive = !!subscriber.stripePriceId
+      && activePrices.some(p => p.id === subscriber.stripePriceId)
+
+    const shouldUseChooser =
+      activePrices.length > 1 || (subscriber.stripePriceId && !savedPriceStillActive)
+
+    if (shouldUseChooser) {
+      const token = signSubscriberToken(subscriberId, 'reactivate')
+      return NextResponse.redirect(`${baseUrl}/reactivate/${subscriberId}?t=${token}`)
     }
+
+    // ─── Stage 3: Single-price direct Checkout ──────────────────────────
+    // Reach here when: 1 active price AND (matches saved OR subscriber has no saved price)
+    const priceId = subscriber.stripePriceId ?? activePrices[0].id
 
     const session = await stripe.checkout.sessions.create({
       mode: 'subscription',
@@ -123,6 +204,15 @@ export async function GET(
     return NextResponse.redirect(session.url!)
   } catch (err) {
     console.error('Reactivation failed:', err)
-    return NextResponse.redirect(`${baseUrl}/welcome-back?recovered=false`)
+    logEvent({
+      name: 'reactivate_failed',
+      customerId: customer.id,
+      properties: {
+        subscriberId,
+        reason: 'checkout_failed',
+        error: err instanceof Error ? err.message : String(err),
+      },
+    })
+    return failureRedirect(baseUrl, 'checkout_failed')
   }
 }
