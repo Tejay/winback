@@ -16,6 +16,9 @@ import { useState, useEffect } from 'react'
 interface SeedResult {
   scenario: string
   subscriberId?: string
+  stripeProvisioned?: boolean
+  stripeCustomerId?: string
+  stripeSubscriptionId?: string
   signals?: {
     email: string
     stripeEnum: string
@@ -84,6 +87,7 @@ const DEFAULT_CHANGELOG = `This week we shipped:
 export default function WinbackFlowPage() {
   const [loading, setLoading] = useState<string | null>(null)
   const [seedResults, setSeedResults] = useState<SeedResult[]>([])
+  const [stripeWarning, setStripeWarning] = useState<string | null>(null)
   const [replies, setReplies] = useState<Record<string, string>>({})
   const [replyResults, setReplyResults] = useState<Record<string, ReplyResult>>({})
   const [changelogText, setChangelogText] = useState(DEFAULT_CHANGELOG)
@@ -128,6 +132,7 @@ export default function WinbackFlowPage() {
     const data = await call('seed')
     if (data?.results) {
       setSeedResults(data.results)
+      setStripeWarning(data.stripeWarning ?? null)
       setReplyResults({})
       setChangelogResult(null)
     }
@@ -193,6 +198,18 @@ export default function WinbackFlowPage() {
               </Button>
             )}
           </div>
+
+          {stripeWarning && (
+            <div className="mb-4 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-900">
+              <strong>Heads up:</strong> {stripeWarning}
+            </div>
+          )}
+
+          {seedResults.length > 0 && seedResults.some(r => r.stripeProvisioned) && (
+            <div className="mb-4 px-4 py-3 bg-green-50 border border-green-200 rounded-xl text-sm text-green-900">
+              ✓ Real Stripe test customers + subscriptions created. The resubscribe link in each email will <strong>resume</strong> the subscription via the live reactivate flow → strong recovery.
+            </div>
+          )}
 
           {seedResults.length > 0 && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -324,7 +341,18 @@ function SubscriberCard({ result }: { result: SeedResult }) {
   const c = result.classification!
   return (
     <div className="border border-slate-200 rounded-xl p-4">
-      <div className="font-semibold text-slate-900 mb-2">{result.scenario}</div>
+      <div className="flex items-start justify-between mb-2">
+        <div className="font-semibold text-slate-900">{result.scenario}</div>
+        {result.stripeProvisioned ? (
+          <Badge color="green">Real Stripe sub</Badge>
+        ) : (
+          <Badge color="amber">Fake Stripe IDs</Badge>
+        )}
+      </div>
+
+      {result.stripeCustomerId && (
+        <Field label="Stripe customer" value={result.stripeCustomerId} mono small />
+      )}
 
       <Field label="Stripe enum" value={result.signals!.stripeEnum} mono />
       <Field label="Stripe comment" value={`"${result.signals!.stripeComment}"`} />

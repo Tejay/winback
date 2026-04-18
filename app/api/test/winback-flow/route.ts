@@ -1,14 +1,114 @@
 import { NextResponse } from 'next/server'
+import Stripe from 'stripe'
 import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
-import { customers, churnedSubscribers } from '@/lib/schema'
-import { eq, and } from 'drizzle-orm'
+import { customers, churnedSubscribers, recoveries } from '@/lib/schema'
+import { eq, and, inArray } from 'drizzle-orm'
+import { decrypt } from '@/src/winback/lib/encryption'
 import { classifySubscriber } from '@/src/winback/lib/classifier'
 import {
   matchChangelogToSubscribers,
   generateWinBackEmail,
 } from '@/src/winback/lib/changelog-match'
+import { appendStandardFooter } from '@/src/winback/lib/email'
 import { SubscriberSignals } from '@/src/winback/lib/types'
+
+/**
+ * Provisions a real Stripe test customer + subscription on the connected
+ * account so the resubscribe link in test emails actually works.
+ *
+ * The subscription is created in trial mode (no payment method needed) and
+ * immediately marked `cancel_at_period_end: true` — so when the subscriber
+ * clicks the resubscribe link, the reactivate route hits the resume path
+ * (Strong recovery) and successfully redirects to /welcome-back?recovered=true.
+ *
+ * Returns null if Stripe operations fail (caller falls back to fake IDs +
+ * a warning to the user).
+ */
+async function provisionStripeTestSubscription(
+  stripe: Stripe,
+  priceId: string,
+  email: string,
+  name: string,
+): Promise<{ customerId: string; subscriptionId: string; priceId: string } | null> {
+  try {
+    const customer = await stripe.customers.create({
+      email,
+      name,
+      metadata: { winback_test_harness: 'true' },
+    })
+
+    const subscription = await stripe.subscriptions.create({
+      customer: customer.id,
+      items: [{ price: priceId }],
+      trial_period_days: 30,
+      cancel_at_period_end: true,
+      metadata: { winback_test_harness: 'true' },
+    })
+
+    return {
+      customerId: customer.id,
+      subscriptionId: subscription.id,
+      priceId,
+    }
+  } catch (err) {
+    console.error('[test-harness] Stripe provisioning failed:', err)
+    return null
+  }
+}
+
+/**
+ * Best-effort cleanup — deletes a Stripe test customer (which cancels their
+ * subscriptions). Swallows errors since this is just hygiene.
+ */
+async function deleteStripeTestCustomer(stripe: Stripe, customerId: string): Promise<void> {
+  try {
+    await stripe.customers.del(customerId)
+  } catch (err) {
+    console.warn('[test-harness] Failed to delete Stripe test customer', customerId, err)
+  }
+}
+
+/**
+ * Wipes all test_harness subscribers (and their dependent rows) for a given
+ * customer. Order matters because recoveries.subscriber_id has no cascade
+ * (intentional — production recoveries should never disappear when a subscriber
+ * row is removed). Returns the count of subscribers deleted.
+ *
+ * Also best-effort deletes Stripe customers if they were real (provisioned).
+ */
+async function wipeTestSubscribers(stripe: Stripe | null, customerId: string): Promise<number> {
+  const existing = await db
+    .select({ id: churnedSubscribers.id, stripeCustomerId: churnedSubscribers.stripeCustomerId })
+    .from(churnedSubscribers)
+    .where(
+      and(
+        eq(churnedSubscribers.customerId, customerId),
+        eq(churnedSubscribers.source, TEST_SOURCE),
+      )
+    )
+
+  if (existing.length === 0) return 0
+
+  const ids = existing.map(e => e.id)
+
+  // Delete recoveries first (no cascade)
+  await db.delete(recoveries).where(inArray(recoveries.subscriberId, ids))
+
+  // Delete subscribers (emailsSent has cascade so it goes too)
+  await db.delete(churnedSubscribers).where(inArray(churnedSubscribers.id, ids))
+
+  // Best-effort Stripe cleanup for real (non-fake) customer IDs
+  if (stripe) {
+    for (const sub of existing) {
+      if (sub.stripeCustomerId.startsWith('cus_') && !sub.stripeCustomerId.startsWith('cus_test_')) {
+        await deleteStripeTestCustomer(stripe, sub.stripeCustomerId)
+      }
+    }
+  }
+
+  return existing.length
+}
 
 /**
  * Dev-only test harness for the full winback funnel.
@@ -160,6 +260,17 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
+  try {
+    return await handlePost(req)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    const stack = err instanceof Error ? err.stack : undefined
+    console.error('[test-harness] POST handler error:', message, stack)
+    return NextResponse.json({ error: `Server error: ${message}`, stack }, { status: 500 })
+  }
+}
+
+async function handlePost(req: Request) {
   const session = await requireDevAuth()
   if ('error' in session) {
     return NextResponse.json({ error: session.error }, { status: session.status })
@@ -169,34 +280,72 @@ export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}))
   const action = body.action as string | undefined
 
+  // Initialize Stripe once if the customer is connected — used by seed (provision)
+  // and reset (cleanup). Falls back to null if not connected.
+  const stripe: Stripe | null = customer.stripeAccessToken
+    ? new Stripe(decrypt(customer.stripeAccessToken))
+    : null
+
   if (action === 'reset') {
-    const deleted = await db
-      .delete(churnedSubscribers)
-      .where(
-        and(
-          eq(churnedSubscribers.customerId, customer.id),
-          eq(churnedSubscribers.source, TEST_SOURCE),
-        )
-      )
-      .returning({ id: churnedSubscribers.id })
-    return NextResponse.json({ ok: true, deleted: deleted.length })
+    const deletedCount = await wipeTestSubscribers(stripe, customer.id)
+    return NextResponse.json({ ok: true, deleted: deletedCount })
   }
 
   if (action === 'seed') {
-    // Wipe existing test subs first
-    await db
-      .delete(churnedSubscribers)
-      .where(
-        and(
-          eq(churnedSubscribers.customerId, customer.id),
-          eq(churnedSubscribers.source, TEST_SOURCE),
-        )
-      )
+    // Wipe existing test subs (and their recoveries + Stripe customers) first
+    await wipeTestSubscribers(stripe, customer.id)
+
+    // Look up an active recurring price on the connected account once.
+    // If we can't find one, all scenarios will use fake IDs (resubscribe link won't work).
+    let priceId: string | null = null
+    let stripeWarning: string | null = null
+    if (stripe) {
+      try {
+        const prices = await stripe.prices.list({ active: true, type: 'recurring', limit: 1 })
+        priceId = prices.data[0]?.id ?? null
+        if (!priceId) {
+          stripeWarning = 'Connected account has no active recurring prices — using fake Stripe IDs (resubscribe link will fail)'
+        }
+      } catch (err) {
+        stripeWarning = `Stripe price lookup failed (${err instanceof Error ? err.message : 'unknown'}) — using fake IDs`
+      }
+    } else {
+      stripeWarning = 'Customer has no Stripe access token — using fake IDs (resubscribe link will fail)'
+    }
 
     const results = []
     for (const scenario of SCENARIOS) {
-      const stripeCustomerId = `cus_test_${scenario.label.split(' ')[0].toLowerCase()}_${Date.now()}`
+      // Try to provision real Stripe customer + subscription. Fall back to fake IDs.
+      let stripeCustomerId: string
+      let stripeSubscriptionId: string
+      let stripePriceId: string | null = null
+      let provisionedReal = false
+
+      if (stripe && priceId) {
+        const provisioned = await provisionStripeTestSubscription(
+          stripe,
+          priceId,
+          scenario.email,
+          scenario.name,
+        )
+        if (provisioned) {
+          stripeCustomerId = provisioned.customerId
+          stripeSubscriptionId = provisioned.subscriptionId
+          stripePriceId = provisioned.priceId
+          provisionedReal = true
+        } else {
+          stripeCustomerId = `cus_test_${scenario.label.split(' ')[0].toLowerCase()}_${Date.now()}`
+          stripeSubscriptionId = `sub_test_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+        }
+      } else {
+        stripeCustomerId = `cus_test_${scenario.label.split(' ')[0].toLowerCase()}_${Date.now()}`
+        stripeSubscriptionId = `sub_test_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+      }
+
       const signals = buildSignals(scenario, stripeCustomerId)
+      // Override the placeholder subscription ID built by buildSignals with the real one
+      signals.stripeSubscriptionId = stripeSubscriptionId
+      signals.stripePriceId = stripePriceId
       let classification
       let classifyError = null
       try {
@@ -217,7 +366,7 @@ export async function POST(req: Request) {
           customerId: customer.id,
           stripeCustomerId,
           stripeSubscriptionId: signals.stripeSubscriptionId,
-          stripePriceId: null,
+          stripePriceId,
           email: scenario.email,
           name: scenario.name,
           planName: scenario.planName,
@@ -243,6 +392,9 @@ export async function POST(req: Request) {
       results.push({
         scenario: scenario.label,
         subscriberId: inserted.id,
+        stripeProvisioned: provisionedReal,
+        stripeCustomerId,
+        stripeSubscriptionId,
         signals: {
           email: scenario.email,
           stripeEnum: scenario.stripeEnum,
@@ -261,13 +413,17 @@ export async function POST(req: Request) {
         exitEmail: classification.firstMessage
           ? {
               subject: classification.firstMessage.subject,
-              body: classification.firstMessage.body,
+              body: appendStandardFooter(
+                classification.firstMessage.body,
+                inserted.id,
+                customer.founderName ?? 'The team',
+              ),
             }
           : null,
       })
     }
 
-    return NextResponse.json({ ok: true, results })
+    return NextResponse.json({ ok: true, results, stripeWarning })
   }
 
   if (action === 'reply') {
@@ -358,7 +514,14 @@ export async function POST(req: Request) {
         triggerNeed: classification.triggerNeed,
       },
       followUpEmail: replyMessage
-        ? { subject: replyMessage.subject, body: replyMessage.body }
+        ? {
+            subject: replyMessage.subject.startsWith('Re:') ? replyMessage.subject : `Re: ${replyMessage.subject}`,
+            body: appendStandardFooter(
+              replyMessage.body,
+              subscriberId,
+              customer.founderName ?? 'The team',
+            ),
+          }
         : null,
       followUpSkipped: classification.tier === 4 || !replyMessage,
       followUpSkipReason: classification.tier === 4 ? 'Tier 4 — suppress' : !replyMessage ? 'No firstMessage generated' : null,
@@ -417,7 +580,12 @@ export async function POST(req: Request) {
         subscriberId: sub.id,
         subscriberName: sub.name,
         need,
-        generated,
+        generated: generated
+          ? {
+              subject: generated.subject,
+              body: appendStandardFooter(generated.body, sub.id, fromName),
+            }
+          : null,
       })
     }
 

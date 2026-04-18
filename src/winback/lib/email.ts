@@ -15,10 +15,15 @@ function getResendClient() {
   return new Resend(key)
 }
 
-function unsubscribeUrl(subscriberId: string): string {
+export function unsubscribeUrl(subscriberId: string): string {
   const base = process.env.NEXT_PUBLIC_APP_URL ?? 'https://winbackflow.co'
   const token = generateUnsubscribeToken(subscriberId)
   return `${base}/api/unsubscribe/${subscriberId}?t=${token}`
+}
+
+export function reactivationUrl(subscriberId: string): string {
+  const base = process.env.NEXT_PUBLIC_APP_URL ?? 'https://winbackflow.co'
+  return `${base}/api/reactivate/${subscriberId}`
 }
 
 function listUnsubscribeHeaders(subscriberId: string) {
@@ -26,6 +31,26 @@ function listUnsubscribeHeaders(subscriberId: string) {
     'List-Unsubscribe': `<${unsubscribeUrl(subscriberId)}>, <mailto:unsubscribe@winbackflow.co>`,
     'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
   }
+}
+
+/**
+ * Appends the standard footer (reactivation link + sign-off + unsubscribe link)
+ * to an email body. Used by sendEmail(), sendReplyEmail(), and the dev test
+ * harness so they all produce identical output.
+ *
+ * Note: dunning emails use a different footer (update-payment link, no
+ * reactivation) — see sendDunningEmail() for that variant.
+ */
+export function appendStandardFooter(body: string, subscriberId: string, fromName: string): string {
+  return `${body}
+
+Ready to give us another try? Resubscribe here:
+${reactivationUrl(subscriberId)}
+
+— ${fromName}
+
+— — —
+If you'd rather not hear from us, unsubscribe: ${unsubscribeUrl(subscriberId)}`
 }
 
 /**
@@ -73,18 +98,7 @@ export async function sendEmail(params: {
   // Use reply+{subscriberId}@winbackflow.co so inbound webhook can match replies
   const from = `${fromName} <reply+${subscriberId}@winbackflow.co>`
 
-  // Append reactivation + unsubscribe links to every email
-  const reactivationLink = `${process.env.NEXT_PUBLIC_APP_URL}/api/reactivate/${subscriberId}`
-  const unsubLink = unsubscribeUrl(subscriberId)
-  const fullBody = `${body}
-
-Ready to give us another try? Resubscribe here:
-${reactivationLink}
-
-— ${fromName}
-
-— — —
-If you'd rather not hear from us, unsubscribe: ${unsubLink}`
+  const fullBody = appendStandardFooter(body, subscriberId, fromName)
 
   const res = await resend.emails.send({
     from,
@@ -244,17 +258,7 @@ You can see the full thread in your Resend dashboard or your inbox.`,
   const resend = getResendClient()
 
   const from = `${fromName} <reply+${subscriberId}@winbackflow.co>`
-  const reactivationLink = `${process.env.NEXT_PUBLIC_APP_URL}/api/reactivate/${subscriberId}`
-  const unsubLink = unsubscribeUrl(subscriberId)
-  const fullBody = `${body}
-
-Ready to give us another try? Resubscribe here:
-${reactivationLink}
-
-— ${fromName}
-
-— — —
-If you'd rather not hear from us, unsubscribe: ${unsubLink}`
+  const fullBody = appendStandardFooter(body, subscriberId, fromName)
 
   // Thread headers — if we have the original message ID, use it
   const headers: Record<string, string> = {
