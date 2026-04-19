@@ -45,6 +45,8 @@ export async function GET(req: NextRequest) {
         eq(churnedSubscribers.doNotContact, false),
         isNotNull(churnedSubscribers.email),
         isNull(churnedSubscribers.founderHandoffAt),
+        // Spec 22a — respect per-subscriber AI pause
+        sql`(${churnedSubscribers.aiPausedUntil} IS NULL OR ${churnedSubscribers.aiPausedUntil} < now())`,
         sql`${churnedSubscribers.cancelledAt} + (${churnedSubscribers.fallbackDays} || ' days')::interval <= now()`
       )
     )
@@ -67,6 +69,8 @@ export async function GET(req: NextRequest) {
         isNotNull(churnedSubscribers.lastEngagementAt),
         isNull(churnedSubscribers.proactiveNudgeAt),
         isNull(churnedSubscribers.founderHandoffAt),
+        // Spec 22a — respect per-subscriber AI pause
+        sql`(${churnedSubscribers.aiPausedUntil} IS NULL OR ${churnedSubscribers.aiPausedUntil} < now())`,
         lte(churnedSubscribers.lastEngagementAt, engagedNudgeCutoff),
       )
     )

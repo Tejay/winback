@@ -101,6 +101,23 @@ export async function isCustomerPausedForSubscriber(subscriberId: string): Promi
   return !!row?.pausedAt
 }
 
+/**
+ * Spec 22a — Returns true if the subscriber has an active AI pause
+ * (ai_paused_until > now). Callers must skip sending automated emails.
+ *
+ * This is orthogonal to handoff — a handed-off sub may or may not be paused,
+ * and a paused sub may or may not be handed-off. Both gates are independent.
+ */
+export async function isAiPaused(subscriberId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ aiPausedUntil: churnedSubscribers.aiPausedUntil })
+    .from(churnedSubscribers)
+    .where(eq(churnedSubscribers.id, subscriberId))
+    .limit(1)
+  if (!row?.aiPausedUntil) return false
+  return row.aiPausedUntil.getTime() > Date.now()
+}
+
 export async function sendEmail(params: {
   to: string
   subject: string
@@ -112,6 +129,12 @@ export async function sendEmail(params: {
 
   if (await isDoNotContact(subscriberId)) {
     console.log('Skipping email — subscriber unsubscribed:', subscriberId)
+    return { messageId: '' }
+  }
+
+  // Spec 22a — respect per-subscriber AI pause
+  if (await isAiPaused(subscriberId)) {
+    console.log('Skipping email — AI paused for subscriber:', subscriberId)
     return { messageId: '' }
   }
 
@@ -157,6 +180,12 @@ export async function scheduleExitEmail(params: {
 
   if (await isCustomerPausedForSubscriber(subscriberId)) {
     console.log('Skipping exit email — customer has paused sending:', subscriberId)
+    return
+  }
+
+  // Spec 22a — per-subscriber AI pause
+  if (await isAiPaused(subscriberId)) {
+    console.log('Skipping exit email — AI paused for subscriber:', subscriberId)
     return
   }
 
@@ -229,6 +258,12 @@ export async function sendReplyEmail(params: {
     return { sent: false, reason: 'customer_paused' }
   }
 
+  // Spec 22a — per-subscriber AI pause
+  if (await isAiPaused(subscriberId)) {
+    console.log('Skipping reply email — AI paused for subscriber:', subscriberId)
+    return { sent: false, reason: 'ai_paused' }
+  }
+
   // Check follow-up limit — max 2 per subscriber
   const [followupCount] = await db
     .select({ total: count() })
@@ -255,7 +290,14 @@ export async function sendReplyEmail(params: {
     if (sub && !alreadyHandedOff) {
       await db
         .update(churnedSubscribers)
-        .set({ founderHandoffAt: new Date(), updatedAt: new Date() })
+        .set({
+          founderHandoffAt: new Date(),
+          // Spec 22a — also set pause fields for consistent data model
+          aiPausedAt: new Date(),
+          aiPausedUntil: new Date('9999-12-31T00:00:00Z'),  // indefinite sentinel
+          aiPausedReason: 'handoff',
+          updatedAt: new Date(),
+        })
         .where(eq(churnedSubscribers.id, subscriberId))
 
       logEvent({
@@ -368,6 +410,12 @@ export async function sendDunningEmail(params: {
 
   if (await isDoNotContact(subscriberId)) {
     console.log('Skipping dunning email — subscriber unsubscribed:', subscriberId)
+    return
+  }
+
+  // Spec 22a — per-subscriber AI pause
+  if (await isAiPaused(subscriberId)) {
+    console.log('Skipping dunning email — AI paused for subscriber:', subscriberId)
     return
   }
 

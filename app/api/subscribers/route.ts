@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { customers, churnedSubscribers } from '@/lib/schema'
 import { eq, and, or, ilike, desc } from 'drizzle-orm'
+import { aiStateFilterCondition, isValidAiStateFilter } from '@/lib/ai-state'
 
 export async function GET(req: NextRequest) {
   const session = await auth()
@@ -26,8 +27,16 @@ export async function GET(req: NextRequest) {
 
   const conditions = [eq(churnedSubscribers.customerId, customer.id)]
 
+  // Spec 22b — accept new AI-state filters (active, handoff, paused, etc.).
+  // Legacy status values (pending, contacted) are still supported as a fallback.
   if (filter !== 'all') {
-    conditions.push(eq(churnedSubscribers.status, filter))
+    if (isValidAiStateFilter(filter)) {
+      const cond = aiStateFilterCondition(filter)
+      if (cond) conditions.push(cond)
+    } else {
+      // Legacy: treat as raw status value
+      conditions.push(eq(churnedSubscribers.status, filter))
+    }
   }
 
   if (search) {

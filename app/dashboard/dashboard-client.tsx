@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { StatusBadge } from '@/components/status-badge'
+import { AiStateBadge } from '@/components/ai-state-badge'
 import { TrendingUp, CheckCircle, DollarSign, Users, Search, Zap, X, RotateCcw, Check, Loader2, Sparkles } from 'lucide-react'
 
 interface Subscriber {
@@ -23,10 +24,15 @@ interface Subscriber {
   winBackSubject: string | null
   winBackBody: string | null
   attributionType: string | null
-  // Spec 21b/21c — handoff state
+  // Spec 21b — handoff state
   founderHandoffAt: string | null
   founderHandoffResolvedAt: string | null
-  founderHandoffSnoozedUntil: string | null
+  // Spec 22a — AI pause (replaces founderHandoffSnoozedUntil)
+  aiPausedUntil: string | null
+  aiPausedAt: string | null
+  aiPausedReason: string | null
+  // Spec 21a
+  doNotContact?: boolean | null
 }
 
 interface Stats {
@@ -131,7 +137,7 @@ export function DashboardClient({ changelog, isTrial, firstRecovery }: Dashboard
     fetchData()
   }
 
-  // Spec 21c — snooze + resolve actions for handed-off subscribers
+  // Spec 21c — legacy snooze/resolve (handoff-specific buttons on amber banner)
   async function handleHandoffAction(
     id: string,
     action: 'snooze' | 'resolve',
@@ -146,7 +152,34 @@ export function DashboardClient({ changelog, isTrial, firstRecovery }: Dashboard
     fetchData()
   }
 
-  const filters = ['all', 'pending', 'contacted', 'recovered', 'skipped', 'lost']
+  // Spec 22a — unified pause/resume on any subscriber
+  async function handlePauseAction(
+    id: string,
+    action: 'pause' | 'resume',
+    durationDays?: number | null,
+    reason?: string,
+  ) {
+    const body = action === 'pause'
+      ? { action, durationDays: durationDays ?? null, reason: reason ?? 'founder_handling' }
+      : { action }
+    await fetch(`/api/subscribers/${id}/pause`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    setSelected(null)
+    fetchData()
+  }
+
+  // Spec 22b — AI-state filters replacing raw status filters
+  const filters: Array<{ key: string; label: string }> = [
+    { key: 'all',       label: 'All' },
+    { key: 'active',    label: 'AI active' },
+    { key: 'handoff',   label: 'Needs you' },
+    { key: 'paused',    label: 'Paused' },
+    { key: 'recovered', label: 'Recovered' },
+    { key: 'done',      label: 'Done' },
+  ]
   const showBanner = isTrial && firstRecovery && !bannerDismissed
 
   return (
@@ -328,15 +361,15 @@ export function DashboardClient({ changelog, isTrial, firstRecovery }: Dashboard
         <div className="flex items-center gap-1">
           {filters.map((f) => (
             <button
-              key={f}
-              onClick={() => setFilter(f)}
+              key={f.key}
+              onClick={() => setFilter(f.key)}
               className={
-                filter === f
+                filter === f.key
                   ? 'bg-[#0f172a] text-white rounded-full px-4 py-1.5 text-sm font-medium'
                   : 'text-slate-500 hover:text-slate-900 rounded-full px-4 py-1.5 text-sm font-medium transition-colors'
               }
             >
-              {f.charAt(0).toUpperCase() + f.slice(1)}
+              {f.label}
             </button>
           ))}
         </div>
@@ -361,7 +394,7 @@ export function DashboardClient({ changelog, isTrial, firstRecovery }: Dashboard
               <th className="text-left text-xs font-semibold uppercase tracking-wide text-slate-400 py-3 px-4">Plan</th>
               <th className="text-left text-xs font-semibold uppercase tracking-wide text-slate-400 py-3 px-4">Cancelled</th>
               <th className="text-left text-xs font-semibold uppercase tracking-wide text-slate-400 py-3 px-4">Reason</th>
-              <th className="text-left text-xs font-semibold uppercase tracking-wide text-slate-400 py-3 px-4">Status</th>
+              <th className="text-left text-xs font-semibold uppercase tracking-wide text-slate-400 py-3 px-4">AI Status</th>
               <th className="text-right text-xs font-semibold uppercase tracking-wide text-slate-400 py-3 px-4">MRR</th>
             </tr>
           </thead>
@@ -388,7 +421,7 @@ export function DashboardClient({ changelog, isTrial, firstRecovery }: Dashboard
                     : '—'}
                 </td>
                 <td className="py-4 px-4">
-                  <StatusBadge status={sub.status as 'pending' | 'contacted' | 'recovered' | 'lost' | 'skipped'} />
+                  <AiStateBadge sub={sub} compact />
                 </td>
                 <td className="text-sm font-medium text-slate-900 py-4 px-4 text-right">
                   ${(sub.mrrCents / 100).toFixed(2)}
@@ -485,16 +518,17 @@ export function DashboardClient({ changelog, isTrial, firstRecovery }: Dashboard
             </div>
 
             <div className="px-6 mt-5 pt-5 border-t border-slate-100 pb-6">
-              {/* Spec 21b/21c — handoff status banner */}
+              {/* Spec 21b/22a — handoff status banner */}
               {selected.founderHandoffAt && !selected.founderHandoffResolvedAt && (
                 <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-xl">
                   <div className="text-xs font-semibold uppercase tracking-wider text-amber-800 mb-1">
                     Founder action needed
                   </div>
                   <p className="text-sm text-slate-700 mb-3">
-                    AI follow-ups exhausted. {selected.founderHandoffSnoozedUntil &&
-                      new Date(selected.founderHandoffSnoozedUntil).getTime() > Date.now()
-                      ? `Snoozed until ${new Date(selected.founderHandoffSnoozedUntil).toLocaleDateString()}.`
+                    AI follow-ups exhausted. {selected.aiPausedUntil &&
+                      new Date(selected.aiPausedUntil).getTime() > Date.now() &&
+                      new Date(selected.aiPausedUntil).getFullYear() < 2099
+                      ? `Snoozed until ${new Date(selected.aiPausedUntil).toLocaleDateString()}.`
                       : 'Reply to them directly — see your inbox for the alert with mailto link.'}
                   </p>
                   <div className="flex flex-wrap gap-2">
@@ -502,13 +536,13 @@ export function DashboardClient({ changelog, isTrial, firstRecovery }: Dashboard
                       onClick={() => handleHandoffAction(selected.id, 'snooze', 1)}
                       className="border border-slate-200 bg-white text-slate-700 rounded-full px-3 py-1 text-xs font-medium hover:bg-slate-50"
                     >
-                      Snooze 1 day
+                      Pause 1 day
                     </button>
                     <button
                       onClick={() => handleHandoffAction(selected.id, 'snooze', 7)}
                       className="border border-slate-200 bg-white text-slate-700 rounded-full px-3 py-1 text-xs font-medium hover:bg-slate-50"
                     >
-                      Snooze 1 week
+                      Pause 1 week
                     </button>
                     <button
                       onClick={() => handleHandoffAction(selected.id, 'resolve')}
@@ -517,6 +551,31 @@ export function DashboardClient({ changelog, isTrial, firstRecovery }: Dashboard
                       Mark resolved
                     </button>
                   </div>
+                </div>
+              )}
+
+              {/* Spec 22a — proactive pause banner (non-handoff) */}
+              {(!selected.founderHandoffAt || selected.founderHandoffResolvedAt) &&
+                selected.aiPausedUntil &&
+                new Date(selected.aiPausedUntil).getTime() > Date.now() && (
+                <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-xl">
+                  <div className="text-xs font-semibold uppercase tracking-wider text-blue-800 mb-1">
+                    AI paused
+                  </div>
+                  <p className="text-sm text-slate-700 mb-3">
+                    {new Date(selected.aiPausedUntil).getFullYear() >= 2099
+                      ? 'Paused indefinitely.'
+                      : `Paused until ${new Date(selected.aiPausedUntil).toLocaleDateString()}.`}
+                    {selected.aiPausedReason && selected.aiPausedReason !== 'handoff' && (
+                      <span className="text-slate-500"> · {selected.aiPausedReason.replace(/_/g, ' ')}</span>
+                    )}
+                  </p>
+                  <button
+                    onClick={() => handlePauseAction(selected.id, 'resume')}
+                    className="bg-[#0f172a] text-white rounded-full px-3 py-1 text-xs font-medium hover:bg-[#1e293b]"
+                  >
+                    Resume AI
+                  </button>
                 </div>
               )}
 
@@ -534,6 +593,43 @@ export function DashboardClient({ changelog, isTrial, firstRecovery }: Dashboard
                   >
                     <Check className="w-3.5 h-3.5" /> Mark recovered
                   </button>
+                </div>
+              )}
+
+              {/* Spec 22a — Pause AI dropdown (any non-paused, non-handoff, non-terminal sub) */}
+              {selected.status !== 'recovered' && selected.status !== 'lost' &&
+                !(selected.founderHandoffAt && !selected.founderHandoffResolvedAt) &&
+                !(selected.aiPausedUntil && new Date(selected.aiPausedUntil).getTime() > Date.now()) && (
+                <div className="border-t border-slate-100 pt-3 mt-2">
+                  <div className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">
+                    Pause AI
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      onClick={() => handlePauseAction(selected.id, 'pause', 1, 'founder_handling')}
+                      className="border border-slate-200 bg-white text-slate-700 rounded-full px-3 py-1 text-xs font-medium hover:bg-slate-50"
+                    >
+                      1 day
+                    </button>
+                    <button
+                      onClick={() => handlePauseAction(selected.id, 'pause', 7, 'founder_handling')}
+                      className="border border-slate-200 bg-white text-slate-700 rounded-full px-3 py-1 text-xs font-medium hover:bg-slate-50"
+                    >
+                      1 week
+                    </button>
+                    <button
+                      onClick={() => handlePauseAction(selected.id, 'pause', 30, 'founder_handling')}
+                      className="border border-slate-200 bg-white text-slate-700 rounded-full px-3 py-1 text-xs font-medium hover:bg-slate-50"
+                    >
+                      1 month
+                    </button>
+                    <button
+                      onClick={() => handlePauseAction(selected.id, 'pause', null, 'founder_handling')}
+                      className="border border-slate-200 bg-white text-slate-700 rounded-full px-3 py-1 text-xs font-medium hover:bg-slate-50"
+                    >
+                      Indefinite
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
