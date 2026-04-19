@@ -203,9 +203,9 @@ async function processRecovery(event: Stripe.Event) {
     return
   }
 
-  // Spec 21b — handoff attribution window. If Winback explicitly handed off
-  // to the founder within the last 30 days, any recovery in that window is
-  // strong (the founder couldn't have known to reach out without us).
+  // Spec 21b/22a — handoff & pause attribution window. If Winback handed off
+  // to the founder OR the founder proactively paused within the last 30 days,
+  // any recovery in that window is strong (the founder acted on our surfacing).
   const HANDOFF_ATTRIBUTION_DAYS = 30
   let attributionType: string | null = null
 
@@ -214,6 +214,16 @@ async function processRecovery(event: Stripe.Event) {
       (Date.now() - churned.founderHandoffAt.getTime()) / (1000 * 60 * 60 * 24)
     )
     if (daysSinceHandoff <= HANDOFF_ATTRIBUTION_DAYS) {
+      attributionType = 'strong'
+    }
+  }
+
+  // Spec 22a — proactive pause also earns the strong window
+  if (!attributionType && churned.aiPausedAt) {
+    const daysSincePause = Math.floor(
+      (Date.now() - churned.aiPausedAt.getTime()) / (1000 * 60 * 60 * 24)
+    )
+    if (daysSincePause <= HANDOFF_ATTRIBUTION_DAYS) {
       attributionType = 'strong'
     }
   }
@@ -503,13 +513,22 @@ async function processPaymentSucceeded(event: Stripe.Event) {
   // Determine attribution
   let attributionType: string | null = null
 
-  // Spec 21b — handoff window check (highest priority for handed-off subscribers)
+  // Spec 21b/22a — handoff & pause attribution window (highest priority)
   const HANDOFF_ATTRIBUTION_DAYS = 30
   if (subscriber.founderHandoffAt) {
     const daysSinceHandoff = Math.floor(
       (Date.now() - subscriber.founderHandoffAt.getTime()) / (1000 * 60 * 60 * 24)
     )
     if (daysSinceHandoff <= HANDOFF_ATTRIBUTION_DAYS) {
+      attributionType = 'strong'
+    }
+  }
+
+  if (!attributionType && subscriber.aiPausedAt) {
+    const daysSincePause = Math.floor(
+      (Date.now() - subscriber.aiPausedAt.getTime()) / (1000 * 60 * 60 * 24)
+    )
+    if (daysSincePause <= HANDOFF_ATTRIBUTION_DAYS) {
       attributionType = 'strong'
     }
   }

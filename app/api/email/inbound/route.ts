@@ -129,14 +129,20 @@ export async function POST(req: Request) {
         ? { subject: classification.winBackSubject, body: classification.winBackBody, sendDelaySecs: 0 }
         : null)
 
-    // Spec 21b — if subscriber is handed off, route this reply to the founder
-    // (not the AI). Respects snooze (spec 21c).
-    if (subscriber.founderHandoffAt && !subscriber.founderHandoffResolvedAt) {
-      const snoozedUntil = subscriber.founderHandoffSnoozedUntil
-      const isSnoozed = snoozedUntil && snoozedUntil.getTime() > Date.now()
+    // Spec 22a — if subscriber is handed off OR has AI paused, route this reply
+    // to the founder (not the AI). Notification rules:
+    //   • Handed off + active pause (snooze) → muted (no notification)
+    //   • Handed off + no active pause → notify (reply-after-handoff)
+    //   • Proactive pause (not handed off) → notify (reply-during-pause)
+    const isHandedOff = subscriber.founderHandoffAt && !subscriber.founderHandoffResolvedAt
+    const isPaused = subscriber.aiPausedUntil && subscriber.aiPausedUntil.getTime() > Date.now()
 
-      if (isSnoozed) {
-        console.log('Reply received for snoozed handed-off subscriber — saved but no notification:', subscriberId)
+    if (isHandedOff || isPaused) {
+      // Handoff-snooze mutes notifications; any other combination notifies.
+      const shouldNotify = !(isHandedOff && isPaused)
+
+      if (!shouldNotify) {
+        console.log('Reply received while handoff is snoozed — saved but no notification:', subscriberId)
       } else {
         try {
           const recipient = customer ? await resolveFounderNotificationEmail(customer.id) : null
@@ -164,14 +170,14 @@ export async function POST(req: Request) {
               subject,
               text: body,
             })
-            console.log('Reply-after-handoff notification sent to founder:', recipient)
+            console.log('Reply-under-pause-or-handoff notification sent to founder:', recipient)
           }
         } catch (notifyErr) {
-          console.error('Failed to notify founder of post-handoff reply:', notifyErr)
+          console.error('Failed to notify founder of reply under pause/handoff:', notifyErr)
         }
       }
-      // Don't auto-reply when handed off
-      return NextResponse.json({ received: true, processed: true, handedOff: true })
+      // Don't auto-reply while under pause or handoff
+      return NextResponse.json({ received: true, processed: true, handedOff: isHandedOff, paused: isPaused })
     }
 
     // Send follow-up email in the same thread with the re-classified content.

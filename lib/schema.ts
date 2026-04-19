@@ -73,8 +73,11 @@ export const churnedSubscribers = pgTable('wb_churned_subscribers', {
   // Spec 21b — founder handoff
   founderHandoffAt:           timestamp('founder_handoff_at'),
   founderHandoffResolvedAt:   timestamp('founder_handoff_resolved_at'),
-  // Spec 21c — snooze
-  founderHandoffSnoozedUntil: timestamp('founder_handoff_snoozed_until'),
+  // Spec 22a — AI pause (generalized from the spec 21 handoff snooze).
+  //            ai_paused_until replaces the old founder_handoff_snoozed_until column.
+  aiPausedUntil:              timestamp('ai_paused_until'),
+  aiPausedAt:                 timestamp('ai_paused_at'),
+  aiPausedReason:             text('ai_paused_reason'),
   createdAt:            timestamp('created_at').defaultNow(),
   updatedAt:            timestamp('updated_at').defaultNow(),
 })

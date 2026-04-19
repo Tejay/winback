@@ -132,11 +132,16 @@ export async function POST(req: Request) {
       // Spec 21b — if subscriber is handed off, don't auto-send. Notify the
       // founder instead so they can decide whether to mention this in their
       // ongoing personal conversation. Respect snooze (spec 21c).
-      if (sub.founderHandoffAt && !sub.founderHandoffResolvedAt) {
-        const snoozedUntil = sub.founderHandoffSnoozedUntil
-        const isSnoozed = snoozedUntil && snoozedUntil.getTime() > Date.now()
+      // Spec 22a — if subscriber is handed off OR has AI paused, notify the
+      // founder instead of auto-sending. Mute notifications when handoff+snooze
+      // is active (same rule as inbound reply route).
+      const isHandedOff = sub.founderHandoffAt && !sub.founderHandoffResolvedAt
+      const isPaused = sub.aiPausedUntil && sub.aiPausedUntil.getTime() > Date.now()
 
-        if (!isSnoozed) {
+      if (isHandedOff || isPaused) {
+        const shouldNotify = !(isHandedOff && isPaused)
+
+        if (shouldNotify) {
           const recipient = await resolveFounderNotificationEmail(customer.id)
           if (recipient) {
             const { subject, body } = await buildChangelogMatchAfterHandoffNotification({
@@ -162,12 +167,12 @@ export async function POST(req: Request) {
               subject,
               text: body,
             })
-            console.log('Changelog-match-after-handoff notification sent for:', sub.email)
+            console.log('Changelog-match notification sent to founder (handoff/pause) for:', sub.email)
           }
         } else {
-          console.log('Changelog match for snoozed handed-off subscriber — no notification:', sub.email)
+          console.log('Changelog match while handoff is snoozed — no notification:', sub.email)
         }
-        // Skip auto-send to subscriber regardless of snooze
+        // Skip auto-send to subscriber regardless of notification state
         continue
       }
 
