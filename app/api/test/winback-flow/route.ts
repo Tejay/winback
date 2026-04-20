@@ -11,6 +11,7 @@ import {
   generateWinBackEmail,
 } from '@/src/winback/lib/changelog-match'
 import { appendStandardFooter } from '@/src/winback/lib/email'
+import { logEvent } from '@/src/winback/lib/events'
 import { SubscriberSignals } from '@/src/winback/lib/types'
 
 /**
@@ -424,6 +425,88 @@ async function handlePost(req: Request) {
     }
 
     return NextResponse.json({ ok: true, results, stripeWarning })
+  }
+
+  if (action === 'simulate-recovery') {
+    // Harness v2 — inserts a wb_recoveries row directly with the chosen
+    // attribution type. Shortcuts the real Stripe checkout flow. Used to
+    // unlock end-to-end testing of:
+    //   - 30-day attribution window (spec 21b / 22a)
+    //   - Monthly billing cron (spec 24a — only strong recoveries bill)
+    //   - Dashboard AI state + stats calculations
+    const subscriberId = body.subscriberId as string
+    const attributionType = body.attributionType as 'strong' | 'weak' | 'organic'
+    if (!subscriberId || !['strong', 'weak', 'organic'].includes(attributionType)) {
+      return NextResponse.json({ error: 'subscriberId + attributionType (strong/weak/organic) required' }, { status: 400 })
+    }
+
+    const [sub] = await db
+      .select()
+      .from(churnedSubscribers)
+      .where(
+        and(
+          eq(churnedSubscribers.id, subscriberId),
+          eq(churnedSubscribers.customerId, customer.id),
+          eq(churnedSubscribers.source, TEST_SOURCE),
+        )
+      )
+      .limit(1)
+    if (!sub) {
+      return NextResponse.json({ error: 'Test subscriber not found' }, { status: 404 })
+    }
+    if (sub.status === 'recovered') {
+      return NextResponse.json({ error: 'Already recovered' }, { status: 400 })
+    }
+
+    // Insert synthetic recovery row. Matches the shape of real recoveries
+    // from processRecovery/processCheckoutRecovery so billing + attribution
+    // logic sees it identically.
+    const attributionEndsAt = new Date()
+    attributionEndsAt.setFullYear(attributionEndsAt.getFullYear() + 1)
+
+    const [recovery] = await db
+      .insert(recoveries)
+      .values({
+        subscriberId: sub.id,
+        customerId: customer.id,
+        planMrrCents: sub.mrrCents,
+        newStripeSubId: null,   // synthetic — no real Stripe sub
+        attributionEndsAt,
+        attributionType,
+        stillActive: true,
+      })
+      .returning({ id: recoveries.id })
+
+    await db
+      .update(churnedSubscribers)
+      .set({
+        status: 'recovered',
+        // Resolve any pending handoff (spec 21b behavior — recovery ends handoff)
+        founderHandoffResolvedAt: sub.founderHandoffAt && !sub.founderHandoffResolvedAt
+          ? new Date()
+          : sub.founderHandoffResolvedAt,
+        updatedAt: new Date(),
+      })
+      .where(eq(churnedSubscribers.id, sub.id))
+
+    logEvent({
+      name: 'subscriber_recovered',
+      customerId: customer.id,
+      properties: {
+        subscriberId: sub.id,
+        attributionType,
+        planMrrCents: sub.mrrCents,
+        recoveryMethod: 'test_harness_simulate',
+      },
+    })
+
+    return NextResponse.json({
+      ok: true,
+      recoveryId: recovery.id,
+      attributionType,
+      planMrrCents: sub.mrrCents,
+      billableForInvoice: attributionType === 'strong',
+    })
   }
 
   if (action === 'reply') {
