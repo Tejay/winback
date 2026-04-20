@@ -1,6 +1,6 @@
 import Stripe from 'stripe'
 import { db } from '@/lib/db'
-import { users, customers, churnedSubscribers, recoveries, emailsSent } from '@/lib/schema'
+import { users, customers, churnedSubscribers, recoveries, emailsSent, billingRuns } from '@/lib/schema'
 import { eq, and, ne, inArray, desc } from 'drizzle-orm'
 import { decrypt } from '@/src/winback/lib/encryption'
 import { extractSignals } from '@/src/winback/lib/stripe'
@@ -52,10 +52,26 @@ export async function POST(req: Request) {
       }
     }
     if (event.type === 'invoice.payment_failed') {
-      await processPaymentFailed(event)
+      // Connect account → dunning/attribution logic (existing)
+      // Platform account → our own billing (spec 24a)
+      if (event.account) {
+        await processPaymentFailed(event)
+      } else {
+        await processPlatformInvoiceEvent(event)
+      }
     }
     if (event.type === 'invoice.payment_succeeded') {
-      await processPaymentSucceeded(event)
+      if (event.account) {
+        await processPaymentSucceeded(event)
+      } else {
+        await processPlatformInvoiceEvent(event)
+      }
+    }
+    // Spec 24a — also listen for `invoice.paid` on platform (fires alongside
+    // payment_succeeded in most cases, but covers manual pays from the
+    // customer portal too). Only process on platform account.
+    if (event.type === 'invoice.paid' && !event.account) {
+      await processPlatformInvoiceEvent(event)
     }
   } catch (err) {
     console.error('Webhook processing error:', err)
@@ -672,4 +688,88 @@ async function processPlatformCardCapture(event: Stripe.Event) {
   })
 
   console.log(`[webhook] Platform card ${wasUpdate ? 'updated' : 'captured'} for customer ${wbCustomerId}`)
+}
+
+/**
+ * Spec 24a — Reconciles a platform invoice event (paid / failed) against
+ * the `wb_billing_runs` row that created it. Updates status + timestamps.
+ *
+ * invoice.paid and invoice.payment_succeeded both map to status='paid'.
+ * invoice.payment_failed maps to status='failed' — detailed dunning is
+ * spec 25.
+ */
+async function processPlatformInvoiceEvent(event: Stripe.Event) {
+  const invoice = event.data.object as Stripe.Invoice
+  const invoiceId = invoice.id
+  if (!invoiceId) return
+
+  // Find the billing_run row. Prefer metadata lookup (exact match) over
+  // scanning by stripe_invoice_id — both work, metadata is safer when
+  // events arrive out of order.
+  const billingRunId = invoice.metadata?.winback_billing_run_id
+  const wbCustomerId = invoice.metadata?.winback_customer_id
+
+  let run: { id: string; customerId: string } | undefined
+  if (billingRunId) {
+    const [row] = await db
+      .select({ id: billingRuns.id, customerId: billingRuns.customerId })
+      .from(billingRuns)
+      .where(eq(billingRuns.id, billingRunId))
+      .limit(1)
+    run = row
+  }
+  if (!run) {
+    const [row] = await db
+      .select({ id: billingRuns.id, customerId: billingRuns.customerId })
+      .from(billingRuns)
+      .where(eq(billingRuns.stripeInvoiceId, invoiceId))
+      .limit(1)
+    run = row
+  }
+
+  if (!run) {
+    console.warn('[webhook] No billing_run found for platform invoice', invoiceId)
+    return
+  }
+
+  const isPaid = event.type === 'invoice.paid' || event.type === 'invoice.payment_succeeded'
+  const isFailed = event.type === 'invoice.payment_failed'
+
+  if (isPaid) {
+    await db
+      .update(billingRuns)
+      .set({ status: 'paid', paidAt: new Date() })
+      .where(eq(billingRuns.id, run.id))
+
+    logEvent({
+      name: 'billing_invoice_paid',
+      customerId: run.customerId,
+      properties: {
+        billingRunId: run.id,
+        stripeInvoiceId: invoiceId,
+        amountCents: invoice.amount_paid,
+      },
+    })
+
+    console.log(`[webhook] Platform invoice paid: ${invoiceId} (customer ${wbCustomerId ?? run.customerId})`)
+  } else if (isFailed) {
+    // Stripe will retry via Smart Retries; we just mark failed for now.
+    // Spec 25 will layer in dashboard banner + founder alerts.
+    await db
+      .update(billingRuns)
+      .set({ status: 'failed' })
+      .where(eq(billingRuns.id, run.id))
+
+    logEvent({
+      name: 'billing_invoice_failed',
+      customerId: run.customerId,
+      properties: {
+        billingRunId: run.id,
+        stripeInvoiceId: invoiceId,
+        failureReason: (invoice as Stripe.Invoice & { last_finalization_error?: { message?: string } }).last_finalization_error?.message ?? null,
+      },
+    })
+
+    console.log(`[webhook] Platform invoice failed: ${invoiceId} (customer ${wbCustomerId ?? run.customerId})`)
+  }
 }
