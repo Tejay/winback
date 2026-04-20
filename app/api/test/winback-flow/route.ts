@@ -296,19 +296,40 @@ async function handlePost(req: Request) {
     // Wipe existing test subs (and their recoveries + Stripe customers) first
     await wipeTestSubscribers(stripe, customer.id)
 
-    // Look up an active recurring price on the connected account once.
-    // If we can't find one, all scenarios will use fake IDs (resubscribe link won't work).
+    // Look up an active recurring price on the connected account, or create
+    // a Winback-tagged test one on the fly if none exists. Tagged prices +
+    // products make them easy to identify and clean up later.
     let priceId: string | null = null
     let stripeWarning: string | null = null
     if (stripe) {
       try {
-        const prices = await stripe.prices.list({ active: true, type: 'recurring', limit: 1 })
-        priceId = prices.data[0]?.id ?? null
-        if (!priceId) {
-          stripeWarning = 'Connected account has no active recurring prices — using fake Stripe IDs (resubscribe link will fail)'
+        const prices = await stripe.prices.list({ active: true, type: 'recurring', limit: 10 })
+        // Prefer an existing Winback-harness price (we created it before)
+        const harnessPrice = prices.data.find(p => p.metadata?.winback_test_harness === 'true')
+        if (harnessPrice) {
+          priceId = harnessPrice.id
+        } else if (prices.data[0]?.id) {
+          priceId = prices.data[0].id
+        } else {
+          // No prices exist — auto-create a Winback-tagged test product + price
+          // so the harness works end-to-end (reactivation links actually work).
+          const product = await stripe.products.create({
+            name: 'Winback Test Product',
+            description: 'Auto-created by the Winback dev test harness. Safe to delete.',
+            metadata: { winback_test_harness: 'true' },
+          })
+          const price = await stripe.prices.create({
+            product: product.id,
+            currency: 'usd',
+            unit_amount: 2900,  // $29/mo — typical SaaS price
+            recurring: { interval: 'month' },
+            metadata: { winback_test_harness: 'true' },
+          })
+          priceId = price.id
+          stripeWarning = 'Auto-created a Winback test product + price on your connected Stripe account (tagged; safe to delete).'
         }
       } catch (err) {
-        stripeWarning = `Stripe price lookup failed (${err instanceof Error ? err.message : 'unknown'}) — using fake IDs`
+        stripeWarning = `Stripe price lookup/create failed (${err instanceof Error ? err.message : 'unknown'}) — falling back to fake IDs`
       }
     } else {
       stripeWarning = 'Customer has no Stripe access token — using fake IDs (resubscribe link will fail)'
