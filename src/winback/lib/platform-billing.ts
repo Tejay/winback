@@ -65,12 +65,28 @@ export async function getOrCreatePlatformCustomer(wbCustomerId: string): Promise
   return stripeCustomer.id
 }
 
+function summarize(pm: { id: string; card?: { brand: string; last4: string; exp_month: number; exp_year: number } | null }): PaymentMethodSummary | null {
+  if (!pm.card) return null
+  return {
+    id: pm.id,
+    brand: pm.card.brand,
+    last4: pm.card.last4,
+    expMonth: pm.card.exp_month,
+    expYear: pm.card.exp_year,
+  }
+}
+
 /**
- * Fetches the customer's default payment method summary for display.
- * Returns null if no customer ID, no default PM, or on Stripe API error.
+ * Fetches the customer's payment method summary for display.
+ * Returns null if no customer ID or no cards on file.
  *
- * Called from the Settings page server component on each render. Worth
- * ~100ms over the wire but always accurate (no cache drift).
+ * Called from the Settings page server component on each render.
+ *
+ * Resilient to missing webhook events: if no default PM is set (which
+ * happens in local dev without `stripe listen`, or if the webhook failed),
+ * falls back to the most recently attached card and self-heals by setting
+ * it as the default for future loads. This means the UI works regardless
+ * of webhook delivery.
  */
 export async function fetchPlatformPaymentMethod(
   platformCustomerId: string | null,
@@ -85,17 +101,48 @@ export async function fetchPlatformPaymentMethod(
 
     if (typeof customer !== 'object' || customer.deleted) return null
 
-    const pm = customer.invoice_settings?.default_payment_method
-    if (!pm || typeof pm === 'string') return null
-    if (!pm.card) return null
-
-    return {
-      id: pm.id,
-      brand: pm.card.brand,
-      last4: pm.card.last4,
-      expMonth: pm.card.exp_month,
-      expYear: pm.card.exp_year,
+    // Happy path: default PM is set (normal production flow where the
+    // checkout.session.completed webhook fired)
+    const defaultPm = customer.invoice_settings?.default_payment_method
+    if (defaultPm && typeof defaultPm === 'object') {
+      return summarize(defaultPm)
     }
+
+    // Fallback: no default set, but cards may be attached. This happens in
+    // local dev when webhooks don't reach localhost, or if the webhook
+    // fails. List cards and return the most recent.
+    const pms = await stripe.paymentMethods.list({
+      customer: platformCustomerId,
+      type: 'card',
+      limit: 10,
+    })
+    if (pms.data.length === 0) return null
+
+    const mostRecent = pms.data.reduce((a, b) => (a.created > b.created ? a : b))
+
+    // Self-heal: set as default + detach stale cards so subsequent renders
+    // are cheap and accurate. Fire-and-forget — don't block the render on
+    // these writes.
+    void (async () => {
+      try {
+        await stripe.customers.update(platformCustomerId, {
+          invoice_settings: { default_payment_method: mostRecent.id },
+        })
+        for (const pm of pms.data) {
+          if (pm.id !== mostRecent.id) {
+            try {
+              await stripe.paymentMethods.detach(pm.id)
+            } catch {
+              // best-effort cleanup
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('[platform-billing] Self-heal failed:', err)
+      }
+    })()
+
+    return summarize(mostRecent)
   } catch (err) {
     console.warn('[platform-billing] Failed to fetch PM:', err)
     return null
