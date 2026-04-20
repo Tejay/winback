@@ -398,9 +398,9 @@ function SubscriberCard({ result }: { result: SeedResult }) {
           <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
             Exit email (would be sent)
           </div>
-          <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs">
-            <div className="font-semibold mb-2">Subject: {result.exitEmail.subject}</div>
-            <div className="whitespace-pre-wrap text-slate-700">{result.exitEmail.body}</div>
+          <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
+            <div className="font-semibold mb-2 text-xs">Subject: {result.exitEmail.subject}</div>
+            <EmailBody body={result.exitEmail.body} />
           </div>
         </>
       ) : (
@@ -522,13 +522,11 @@ function ReplyCard({
                 Follow-up email (would be sent)
               </div>
               {replyResult.followUpEmail ? (
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs">
-                  <div className="font-semibold mb-2">
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                  <div className="font-semibold mb-2 text-xs">
                     Subject: {replyResult.followUpEmail.subject}
                   </div>
-                  <div className="whitespace-pre-wrap text-slate-700">
-                    {replyResult.followUpEmail.body}
-                  </div>
+                  <EmailBody body={replyResult.followUpEmail.body} />
                 </div>
               ) : (
                 <div className="text-xs italic text-slate-500">
@@ -597,9 +595,7 @@ function ChangelogResultBlock({ result }: { result: ChangelogResult }) {
                     <div className="font-semibold text-sm mb-2">
                       Subject: {e.generated.subject}
                     </div>
-                    <div className="text-sm whitespace-pre-wrap text-slate-800">
-                      {e.generated.body}
-                    </div>
+                    <EmailBody body={e.generated.body} />
                   </>
                 ) : (
                   <div className="text-sm italic text-red-600">
@@ -610,6 +606,71 @@ function ChangelogResultBlock({ result }: { result: ChangelogResult }) {
             ))}
           </div>
         </>
+      )}
+    </div>
+  )
+}
+
+/**
+ * Renders an email body with proper styling + clickable links:
+ *   - Main message: regular text, preserves whitespace
+ *   - "Resubscribe here: <url>" → prominent button-style link
+ *   - "— {fromName}" sign-off: italic
+ *   - "unsubscribe: <url>" footer → small, muted, still clickable
+ *
+ * Expects the body format produced by appendStandardFooter() in
+ * src/winback/lib/email.ts.
+ */
+function EmailBody({ body }: { body: string }) {
+  // Split on the footer markers
+  const resubscribeMatch = body.match(/\n\nReady to give us another try\? Resubscribe here:\n(\S+)/)
+  const signOffMatch = body.match(/\n\n— ([^\n]+)/)
+  const unsubscribeMatch = body.match(/If you'd rather not hear from us, unsubscribe: (\S+)/)
+
+  let mainBody = body
+  if (resubscribeMatch) {
+    mainBody = body.slice(0, body.indexOf('\n\nReady to give us another try?'))
+  }
+
+  const reactivationUrl = resubscribeMatch?.[1]
+  const fromName = signOffMatch?.[1]
+  const unsubscribeUrl = unsubscribeMatch?.[1]
+
+  return (
+    <div className="text-xs">
+      <div className="whitespace-pre-wrap text-slate-700">{mainBody}</div>
+
+      {reactivationUrl && (
+        <div className="mt-4">
+          <p className="text-slate-600 mb-1.5">Ready to give us another try?</p>
+          <a
+            href={reactivationUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-block bg-[#0f172a] text-white rounded-full px-4 py-2 text-sm font-medium hover:bg-[#1e293b] no-underline"
+          >
+            Resubscribe here →
+          </a>
+        </div>
+      )}
+
+      {fromName && (
+        <p className="mt-4 text-slate-700 italic">— {fromName}</p>
+      )}
+
+      {unsubscribeUrl && (
+        <p className="mt-4 text-[10px] text-slate-400 border-t border-slate-100 pt-2">
+          If you'd rather not hear from us,{' '}
+          <a
+            href={unsubscribeUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline hover:text-slate-600"
+          >
+            unsubscribe
+          </a>
+          .
+        </p>
       )}
     </div>
   )
