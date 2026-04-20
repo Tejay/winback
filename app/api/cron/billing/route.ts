@@ -118,18 +118,31 @@ export async function GET(req: NextRequest) {
         })
       }
 
-      // Create and auto-finalize the invoice. auto_advance tells Stripe
-      // to finalize + attempt payment automatically.
-      const invoice = await stripe.invoices.create({
+      // Create the invoice. pending_invoice_items_behavior: 'include'
+      // pulls in the invoice items we just created (required in recent
+      // Stripe API versions — default changed).
+      const draftInvoice = await stripe.invoices.create({
         customer: platformCustomerId,
-        auto_advance: true,
+        auto_advance: false,  // we finalize explicitly below for immediate effect
         collection_method: 'charge_automatically',
+        pending_invoice_items_behavior: 'include',
         description: `Winback success fees — ${humanPeriod(period)}`,
         metadata: {
           winback_customer_id: cust.id,
           winback_billing_run_id: run.id,
           period_yyyymm: period,
         },
+      })
+
+      if (!draftInvoice.id) {
+        throw new Error('Stripe invoice.create returned no id')
+      }
+
+      // Finalize explicitly — this locks the invoice and triggers the
+      // hosted URL + PDF. Without this, auto_advance=true would do the
+      // same thing but with up to a 1-hour delay.
+      const invoice = await stripe.invoices.finalizeInvoice(draftInvoice.id, {
+        auto_advance: true,  // finalize then attempt payment on default PM
       })
 
       await db
