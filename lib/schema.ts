@@ -116,6 +116,24 @@ export const settlementRequests = pgTable('wb_settlement_requests', {
   notes:            text('notes'),
 })
 
+// Spec 24a — Monthly platform-billing idempotency + audit.
+// One row per (customer, month). Insert at cron start; update as the Stripe
+// invoice progresses (pending → paid | failed). UNIQUE constraint prevents
+// double-billing in a single month.
+export const billingRuns = pgTable('wb_billing_runs', {
+  id:              uuid('id').primaryKey().defaultRandom(),
+  customerId:      uuid('customer_id').notNull().references(() => customers.id, { onDelete: 'cascade' }),
+  periodYyyymm:    text('period_yyyymm').notNull(),       // 'YYYY-MM' — period COVERED, in arrears
+  stripeInvoiceId: text('stripe_invoice_id'),
+  amountCents:     integer('amount_cents').notNull().default(0),
+  status:          text('status').notNull().default('pending'),
+  // 'pending' | 'paid' | 'failed' | 'skipped_no_obligations' | 'skipped_no_card'
+  lineItemCount:   integer('line_item_count').notNull().default(0),
+  createdAt:       timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  finalizedAt:     timestamp('finalized_at', { withTimezone: true }),
+  paidAt:          timestamp('paid_at', { withTimezone: true }),
+})
+
 // First-party events table for conversion funnels. See migration 010 and
 // src/winback/lib/events.ts for the logEvent helper. Properties is a free-form
 // jsonb blob (error type, stripe account id, etc.) — keep it small.

@@ -4,6 +4,34 @@ import { customers, users } from '@/lib/schema'
 import { eq } from 'drizzle-orm'
 import { getPlatformStripe } from './platform-stripe'
 
+// ─── Date/period helpers ─────────────────────────────────────────────────
+
+/**
+ * Returns the previous month as 'YYYY-MM'. Used to compute the period
+ * covered by an invoice created on the 1st of a month (invoice in arrears
+ * for the prior month's obligations).
+ *
+ * e.g. given 2026-06-01 → '2026-05'
+ *      given 2026-01-01 → '2025-12'
+ */
+export function previousMonthYYYYMM(now: Date = new Date()): string {
+  const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1))
+  const y = d.getUTCFullYear()
+  const m = String(d.getUTCMonth() + 1).padStart(2, '0')
+  return `${y}-${m}`
+}
+
+/**
+ * Human label for a YYYY-MM period. e.g. '2026-05' → 'May 2026'.
+ */
+export function humanPeriod(yyyymm: string): string {
+  const [y, m] = yyyymm.split('-').map(Number)
+  if (!y || !m || m < 1 || m > 12) return yyyymm
+  const months = ['January', 'February', 'March', 'April', 'May', 'June',
+                  'July', 'August', 'September', 'October', 'November', 'December']
+  return `${months[m - 1]} ${y}`
+}
+
 /**
  * Spec 23 — Helpers for Winback's platform billing (charging founders
  * for their 15% success fees).
@@ -192,4 +220,76 @@ export async function getCurrentDefaultPaymentMethodId(
   const pm = customer.invoice_settings?.default_payment_method
   if (!pm) return null
   return typeof pm === 'string' ? pm : pm.id
+}
+
+// ─── Invoice history (spec 24b) ──────────────────────────────────────────
+
+export interface InvoiceSummary {
+  id: string
+  number: string | null
+  periodLabel: string
+  amountDueCents: number
+  amountPaidCents: number
+  currency: string
+  status: string
+  createdAt: Date
+  hostedInvoiceUrl: string | null
+  invoicePdfUrl: string | null
+}
+
+/**
+ * Derives a human-readable period label for an invoice.
+ *
+ * Preference order:
+ *   1. metadata.period_yyyymm (set by the cron, e.g. "2026-05")
+ *   2. month of invoice.created
+ */
+export function humanPeriodFromInvoice(invoice: Stripe.Invoice): string {
+  const metaPeriod = invoice.metadata?.period_yyyymm
+  if (metaPeriod && /^\d{4}-\d{2}$/.test(metaPeriod)) {
+    return humanPeriod(metaPeriod)
+  }
+  if (invoice.created) {
+    const d = new Date(invoice.created * 1000)
+    return humanPeriod(
+      `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`
+    )
+  }
+  return '—'
+}
+
+/**
+ * Fetches recent invoices for the platform customer, mapped to a
+ * summary shape for the Settings UI.
+ *
+ * Returns [] on missing customer or Stripe API failure (swallowed with
+ * a warning log).
+ */
+export async function fetchPlatformInvoices(
+  platformCustomerId: string | null,
+  limit = 12,
+): Promise<InvoiceSummary[]> {
+  if (!platformCustomerId) return []
+  try {
+    const stripe = getPlatformStripe()
+    const list = await stripe.invoices.list({
+      customer: platformCustomerId,
+      limit,
+    })
+    return list.data.map(inv => ({
+      id: inv.id ?? '',
+      number: inv.number ?? null,
+      periodLabel: humanPeriodFromInvoice(inv),
+      amountDueCents: inv.amount_due,
+      amountPaidCents: inv.amount_paid,
+      currency: inv.currency,
+      status: inv.status ?? 'draft',
+      createdAt: new Date(inv.created * 1000),
+      hostedInvoiceUrl: inv.hosted_invoice_url ?? null,
+      invoicePdfUrl: inv.invoice_pdf ?? null,
+    }))
+  } catch (err) {
+    console.warn('[platform-billing] Failed to list invoices:', err)
+    return []
+  }
 }

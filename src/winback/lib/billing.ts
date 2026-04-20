@@ -8,10 +8,13 @@ export interface MonthlyFee {
   successFeeCents:         number
   totalFeeCents:           number
   recoveredSubscribers: Array<{
-    email:       string
-    mrrCents:    number
-    recoveredAt: Date
-    stillActive: boolean
+    recoveryId:   string    // Spec 24a — needed for invoice line-item metadata
+    subscriberId: string
+    email:        string
+    mrrCents:     number
+    feeCents:     number    // 15% × mrrCents, rounded — the per-line-item amount
+    recoveredAt:  Date
+    stillActive:  boolean
   }>
 }
 
@@ -56,8 +59,11 @@ export async function calculateMonthlyFee(customerId: string): Promise<MonthlyFe
     recoveredMrrActiveCents += rec.planMrrCents
 
     recoveredSubscribersList.push({
+      recoveryId: rec.id,
+      subscriberId: rec.subscriberId,
       email: sub?.email ?? 'unknown',
       mrrCents: rec.planMrrCents,
+      feeCents: Math.round(rec.planMrrCents * SUCCESS_FEE_RATE),
       recoveredAt: rec.recoveredAt ?? new Date(),
       stillActive: true,
     })

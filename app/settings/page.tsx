@@ -8,9 +8,10 @@ import { DisconnectButton } from './disconnect-button'
 import { DangerZone } from './danger-zone'
 import { NotificationEmailForm } from './notification-email-form'
 import { PaymentMethodSection } from './payment-method-section'
+import { InvoiceList } from './invoice-list'
 import { CreditCard } from 'lucide-react'
 import { PoweredByStripe } from '@/components/powered-by-stripe'
-import { fetchPlatformPaymentMethod } from '@/src/winback/lib/platform-billing'
+import { fetchPlatformPaymentMethod, fetchPlatformInvoices } from '@/src/winback/lib/platform-billing'
 
 export default async function SettingsPage({
   searchParams,
@@ -35,6 +36,17 @@ export default async function SettingsPage({
   const { billing } = await searchParams
   const billingStatus: 'success' | 'cancelled' | null =
     billing === 'success' ? 'success' : billing === 'cancelled' ? 'cancelled' : null
+
+  // Spec 24b — fetch invoice history
+  const invoices = await fetchPlatformInvoices(
+    customer?.stripePlatformCustomerId ?? null,
+    12,
+  )
+  // Serialize Date → ISO string for passing to client component
+  const invoicesSerialized = invoices.map(inv => ({
+    ...inv,
+    createdAt: inv.createdAt.toISOString(),
+  }))
 
   return (
     <>
@@ -184,17 +196,15 @@ export default async function SettingsPage({
               </button>
             </div>
 
-            {/* Invoices */}
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 py-4 border-t border-slate-100">
-              <div>
-                <div className="text-sm font-medium text-slate-900">
-                  Invoices
-                </div>
-                <div className="text-sm text-slate-500">None yet</div>
+            {/* Invoices (spec 24b) */}
+            <div className="py-4 border-t border-slate-100">
+              <div className="text-sm font-medium text-slate-900 mb-3">
+                Invoices
               </div>
-              <button className="text-sm text-blue-600 hover:underline">
-                View history
-              </button>
+              <InvoiceList
+                invoices={invoicesSerialized}
+                hasBillingAccount={!!customer?.stripePlatformCustomerId}
+              />
             </div>
           </div>
 
