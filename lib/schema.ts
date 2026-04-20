@@ -21,6 +21,9 @@ export const customers = pgTable('wb_customers', {
   onboardingComplete: boolean('onboarding_complete').default(false),
   plan:               text('plan').default('trial'),
   notificationEmail:  text('notification_email'),  // Spec 21c — overrides user.email for handoff alerts
+  // Spec 23 — Winback's platform Stripe customer (for billing the founder 15% fees).
+  // Separate from stripeAccountId (Connected account for webhooks).
+  stripePlatformCustomerId: text('stripe_platform_customer_id'),
   pausedAt:             timestamp('paused_at'),
   settlementPaidAt:     timestamp('settlement_paid_at'),
   backfillTotal:        integer('backfill_total').default(0),

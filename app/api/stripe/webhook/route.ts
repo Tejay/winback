@@ -7,6 +7,11 @@ import { extractSignals } from '@/src/winback/lib/stripe'
 import { classifySubscriber } from '@/src/winback/lib/classifier'
 import { scheduleExitEmail, sendDunningEmail } from '@/src/winback/lib/email'
 import { logEvent } from '@/src/winback/lib/events'
+import {
+  getCurrentDefaultPaymentMethodId,
+  setDefaultPaymentMethod,
+  detachPaymentMethod,
+} from '@/src/winback/lib/platform-billing'
 
 function getStripe() {
   return new Stripe(process.env.STRIPE_SECRET_KEY!)
@@ -38,7 +43,13 @@ export async function POST(req: Request) {
       await processRecovery(event)
     }
     if (event.type === 'checkout.session.completed') {
-      await processCheckoutRecovery(event)
+      // Spec 23 — route by metadata: platform card capture vs reactivation checkout.
+      const session = event.data.object as Stripe.Checkout.Session
+      if (session.metadata?.flow === 'platform_card_capture') {
+        await processPlatformCardCapture(event)
+      } else if (session.metadata?.winback_subscriber_id) {
+        await processCheckoutRecovery(event)
+      }
     }
     if (event.type === 'invoice.payment_failed') {
       await processPaymentFailed(event)
@@ -593,4 +604,72 @@ async function processPaymentSucceeded(event: Stripe.Event) {
   })
 
   console.log(`${attributionType.toUpperCase()} DUNNING RECOVERY:`, subscriber.email)
+}
+
+/**
+ * Spec 23 — Platform card capture handler.
+ *
+ * Fires when a Stripe Checkout session with mode='setup' completes on the
+ * platform account (metadata.flow === 'platform_card_capture'). We:
+ *   1. Retrieve the SetupIntent to get the attached payment method ID
+ *   2. Check if the customer already had a default PM (→ Update flow)
+ *   3. Set the new PM as the customer's default for invoice billing
+ *   4. Detach the previous PM if this was an Update (don't accumulate)
+ */
+async function processPlatformCardCapture(event: Stripe.Event) {
+  const session = event.data.object as Stripe.Checkout.Session
+  const wbCustomerId = session.metadata?.winback_customer_id
+  if (!wbCustomerId) {
+    console.warn('[webhook] platform_card_capture without winback_customer_id metadata')
+    return
+  }
+
+  const stripe = getStripe()
+
+  const setupIntentId = typeof session.setup_intent === 'string'
+    ? session.setup_intent
+    : session.setup_intent?.id
+  if (!setupIntentId) {
+    console.warn('[webhook] platform_card_capture session has no setup_intent:', session.id)
+    return
+  }
+
+  const setupIntent = await stripe.setupIntents.retrieve(setupIntentId)
+  const paymentMethodId = typeof setupIntent.payment_method === 'string'
+    ? setupIntent.payment_method
+    : setupIntent.payment_method?.id
+  if (!paymentMethodId) {
+    console.warn('[webhook] setupIntent has no payment_method:', setupIntentId)
+    return
+  }
+
+  const platformCustomerId = typeof session.customer === 'string'
+    ? session.customer
+    : session.customer?.id
+  if (!platformCustomerId) {
+    console.warn('[webhook] platform_card_capture session has no customer:', session.id)
+    return
+  }
+
+  // Determine if this is Add or Update (previous PM present?)
+  const previousPmId = await getCurrentDefaultPaymentMethodId(platformCustomerId, stripe)
+  const wasUpdate = !!previousPmId && previousPmId !== paymentMethodId
+
+  await setDefaultPaymentMethod(platformCustomerId, paymentMethodId)
+
+  if (wasUpdate && previousPmId) {
+    await detachPaymentMethod(previousPmId)
+  }
+
+  logEvent({
+    name: 'billing_card_captured',
+    customerId: wbCustomerId,
+    properties: {
+      paymentMethodId,
+      stripeSessionId: session.id,
+      wasUpdate,
+    },
+  })
+
+  console.log(`[webhook] Platform card ${wasUpdate ? 'updated' : 'captured'} for customer ${wbCustomerId}`)
 }

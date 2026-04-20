@@ -7,10 +7,16 @@ import { TopNav } from '@/components/top-nav'
 import { DisconnectButton } from './disconnect-button'
 import { DangerZone } from './danger-zone'
 import { NotificationEmailForm } from './notification-email-form'
+import { PaymentMethodSection } from './payment-method-section'
 import { CreditCard } from 'lucide-react'
 import { PoweredByStripe } from '@/components/powered-by-stripe'
+import { fetchPlatformPaymentMethod } from '@/src/winback/lib/platform-billing'
 
-export default async function SettingsPage() {
+export default async function SettingsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ billing?: string }>
+}) {
   const session = await auth()
   if (!session?.user?.id) redirect('/login')
 
@@ -21,6 +27,14 @@ export default async function SettingsPage() {
     .limit(1)
 
   const stripeConnected = !!customer?.stripeAccessToken
+
+  // Spec 23 — fetch platform payment method for the billing section
+  const paymentMethod = await fetchPlatformPaymentMethod(
+    customer?.stripePlatformCustomerId ?? null,
+  )
+  const { billing } = await searchParams
+  const billingStatus: 'success' | 'cancelled' | null =
+    billing === 'success' ? 'success' : billing === 'cancelled' ? 'cancelled' : null
 
   return (
     <>
@@ -123,18 +137,13 @@ export default async function SettingsPage() {
 
             {/* Plan card */}
             <div className="border border-slate-200 rounded-2xl p-5">
-              <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
-                <div className="flex items-center">
-                  <span className="text-xs font-semibold uppercase tracking-widest text-slate-400">
-                    Current plan
-                  </span>
-                  <span className="bg-amber-50 text-amber-700 border border-amber-200 rounded-full px-3 py-1 text-xs font-semibold ml-2">
-                    🌟 Free trial
-                  </span>
-                </div>
-                <button className="bg-[#0f172a] text-white rounded-full px-4 py-1.5 text-sm font-medium hover:bg-[#1e293b]">
-                  Add payment method
-                </button>
+              <div className="flex items-center">
+                <span className="text-xs font-semibold uppercase tracking-widest text-slate-400">
+                  Current plan
+                </span>
+                <span className="bg-amber-50 text-amber-700 border border-amber-200 rounded-full px-3 py-1 text-xs font-semibold ml-2">
+                  🌟 Free trial
+                </span>
               </div>
 
               <div className="mt-4">
@@ -147,6 +156,17 @@ export default async function SettingsPage() {
               <p className="text-xs text-slate-400 mt-3">
                 No card at signup · We ask for payment after your first recovery · Cancel anytime
               </p>
+            </div>
+
+            {/* Payment method (spec 23) */}
+            <div className="py-4 border-t border-slate-100 mt-4">
+              <div className="text-sm font-medium text-slate-900 mb-2">
+                Payment method
+              </div>
+              <PaymentMethodSection
+                paymentMethod={paymentMethod}
+                billingStatus={billingStatus}
+              />
             </div>
 
             {/* Billing contact */}
