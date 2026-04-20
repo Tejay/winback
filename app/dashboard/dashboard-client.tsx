@@ -185,7 +185,7 @@ export function DashboardClient({ changelog, isTrial, firstRecovery }: Dashboard
   return (
     <>
       {/* Page header */}
-      <div className="flex items-start justify-between mb-6">
+      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 sm:gap-4 mb-6">
         <div>
           <div className="text-xs font-semibold tracking-widest uppercase text-blue-600">Overview</div>
           <h1 className="text-4xl font-bold text-slate-900">Dashboard.</h1>
@@ -193,7 +193,7 @@ export function DashboardClient({ changelog, isTrial, firstRecovery }: Dashboard
         </div>
         <button
           onClick={() => setChangelogOpen(true)}
-          className="border border-slate-200 bg-white text-slate-700 rounded-full px-5 py-2 text-sm font-medium"
+          className="self-start border border-slate-200 bg-white text-slate-700 rounded-full px-5 py-2 text-sm font-medium flex-shrink-0"
         >
           Update changelog
         </button>
@@ -214,7 +214,7 @@ export function DashboardClient({ changelog, isTrial, firstRecovery }: Dashboard
                 Add a payment method to keep recovering. Billing is{' '}
                 <strong>15% of recovered revenue</strong> for 12 months per subscriber. No base fee.
               </p>
-              <div className="mt-3 flex items-center gap-4">
+              <div className="mt-3 flex flex-wrap items-center gap-3 sm:gap-4">
                 <a href="/settings#billing" className="bg-[#0f172a] text-white rounded-full px-5 py-2 text-sm font-medium hover:bg-[#1e293b]">
                   Add billing to keep recovering
                 </a>
@@ -325,7 +325,7 @@ export function DashboardClient({ changelog, isTrial, firstRecovery }: Dashboard
       )}
 
       {/* Stat cards */}
-      <div className="grid grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mb-6">
         <div className="bg-white rounded-2xl border border-slate-100 p-6">
           <div className="bg-green-50 rounded-xl w-9 h-9 flex items-center justify-center text-green-600">
             <TrendingUp className="w-4 h-4" />
@@ -357,8 +357,8 @@ export function DashboardClient({ changelog, isTrial, firstRecovery }: Dashboard
       </div>
 
       {/* Filter tabs + search */}
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-1">
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 md:gap-4 mb-4">
+        <div className="flex items-center gap-1 overflow-x-auto -mx-4 px-4 md:mx-0 md:px-0">
           {filters.map((f) => (
             <button
               key={f.key}
@@ -373,27 +373,27 @@ export function DashboardClient({ changelog, isTrial, firstRecovery }: Dashboard
             </button>
           ))}
         </div>
-        <div className="relative">
+        <div className="relative w-full md:w-auto">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
           <input
             type="text"
             placeholder="Search name, email, reason"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="border border-slate-200 rounded-full px-4 py-2 text-sm w-64 pl-10 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="border border-slate-200 rounded-full px-4 py-2 text-sm w-full md:w-64 pl-10 focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
         </div>
       </div>
 
       {/* Subscriber table */}
-      <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden">
+      <div className="bg-white rounded-2xl border border-slate-100 overflow-x-auto">
         <table className="w-full">
           <thead>
             <tr className="border-b border-slate-100">
               <th className="text-left text-xs font-semibold uppercase tracking-wide text-slate-400 py-3 px-4">Subscriber</th>
-              <th className="text-left text-xs font-semibold uppercase tracking-wide text-slate-400 py-3 px-4">Plan</th>
-              <th className="text-left text-xs font-semibold uppercase tracking-wide text-slate-400 py-3 px-4">Cancelled</th>
-              <th className="text-left text-xs font-semibold uppercase tracking-wide text-slate-400 py-3 px-4">Reason</th>
+              <th className="hidden lg:table-cell text-left text-xs font-semibold uppercase tracking-wide text-slate-400 py-3 px-4">Plan</th>
+              <th className="hidden sm:table-cell text-left text-xs font-semibold uppercase tracking-wide text-slate-400 py-3 px-4">Cancelled</th>
+              <th className="hidden md:table-cell text-left text-xs font-semibold uppercase tracking-wide text-slate-400 py-3 px-4">Reason</th>
               <th className="text-left text-xs font-semibold uppercase tracking-wide text-slate-400 py-3 px-4">AI Status</th>
               <th className="text-right text-xs font-semibold uppercase tracking-wide text-slate-400 py-3 px-4">MRR</th>
             </tr>
@@ -407,13 +407,13 @@ export function DashboardClient({ changelog, isTrial, firstRecovery }: Dashboard
               >
                 <td className="py-4 pr-4 px-4">
                   <div className="text-sm font-medium text-slate-900">{sub.name ?? 'Unknown'}</div>
-                  <div className="text-xs text-slate-400 mt-0.5">{sub.email ?? ''}</div>
+                  <div className="text-xs text-slate-400 mt-0.5 truncate max-w-[160px] sm:max-w-none">{sub.email ?? ''}</div>
                 </td>
-                <td className="text-sm text-slate-600 py-4 px-4">{sub.planName ?? '—'}</td>
-                <td className="text-sm text-slate-600 py-4 px-4">
+                <td className="hidden lg:table-cell text-sm text-slate-600 py-4 px-4">{sub.planName ?? '—'}</td>
+                <td className="hidden sm:table-cell text-sm text-slate-600 py-4 px-4">
                   {sub.cancelledAt ? new Date(sub.cancelledAt).toISOString().split('T')[0] : '—'}
                 </td>
-                <td className="text-sm text-slate-600 py-4 px-4">
+                <td className="hidden md:table-cell text-sm text-slate-600 py-4 px-4">
                   {sub.cancellationReason
                     ? sub.cancellationReason.length > 45
                       ? sub.cancellationReason.slice(0, 45) + '…'
@@ -443,7 +443,7 @@ export function DashboardClient({ changelog, isTrial, firstRecovery }: Dashboard
       {selected && (
         <>
           <div className="fixed inset-0 bg-black/20 z-40" onClick={() => setSelected(null)} />
-          <div className="fixed right-0 top-0 h-full w-96 bg-white shadow-xl border-l border-slate-100 z-50 overflow-y-auto">
+          <div className="fixed right-0 top-0 h-full w-full sm:w-96 bg-white shadow-xl border-l border-slate-100 z-50 overflow-y-auto">
             <div className="px-6 pt-6 pb-4 border-b border-slate-100 flex items-start justify-between">
               <div>
                 <div className="text-xs font-semibold uppercase tracking-widest text-slate-400 mb-1">Subscriber</div>
