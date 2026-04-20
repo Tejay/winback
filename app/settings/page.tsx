@@ -26,7 +26,7 @@ export default async function SettingsPage() {
     <>
       <TopNav userName={session.user.name} />
       <main className="min-h-screen bg-[#f5f5f5]">
-        <div className="max-w-5xl mx-auto px-6 py-8">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
           {/* Page header */}
           <div className="mb-6">
             <div className="text-xs font-semibold tracking-widest uppercase text-blue-600">
@@ -51,7 +51,7 @@ export default async function SettingsPage() {
             </p>
 
             {/* Stripe row */}
-            <div className="flex items-center justify-between py-4 border-b border-slate-100">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between py-4 gap-3 sm:gap-4 border-b border-slate-100">
               <div className="flex items-center gap-4">
                 <div className="bg-blue-600 rounded-xl w-10 h-10 flex items-center justify-center">
                   <CreditCard className="w-5 h-5 text-white" />
@@ -123,7 +123,7 @@ export default async function SettingsPage() {
 
             {/* Plan card */}
             <div className="border border-slate-200 rounded-2xl p-5">
-              <div className="flex items-start justify-between">
+              <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
                 <div className="flex items-center">
                   <span className="text-xs font-semibold uppercase tracking-widest text-slate-400">
                     Current plan
@@ -150,7 +150,7 @@ export default async function SettingsPage() {
             </div>
 
             {/* Billing contact */}
-            <div className="flex items-center justify-between py-4 border-t border-slate-100 mt-4">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 py-4 border-t border-slate-100 mt-4">
               <div>
                 <div className="text-sm font-medium text-slate-900">
                   Billing contact
@@ -165,7 +165,7 @@ export default async function SettingsPage() {
             </div>
 
             {/* Invoices */}
-            <div className="flex items-center justify-between py-4 border-t border-slate-100">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 py-4 border-t border-slate-100">
               <div>
                 <div className="text-sm font-medium text-slate-900">
                   Invoices
