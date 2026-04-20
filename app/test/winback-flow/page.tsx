@@ -53,6 +53,13 @@ interface ReplyResult {
   followUpSkipReason?: string | null
 }
 
+interface RecoveryResult {
+  recoveryId: string
+  attributionType: 'strong' | 'weak' | 'organic'
+  planMrrCents: number
+  billableForInvoice: boolean
+}
+
 interface ChangelogResult {
   candidatesCount: number
   matchedCount: number
@@ -90,6 +97,7 @@ export default function WinbackFlowPage() {
   const [stripeWarning, setStripeWarning] = useState<string | null>(null)
   const [replies, setReplies] = useState<Record<string, string>>({})
   const [replyResults, setReplyResults] = useState<Record<string, ReplyResult>>({})
+  const [recoveryResults, setRecoveryResults] = useState<Record<string, RecoveryResult>>({})
   const [changelogText, setChangelogText] = useState(DEFAULT_CHANGELOG)
   const [changelogResult, setChangelogResult] = useState<ChangelogResult | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -134,6 +142,7 @@ export default function WinbackFlowPage() {
       setSeedResults(data.results)
       setStripeWarning(data.stripeWarning ?? null)
       setReplyResults({})
+      setRecoveryResults({})
       setChangelogResult(null)
     }
   }
@@ -142,6 +151,7 @@ export default function WinbackFlowPage() {
     await call('reset')
     setSeedResults([])
     setReplyResults({})
+    setRecoveryResults({})
     setChangelogResult(null)
     setReplies({})
   }
@@ -152,6 +162,13 @@ export default function WinbackFlowPage() {
     const data = await call('reply', { subscriberId, replyText })
     if (data) {
       setReplyResults(prev => ({ ...prev, [subscriberId]: data }))
+    }
+  }
+
+  async function simulateRecovery(subscriberId: string, attributionType: 'strong' | 'weak' | 'organic') {
+    const data = await call('simulate-recovery', { subscriberId, attributionType })
+    if (data) {
+      setRecoveryResults(prev => ({ ...prev, [subscriberId]: data }))
     }
   }
 
@@ -224,8 +241,8 @@ export default function WinbackFlowPage() {
         {seedResults.length > 0 && (
           <Section
             step={2}
-            title="Simulate replies & re-classification"
-            subtitle="Edit each reply, then send. The inbound flow re-classifies with the reply text as highest-signal input. The new firstMessage is what would be sent as a follow-up."
+            title="Simulate replies, re-classification & recovery"
+            subtitle="Edit each reply, then send — the inbound flow re-classifies with the reply text as highest-signal input and shows the would-be follow-up. Or click Strong / Weak / Organic to simulate a recovery directly (useful for testing attribution + billing without going through Stripe Checkout)."
           >
             <div className="space-y-4">
               {seedResults
@@ -239,8 +256,12 @@ export default function WinbackFlowPage() {
                       setReplies(prev => ({ ...prev, [r.subscriberId!]: text }))
                     }
                     onSend={() => sendReply(r.subscriberId!, r.scenario)}
-                    sending={loading === 'reply'}
+                    sending={loading === 'reply' || loading === 'simulate-recovery'}
                     replyResult={replyResults[r.subscriberId!]}
+                    recoveryResult={recoveryResults[r.subscriberId!]}
+                    onSimulateRecovery={(attributionType) =>
+                      simulateRecovery(r.subscriberId!, attributionType)
+                    }
                   />
                 ))}
             </div>
@@ -396,6 +417,8 @@ function ReplyCard({
   onSend,
   sending,
   replyResult,
+  recoveryResult,
+  onSimulateRecovery,
 }: {
   result: SeedResult
   replyText: string
@@ -403,10 +426,19 @@ function ReplyCard({
   onSend: () => void
   sending: boolean
   replyResult?: ReplyResult
+  recoveryResult?: RecoveryResult
+  onSimulateRecovery: (attributionType: 'strong' | 'weak' | 'organic') => void
 }) {
   return (
     <div className="border border-slate-200 rounded-xl p-4">
-      <div className="font-semibold text-slate-900 mb-3">{result.scenario}</div>
+      <div className="flex items-start justify-between mb-3 gap-2">
+        <div className="font-semibold text-slate-900">{result.scenario}</div>
+        {recoveryResult && (
+          <Badge color={recoveryResult.attributionType === 'strong' ? 'green' : recoveryResult.attributionType === 'weak' ? 'amber' : 'slate'}>
+            ✓ Recovered · {recoveryResult.attributionType}
+          </Badge>
+        )}
+      </div>
 
       <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">
         Subscriber's reply
@@ -417,11 +449,55 @@ function ReplyCard({
         rows={2}
         className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
       />
-      <div className="mt-2">
-        <Button onClick={onSend} disabled={sending || !replyText.trim()}>
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <Button onClick={onSend} disabled={sending || !replyText.trim() || !!recoveryResult}>
           Send reply → re-classify
         </Button>
+        {!recoveryResult && (
+          <div className="flex items-center gap-1 ml-auto">
+            <span className="text-xs text-slate-400 mr-1">Simulate recovery:</span>
+            <button
+              onClick={() => onSimulateRecovery('strong')}
+              disabled={sending}
+              className="border border-green-200 bg-green-50 text-green-700 rounded-full px-2.5 py-1 text-xs font-medium hover:bg-green-100 disabled:opacity-50"
+              title="Billable — invoice cron will charge this"
+            >
+              Strong
+            </button>
+            <button
+              onClick={() => onSimulateRecovery('weak')}
+              disabled={sending}
+              className="border border-amber-200 bg-amber-50 text-amber-700 rounded-full px-2.5 py-1 text-xs font-medium hover:bg-amber-100 disabled:opacity-50"
+              title="Not billed but tracked"
+            >
+              Weak
+            </button>
+            <button
+              onClick={() => onSimulateRecovery('organic')}
+              disabled={sending}
+              className="border border-slate-200 bg-slate-50 text-slate-600 rounded-full px-2.5 py-1 text-xs font-medium hover:bg-slate-100 disabled:opacity-50"
+              title="Not billed, not credited"
+            >
+              Organic
+            </button>
+          </div>
+        )}
       </div>
+
+      {recoveryResult && (
+        <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded-lg text-xs">
+          <div className="font-semibold text-green-900 mb-1">
+            ✓ Synthetic recovery recorded
+          </div>
+          <div className="text-slate-700">
+            Attribution: <strong>{recoveryResult.attributionType}</strong> ·
+            Plan MRR: ${(recoveryResult.planMrrCents / 100).toFixed(2)}/mo
+            {recoveryResult.billableForInvoice
+              ? ' · ✓ Will be on next monthly invoice (15%)'
+              : ' · Not billable'}
+          </div>
+        </div>
+      )}
 
       {replyResult && (
         <>
