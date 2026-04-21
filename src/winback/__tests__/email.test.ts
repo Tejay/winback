@@ -173,6 +173,9 @@ describe('scheduleExitEmail', () => {
     triggerNeed: null,
     winBackSubject: 'W',
     winBackBody: 'B',
+    handoff: false,
+    handoffReasoning: '',
+    recoveryLikelihood: 'low',
   }
 
   it('sends email immediately and updates database', async () => {

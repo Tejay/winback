@@ -42,6 +42,9 @@ function classifySilentChurn(): Omit<ClassificationResult, 'firstMessage'> & { f
     triggerNeed: null,
     winBackSubject: '',
     winBackBody: '',
+    handoff: false,
+    handoffReasoning: 'Silent-churn backfill — no signal to judge; defaulting to no hand-off.',
+    recoveryLikelihood: 'low',
   }
 }
 

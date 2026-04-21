@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { emailsSent, churnedSubscribers, customers, users } from '@/lib/schema'
-import { eq } from 'drizzle-orm'
+import { eq, count } from 'drizzle-orm'
 import { classifySubscriber } from '@/src/winback/lib/classifier'
 import { sendReplyEmail, resolveFounderNotificationEmail } from '@/src/winback/lib/email'
 import { buildReplyAfterHandoffNotification } from '@/src/winback/lib/founder-handoff-email'
@@ -79,6 +79,13 @@ export async function POST(req: Request) {
       .where(eq(customers.id, subscriber.customerId))
       .limit(1)
 
+    // Count emails already sent so the classifier can make a budget-aware
+    // hand-off decision (cap is 3 = exit + up to 2 follow-ups).
+    const [sentSoFar] = await db
+      .select({ total: count() })
+      .from(emailsSent)
+      .where(eq(emailsSent.subscriberId, subscriberId))
+
     const signals: SubscriberSignals = {
       stripeCustomerId: subscriber.stripeCustomerId,
       stripeSubscriptionId: subscriber.stripeSubscriptionId ?? '',
@@ -97,6 +104,7 @@ export async function POST(req: Request) {
       replyText: replyText,
       billingPortalClicked: !!subscriber.billingPortalClickedAt,
       cancelledAt: subscriber.cancelledAt ?? new Date(),
+      emailsSent: sentSoFar?.total ?? 0,
     }
 
     const classification = await classifySubscriber(signals, {
@@ -116,6 +124,8 @@ export async function POST(req: Request) {
         winBackBody: classification.winBackBody,
         cancellationReason: classification.cancellationReason,
         cancellationCategory: classification.cancellationCategory,
+        handoffReasoning:   classification.handoffReasoning,
+        recoveryLikelihood: classification.recoveryLikelihood,
         updatedAt: new Date(),
       })
       .where(eq(churnedSubscribers.id, subscriberId))

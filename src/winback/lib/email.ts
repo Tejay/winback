@@ -118,6 +118,100 @@ export async function isAiPaused(subscriberId: string): Promise<boolean> {
   return row.aiPausedUntil.getTime() > Date.now()
 }
 
+/**
+ * Hand off a subscriber to the founder. Idempotent: if already handed off,
+ * skips the state update and the notification. Used by both the initial
+ * classification path (scheduleExitEmail pre-gate) and the reply path
+ * (sendReplyEmail) so the behaviour stays consistent.
+ *
+ * Persists the classifier's handoffReasoning + recoveryLikelihood so the
+ * founder sees the AI's actual judgment, not a bucketed label.
+ */
+async function triggerFounderHandoff(params: {
+  subscriberId: string
+  classification: ClassificationResult
+  fromName: string
+  trigger: 'initial_classification' | 'reply_classification'
+}): Promise<void> {
+  const { subscriberId, classification, fromName, trigger } = params
+
+  const [sub] = await db
+    .select()
+    .from(churnedSubscribers)
+    .where(eq(churnedSubscribers.id, subscriberId))
+    .limit(1)
+
+  if (!sub) {
+    console.log('Hand-off skipped — subscriber not found:', subscriberId)
+    return
+  }
+
+  if (sub.founderHandoffAt) {
+    console.log('Hand-off skipped — already handed off:', subscriberId)
+    return
+  }
+
+  await db
+    .update(churnedSubscribers)
+    .set({
+      founderHandoffAt:   new Date(),
+      aiPausedAt:         new Date(),
+      aiPausedUntil:      new Date('9999-12-31T00:00:00Z'),  // indefinite sentinel
+      aiPausedReason:     'handoff',
+      handoffReasoning:   classification.handoffReasoning,
+      recoveryLikelihood: classification.recoveryLikelihood,
+      updatedAt:          new Date(),
+    })
+    .where(eq(churnedSubscribers.id, subscriberId))
+
+  logEvent({
+    name: 'founder_handoff_triggered',
+    customerId: sub.customerId,
+    properties: {
+      subscriberId,
+      trigger,
+      recoveryLikelihood: classification.recoveryLikelihood,
+      reasoningExcerpt:   classification.handoffReasoning.slice(0, 200),
+    },
+  })
+
+  try {
+    const recipient = await resolveFounderNotificationEmail(sub.customerId)
+    if (!recipient) {
+      console.log('Hand-off: no recipient email resolved for customer', sub.customerId)
+      return
+    }
+    const { buildHandoffNotification } = await import('./founder-handoff-email')
+    const { subject, body } = await buildHandoffNotification({
+      subscriber: {
+        id: sub.id,
+        email: sub.email,
+        name: sub.name,
+        planName: sub.planName,
+        mrrCents: sub.mrrCents,
+        cancellationReason: sub.cancellationReason,
+        triggerNeed: sub.triggerNeed,
+        cancelledAt: sub.cancelledAt,
+        stripeComment: sub.stripeComment,
+        replyText: sub.replyText,
+      },
+      founderName: fromName,
+      handoffReasoning:   classification.handoffReasoning,
+      recoveryLikelihood: classification.recoveryLikelihood,
+    })
+    const resend = getResendClient()
+    await resend.emails.send({
+      from: `Winback <noreply@winbackflow.co>`,
+      to: recipient,
+      subject,
+      text: body,
+    })
+    console.log('Handoff notification sent to:', recipient)
+  } catch (notifyErr) {
+    console.error('Failed to send handoff notification:', notifyErr)
+  }
+}
+
 export async function sendEmail(params: {
   to: string
   subject: string
@@ -186,6 +280,21 @@ export async function scheduleExitEmail(params: {
   // Spec 22a — per-subscriber AI pause
   if (await isAiPaused(subscriberId)) {
     console.log('Skipping exit email — AI paused for subscriber:', subscriberId)
+    return
+  }
+
+  // AI-decided hand-off on the initial pass. Rare — requires a strong signal
+  // in stripe_comment alone — but possible (e.g., "I need to talk to someone
+  // about enterprise pricing"). Skip the exit email and route straight to
+  // the founder. Burns 0 of the 3-email budget.
+  if (classification.handoff) {
+    console.log('AI decided initial hand-off for subscriber:', subscriberId)
+    await triggerFounderHandoff({
+      subscriberId,
+      classification,
+      fromName,
+      trigger: 'initial_classification',
+    })
     return
   }
 
@@ -264,7 +373,26 @@ export async function sendReplyEmail(params: {
     return { sent: false, reason: 'ai_paused' }
   }
 
-  // Check follow-up limit — max 2 per subscriber
+  // 1) AI-decided hand-off (replaces the old count-based trigger). If the
+  //    classifier judges the founder is the better spend, hand off now and
+  //    DO NOT send the AI follow-up this turn.
+  if (classification.handoff) {
+    console.log('AI decided hand-off on reply for subscriber:', subscriberId,
+      '— recoveryLikelihood:', classification.recoveryLikelihood)
+    await triggerFounderHandoff({
+      subscriberId,
+      classification,
+      fromName,
+      trigger: 'reply_classification',
+    })
+    return { sent: false, reason: 'ai_handoff' }
+  }
+
+  // 2) 3-email budget ceiling. Exit email + up to MAX_FOLLOWUPS follow-ups
+  //    is the hard cap. If the AI has already burned both follow-up slots
+  //    without deciding to hand off, silently close the subscriber as lost.
+  //    Notably: NO founder email — the point of AI judgment is that if the
+  //    AI never decided to escalate, the founder shouldn't be spammed either.
   const [followupCount] = await db
     .select({ total: count() })
     .from(emailsSent)
@@ -276,72 +404,28 @@ export async function sendReplyEmail(params: {
     )
 
   if ((followupCount?.total ?? 0) >= MAX_FOLLOWUPS) {
-    console.log(`Follow-up limit reached (${MAX_FOLLOWUPS}) for subscriber:`, subscriberId, '— handing off to founder')
-
-    // Spec 21b — set handoff state. Skip if already handed off.
-    const [sub] = await db
-      .select()
-      .from(churnedSubscribers)
-      .where(eq(churnedSubscribers.id, subscriberId))
-      .limit(1)
-
-    const alreadyHandedOff = !!sub?.founderHandoffAt
-
-    if (sub && !alreadyHandedOff) {
-      await db
-        .update(churnedSubscribers)
-        .set({
-          founderHandoffAt: new Date(),
-          // Spec 22a — also set pause fields for consistent data model
-          aiPausedAt: new Date(),
-          aiPausedUntil: new Date('9999-12-31T00:00:00Z'),  // indefinite sentinel
-          aiPausedReason: 'handoff',
-          updatedAt: new Date(),
-        })
-        .where(eq(churnedSubscribers.id, subscriberId))
-
-      logEvent({
-        name: 'founder_handoff_triggered',
-        customerId: sub.customerId,
-        properties: { subscriberId, reason: 'max_followups_reached' },
+    console.log(`Budget exhausted for subscriber ${subscriberId} without hand-off — closing as lost`)
+    await db
+      .update(churnedSubscribers)
+      .set({
+        status:             'lost',
+        handoffReasoning:   classification.handoffReasoning,
+        recoveryLikelihood: classification.recoveryLikelihood,
+        updatedAt:          new Date(),
       })
+      .where(eq(churnedSubscribers.id, subscriberId))
 
-      // Build + send the rich notification with full conversation + mailto.
-      // Resolve recipient via spec 21c (notification_email override).
-      try {
-        const recipient = await resolveFounderNotificationEmail(sub.customerId)
-        if (recipient) {
-          const { buildHandoffNotification } = await import('./founder-handoff-email')
-          const { subject, body } = await buildHandoffNotification({
-            subscriber: {
-              id: sub.id,
-              email: sub.email,
-              name: sub.name,
-              planName: sub.planName,
-              mrrCents: sub.mrrCents,
-              cancellationReason: sub.cancellationReason,
-              triggerNeed: sub.triggerNeed,
-              cancelledAt: sub.cancelledAt,
-              stripeComment: sub.stripeComment,
-              replyText: sub.replyText,
-            },
-            founderName: fromName,
-          })
-          const resend = getResendClient()
-          await resend.emails.send({
-            from: `Winback <noreply@winbackflow.co>`,
-            to: recipient,
-            subject,
-            text: body,
-          })
-          console.log('Handoff notification sent to:', recipient)
-        }
-      } catch (notifyErr) {
-        console.error('Failed to send handoff notification:', notifyErr)
-      }
-    }
+    logEvent({
+      name: 'subscriber_auto_lost',
+      properties: {
+        subscriberId,
+        reason: 'budget_exhausted_no_handoff',
+        recoveryLikelihood: classification.recoveryLikelihood,
+        reasoningExcerpt:   classification.handoffReasoning.slice(0, 200),
+      },
+    })
 
-    return { sent: false, reason: 'followup_limit_reached' }
+    return { sent: false, reason: 'budget_exhausted' }
   }
 
   // Look up the original email to thread the reply
@@ -386,6 +470,18 @@ export async function sendReplyEmail(params: {
     type: 'followup',
     subject,
   })
+
+  // Persist the AI's per-pass judgment for observability, even though we
+  // didn't hand off this turn. Lets the founder (and us) see the model's
+  // ongoing reasoning when spot-auditing.
+  await db
+    .update(churnedSubscribers)
+    .set({
+      handoffReasoning:   classification.handoffReasoning,
+      recoveryLikelihood: classification.recoveryLikelihood,
+      updatedAt:          new Date(),
+    })
+    .where(eq(churnedSubscribers.id, subscriberId))
 
   logEvent({
     name: 'email_sent',

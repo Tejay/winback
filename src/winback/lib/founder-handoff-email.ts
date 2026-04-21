@@ -108,14 +108,20 @@ ${params.conversationQuote}`
 }
 
 /**
- * Build the initial handoff notification — sent when MAX_FOLLOWUPS is reached
- * and the AI hands off to the founder.
+ * Build the initial handoff notification — sent when the classifier decides
+ * this subscriber is better served by a personal reply from the founder than
+ * by another AI follow-up. The AI's reasoning is shown verbatim so the
+ * founder can triage at a glance and build intuition over time.
  */
 export async function buildHandoffNotification(params: {
   subscriber: SubscriberContext
   founderName: string
+  /** AI's plain-English reasoning for escalating (1–2 sentences, from classifier). */
+  handoffReasoning?: string
+  /** AI's own estimate that any further touch recovers this subscriber. */
+  recoveryLikelihood?: 'high' | 'medium' | 'low'
 }): Promise<{ subject: string; body: string }> {
-  const { subscriber, founderName } = params
+  const { subscriber, founderName, handoffReasoning, recoveryLikelihood } = params
   const firstName = subscriber.name?.split(' ')[0] ?? 'there'
   const conversation = await loadConversation(subscriber.id)
   const conversationText = formatConversation(conversation, subscriber)
@@ -140,11 +146,20 @@ export async function buildHandoffNotification(params: {
 
   const subject = `[Winback] Action needed — ${subscriber.name ?? subscriber.email ?? 'Subscriber'} (${subscriber.cancellationReason ?? 'follow-up'})`
 
+  const judgmentBlock = handoffReasoning
+    ? `──────────────────────────────────────
+Recovery likelihood: ${(recoveryLikelihood ?? 'medium').toUpperCase()}
+Why I'm handing off: ${handoffReasoning}
+──────────────────────────────────────
+
+`
+    : ''
+
   const body = `Hi ${founderName},
 
-${subscriber.name ?? subscriber.email ?? 'A subscriber'} replied to your win-back email and the AI follow-ups have been exhausted. They're worth a personal touch.
+${subscriber.name ?? subscriber.email ?? 'A subscriber'} is worth a personal reply — my reasoning is below.
 
-──────────────────────────────────────
+${judgmentBlock}──────────────────────────────────────
 SUBSCRIBER
 ${subscriber.name ?? '(no name)'} — ${subscriber.email ?? '(no email)'}
 Plan: ${subscriber.planName ?? '?'} (${fmtMoney(subscriber.mrrCents)}/mo)

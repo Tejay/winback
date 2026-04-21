@@ -13,6 +13,12 @@ import { useState, useEffect } from 'react'
  * Restricted to tejaasvi@gmail.com via the API route.
  */
 
+interface HandoffFields {
+  handoff: boolean
+  handoffReasoning: string
+  recoveryLikelihood: 'high' | 'medium' | 'low'
+}
+
 interface SeedResult {
   scenario: string
   subscriberId?: string
@@ -33,12 +39,14 @@ interface SeedResult {
     suppress: boolean
     triggerKeyword: string | null
     triggerNeed: string | null
-  }
+  } & HandoffFields
+  handoffNotification?: { subject: string; body: string } | null
   exitEmail?: { subject: string; body: string } | null
   error?: string
 }
 
 interface ReplyResult {
+  emailsSentSignal?: number
   reclassification?: {
     tier: number
     tierReason: string
@@ -47,7 +55,8 @@ interface ReplyResult {
     confidence: number
     triggerKeyword: string | null
     triggerNeed: string | null
-  }
+  } & HandoffFields
+  handoffNotification?: { subject: string; body: string } | null
   followUpEmail?: { subject: string; body: string } | null
   followUpSkipped?: boolean
   followUpSkipReason?: string | null
@@ -82,6 +91,7 @@ const DEFAULT_REPLIES: Record<string, string> = {
   'Bob — Feature': "Honestly the CSV export is the only thing I needed. Without it I can't share data with my accountant easily.",
   'Carol — Competitor': "Linear has been working well, no plans to switch back right now. Sorry!",
   'Dave — Quality': "It crashed every time I opened the dashboard on Safari. If you've fixed that I might give it another shot.",
+  'Eve — Human ask': "Appreciate the note but I really do need to talk to a human — we need custom annual pricing and a SOC 2 letter before I can even bring this back to my team. Can you have someone reach out?",
 }
 
 const DEFAULT_CHANGELOG = `This week we shipped:
@@ -96,6 +106,10 @@ export default function WinbackFlowPage() {
   const [seedResults, setSeedResults] = useState<SeedResult[]>([])
   const [stripeWarning, setStripeWarning] = useState<string | null>(null)
   const [replies, setReplies] = useState<Record<string, string>>({})
+  // Per-subscriber emails_sent signal the user tells the classifier to consider.
+  // 1 = exit email already sent (default for the first reply).
+  // 2 = exit + one follow-up already sent (tests the "last slot" budget case).
+  const [emailsSentSignals, setEmailsSentSignals] = useState<Record<string, number>>({})
   const [replyResults, setReplyResults] = useState<Record<string, ReplyResult>>({})
   const [recoveryResults, setRecoveryResults] = useState<Record<string, RecoveryResult>>({})
   const [changelogText, setChangelogText] = useState(DEFAULT_CHANGELOG)
@@ -159,7 +173,8 @@ export default function WinbackFlowPage() {
   async function sendReply(subscriberId: string, scenarioLabel: string) {
     const replyText = replies[subscriberId]
     if (!replyText?.trim()) return
-    const data = await call('reply', { subscriberId, replyText })
+    const emailsSent = emailsSentSignals[subscriberId] ?? 1
+    const data = await call('reply', { subscriberId, replyText, emailsSent })
     if (data) {
       setReplyResults(prev => ({ ...prev, [subscriberId]: data }))
     }
@@ -254,6 +269,10 @@ export default function WinbackFlowPage() {
                     replyText={replies[r.subscriberId!] ?? ''}
                     onReplyChange={(text) =>
                       setReplies(prev => ({ ...prev, [r.subscriberId!]: text }))
+                    }
+                    emailsSent={emailsSentSignals[r.subscriberId!] ?? 1}
+                    onEmailsSentChange={(n) =>
+                      setEmailsSentSignals(prev => ({ ...prev, [r.subscriberId!]: n }))
                     }
                     onSend={() => sendReply(r.subscriberId!, r.scenario)}
                     sending={loading === 'reply' || loading === 'simulate-recovery'}
@@ -392,6 +411,13 @@ function SubscriberCard({ result }: { result: SeedResult }) {
       <Field label="triggerKeyword (legacy)" value={c.triggerKeyword ?? '(null)'} mono small />
       <Field label="triggerNeed (new)" value={c.triggerNeed ?? '(null)'} mono />
 
+      <HandoffBlock
+        handoff={c.handoff}
+        handoffReasoning={c.handoffReasoning}
+        recoveryLikelihood={c.recoveryLikelihood}
+        notification={result.handoffNotification ?? null}
+      />
+
       {result.exitEmail ? (
         <>
           <Divider />
@@ -414,6 +440,8 @@ function ReplyCard({
   result,
   replyText,
   onReplyChange,
+  emailsSent,
+  onEmailsSentChange,
   onSend,
   sending,
   replyResult,
@@ -423,6 +451,8 @@ function ReplyCard({
   result: SeedResult
   replyText: string
   onReplyChange: (text: string) => void
+  emailsSent: number
+  onEmailsSentChange: (n: number) => void
   onSend: () => void
   sending: boolean
   replyResult?: ReplyResult
@@ -449,6 +479,21 @@ function ReplyCard({
         rows={2}
         className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
       />
+      <div className="mt-2 flex items-center gap-2 text-xs">
+        <label className="text-slate-500 font-medium">
+          Emails already sent (signals budget to classifier):
+        </label>
+        <select
+          value={emailsSent}
+          onChange={(e) => onEmailsSentChange(Number(e.target.value))}
+          disabled={sending}
+          className="border border-slate-200 rounded-lg px-2 py-1 text-xs"
+        >
+          <option value={0}>0 — nothing sent yet</option>
+          <option value={1}>1 — exit email was sent</option>
+          <option value={2}>2 — exit + one follow-up sent (last slot)</option>
+        </select>
+      </div>
       <div className="mt-2 flex flex-wrap items-center gap-2">
         <Button onClick={onSend} disabled={sending || !replyText.trim() || !!recoveryResult}>
           Send reply → re-classify
@@ -502,6 +547,11 @@ function ReplyCard({
       {replyResult && (
         <>
           <Divider />
+          {replyResult.emailsSentSignal !== undefined && (
+            <div className="text-xs text-slate-500 mb-2">
+              Classifier saw <span className="font-mono">emails_sent: {replyResult.emailsSentSignal}</span>
+            </div>
+          )}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
               <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
@@ -535,9 +585,73 @@ function ReplyCard({
               )}
             </div>
           </div>
+
+          <HandoffBlock
+            handoff={replyResult.reclassification!.handoff}
+            handoffReasoning={replyResult.reclassification!.handoffReasoning}
+            recoveryLikelihood={replyResult.reclassification!.recoveryLikelihood}
+            notification={replyResult.handoffNotification ?? null}
+          />
         </>
       )}
     </div>
+  )
+}
+
+/**
+ * Shared display for the classifier's hand-off judgment — shows the decision,
+ * recovery likelihood, free-text reasoning, and the full founder notification
+ * email body when a hand-off fires.
+ */
+function HandoffBlock({
+  handoff,
+  handoffReasoning,
+  recoveryLikelihood,
+  notification,
+}: {
+  handoff: boolean
+  handoffReasoning: string
+  recoveryLikelihood: 'high' | 'medium' | 'low'
+  notification: { subject: string; body: string } | null
+}) {
+  const likelihoodColor: 'green' | 'amber' | 'slate' =
+    recoveryLikelihood === 'high' ? 'green'
+      : recoveryLikelihood === 'medium' ? 'amber'
+        : 'slate'
+  const decisionColor = handoff ? 'red' : 'slate'
+  return (
+    <>
+      <Divider />
+      <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
+        Hand-off decision (AI)
+      </div>
+      <div className="flex flex-wrap gap-2 mb-2">
+        <Badge color={decisionColor}>
+          {handoff ? 'HAND OFF TO FOUNDER' : 'AI continues'}
+        </Badge>
+        <Badge color={likelihoodColor}>
+          recovery: {recoveryLikelihood}
+        </Badge>
+      </div>
+      {handoffReasoning ? (
+        <div className="text-xs text-slate-700 italic bg-slate-50 border border-slate-100 rounded-lg p-2 mb-2">
+          "{handoffReasoning}"
+        </div>
+      ) : (
+        <div className="text-xs italic text-slate-400 mb-2">(no reasoning provided)</div>
+      )}
+      {notification && (
+        <div className="mt-3 bg-amber-50 border border-amber-200 rounded-lg p-3">
+          <div className="text-xs font-semibold text-amber-900 uppercase tracking-wider mb-2">
+            Founder notification email (would be sent instead of a follow-up)
+          </div>
+          <div className="font-semibold text-xs mb-2">Subject: {notification.subject}</div>
+          <div className="whitespace-pre-wrap text-xs text-slate-700 font-mono max-h-96 overflow-y-auto">
+            {notification.body}
+          </div>
+        </div>
+      )}
+    </>
   )
 }
 

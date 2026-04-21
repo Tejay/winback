@@ -81,6 +81,11 @@ export const churnedSubscribers = pgTable('wb_churned_subscribers', {
   aiPausedUntil:              timestamp('ai_paused_until'),
   aiPausedAt:                 timestamp('ai_paused_at'),
   aiPausedReason:             text('ai_paused_reason'),
+  // AI-decided hand-off judgment. Populated on every classification pass —
+  // not just when hand-off fires — so the founder (and us) can audit why the
+  // AI made its call. Migration 017.
+  handoffReasoning:           text('handoff_reasoning'),
+  recoveryLikelihood:         text('recovery_likelihood'),   // 'high'|'medium'|'low'
   createdAt:            timestamp('created_at').defaultNow(),
   updatedAt:            timestamp('updated_at').defaultNow(),
 })
