@@ -117,6 +117,30 @@ describe('classifySubscriber', () => {
     expect(userPrompt).toContain('billing_portal_clicked: true')
   })
 
+  it('system prompt contains the tightened MESSAGE WRITING constraints', async () => {
+    const signals = makeSignals()
+    mockLLMResponse({
+      tier: 3, tierReason: 't', cancellationReason: 'r', cancellationCategory: 'Other',
+      confidence: 0.5, suppress: false,
+      firstMessage: { subject: 's', body: 'b', sendDelaySecs: 60 },
+      triggerKeyword: null, winBackSubject: 'w', winBackBody: 'b',
+    })
+    await classifySubscriber(signals, {})
+    const systemPrompt = mockCreate.mock.calls[0][0].system as string
+    // Section headers we rely on — if these disappear, tone regresses silently.
+    expect(systemPrompt).toContain('MESSAGE WRITING')
+    expect(systemPrompt).toContain('Banned phrases')
+    expect(systemPrompt).toContain('RESULT FOCUS')
+    // Length constraint must be explicit.
+    expect(systemPrompt).toMatch(/2 or 3 complete sentences/)
+    // Representative banned phrases must be spelled out verbatim.
+    expect(systemPrompt.toLowerCase()).toContain('just checking in')
+    expect(systemPrompt.toLowerCase()).toContain("we'd love to have you back")
+    expect(systemPrompt.toLowerCase()).toContain('limited time')
+    // No exclamation marks rule must be present.
+    expect(systemPrompt).toMatch(/no exclamation marks/i)
+  })
+
   it('includes re-classification rules in system prompt when reply_text present', async () => {
     const signals = makeSignals({ replyText: 'Some reply' })
     mockLLMResponse({
