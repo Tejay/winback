@@ -11,6 +11,7 @@ import {
   generateWinBackEmail,
 } from '@/src/winback/lib/changelog-match'
 import { appendStandardFooter } from '@/src/winback/lib/email'
+import { buildHandoffNotification } from '@/src/winback/lib/founder-handoff-email'
 import { logEvent } from '@/src/winback/lib/events'
 import { SubscriberSignals } from '@/src/winback/lib/types'
 
@@ -173,6 +174,16 @@ const SCENARIOS = [
     stripeEnum: 'too_complex',
     stripeComment: 'The dashboard kept crashing for me on Safari. Tried it twice and gave up.',
   },
+  {
+    label: 'Eve — Human ask',
+    email: 'test-handoff@winback-harness.local',
+    name: 'Eve Human-ask',
+    planName: 'Pro',
+    mrrCents: 9900,
+    tenureDays: 340,
+    stripeEnum: 'other',
+    stripeComment: "Can I talk to your founder before I go? We're evaluating a move to annual billing and I need to know what custom pricing and SOC 2 timelines look like — not something a bot can answer.",
+  },
 ]
 
 async function requireDevAuth() {
@@ -212,6 +223,7 @@ function buildSignals(scenario: typeof SCENARIOS[number], stripeCustomerId: stri
     stripeEnum: scenario.stripeEnum,
     stripeComment: scenario.stripeComment,
     cancelledAt: new Date(),
+    emailsSent: 0,  // initial churn — nothing sent yet
   }
 }
 
@@ -404,6 +416,8 @@ async function handlePost(req: Request) {
           triggerNeed: classification.triggerNeed,
           winBackSubject: classification.winBackSubject,
           winBackBody: classification.winBackBody,
+          handoffReasoning:   classification.handoffReasoning,
+          recoveryLikelihood: classification.recoveryLikelihood,
           status: classification.suppress ? 'lost' : 'pending',
           source: TEST_SOURCE,
           fallbackDays: 90,
@@ -431,7 +445,29 @@ async function handlePost(req: Request) {
           suppress: classification.suppress,
           triggerKeyword: classification.triggerKeyword,
           triggerNeed: classification.triggerNeed,
+          handoff:            classification.handoff,
+          handoffReasoning:   classification.handoffReasoning,
+          recoveryLikelihood: classification.recoveryLikelihood,
         },
+        handoffNotification: classification.handoff
+          ? await buildHandoffNotification({
+              subscriber: {
+                id: inserted.id,
+                email: scenario.email,
+                name: scenario.name,
+                planName: scenario.planName,
+                mrrCents: scenario.mrrCents,
+                cancellationReason: classification.cancellationReason,
+                triggerNeed: classification.triggerNeed,
+                cancelledAt: signals.cancelledAt,
+                stripeComment: scenario.stripeComment,
+                replyText: null,
+              },
+              founderName: customer.founderName ?? 'The team',
+              handoffReasoning:   classification.handoffReasoning,
+              recoveryLikelihood: classification.recoveryLikelihood,
+            })
+          : null,
         exitEmail: classification.firstMessage
           ? {
               subject: classification.firstMessage.subject,
@@ -533,6 +569,13 @@ async function handlePost(req: Request) {
   if (action === 'reply') {
     const subscriberId = body.subscriberId as string
     const replyText = body.replyText as string
+    // Optional — lets harness users tell the classifier how many emails have
+    // notionally gone out so the budget-awareness factor can kick in. Default
+    // to 1 (the exit email would have been sent before the first reply).
+    const rawEmailsSent = Number(body.emailsSent)
+    const emailsSentSignal = Number.isFinite(rawEmailsSent) && rawEmailsSent >= 0
+      ? Math.min(rawEmailsSent, 3)
+      : 1
     if (!subscriberId || !replyText) {
       return NextResponse.json({ error: 'subscriberId and replyText required' }, { status: 400 })
     }
@@ -571,6 +614,7 @@ async function handlePost(req: Request) {
       replyText,
       billingPortalClicked: !!sub.billingPortalClickedAt,
       cancelledAt: sub.cancelledAt ?? new Date(),
+      emailsSent: emailsSentSignal,
     }
 
     let classification
@@ -596,6 +640,8 @@ async function handlePost(req: Request) {
         triggerNeed: classification.triggerNeed,
         winBackSubject: classification.winBackSubject,
         winBackBody: classification.winBackBody,
+        handoffReasoning:   classification.handoffReasoning,
+        recoveryLikelihood: classification.recoveryLikelihood,
         updatedAt: new Date(),
       })
       .where(eq(churnedSubscribers.id, subscriberId))
@@ -606,8 +652,31 @@ async function handlePost(req: Request) {
         ? { subject: classification.winBackSubject, body: classification.winBackBody, sendDelaySecs: 0 }
         : null)
 
+    // If the classifier decided to hand off, render the founder notification
+    // so the harness user can see what would land in the founder's inbox.
+    const handoffNotification = classification.handoff
+      ? await buildHandoffNotification({
+          subscriber: {
+            id: sub.id,
+            email: sub.email,
+            name: sub.name,
+            planName: sub.planName,
+            mrrCents: sub.mrrCents,
+            cancellationReason: classification.cancellationReason,
+            triggerNeed: classification.triggerNeed,
+            cancelledAt: sub.cancelledAt,
+            stripeComment: sub.stripeComment,
+            replyText,
+          },
+          founderName: customer.founderName ?? 'The team',
+          handoffReasoning:   classification.handoffReasoning,
+          recoveryLikelihood: classification.recoveryLikelihood,
+        })
+      : null
+
     return NextResponse.json({
       ok: true,
+      emailsSentSignal,
       reclassification: {
         tier: classification.tier,
         tierReason: classification.tierReason,
@@ -616,19 +685,33 @@ async function handlePost(req: Request) {
         confidence: classification.confidence,
         triggerKeyword: classification.triggerKeyword,
         triggerNeed: classification.triggerNeed,
+        handoff:            classification.handoff,
+        handoffReasoning:   classification.handoffReasoning,
+        recoveryLikelihood: classification.recoveryLikelihood,
       },
-      followUpEmail: replyMessage
-        ? {
-            subject: replyMessage.subject.startsWith('Re:') ? replyMessage.subject : `Re: ${replyMessage.subject}`,
-            body: appendStandardFooter(
-              replyMessage.body,
-              subscriberId,
-              customer.founderName ?? 'The team',
-            ),
-          }
-        : null,
-      followUpSkipped: classification.tier === 4 || !replyMessage,
-      followUpSkipReason: classification.tier === 4 ? 'Tier 4 — suppress' : !replyMessage ? 'No firstMessage generated' : null,
+      handoffNotification,
+      // Follow-up email is suppressed in production when handoff=true — mirror
+      // that here so the harness accurately reflects the runtime behaviour.
+      followUpEmail: classification.handoff
+        ? null
+        : replyMessage
+          ? {
+              subject: replyMessage.subject.startsWith('Re:') ? replyMessage.subject : `Re: ${replyMessage.subject}`,
+              body: appendStandardFooter(
+                replyMessage.body,
+                subscriberId,
+                customer.founderName ?? 'The team',
+              ),
+            }
+          : null,
+      followUpSkipped: classification.handoff || classification.tier === 4 || !replyMessage,
+      followUpSkipReason: classification.handoff
+        ? 'AI decided hand-off — founder notification sent instead'
+        : classification.tier === 4
+          ? 'Tier 4 — suppress'
+          : !replyMessage
+            ? 'No firstMessage generated'
+            : null,
     })
   }
 

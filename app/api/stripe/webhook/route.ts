@@ -125,7 +125,10 @@ async function processChurn(event: Stripe.Event) {
   const decryptedToken = decrypt(customer.stripeAccessToken!)
   const signals = await extractSignals(subscription, decryptedToken)
 
-  const classification = await classifySubscriber(signals, {
+  // Initial churn — nothing sent yet, so the classifier sees emails_sent=0.
+  const signalsForClassifier = { ...signals, emailsSent: 0 }
+
+  const classification = await classifySubscriber(signalsForClassifier, {
     founderName: customer.founderName ?? undefined,
     productName: customer.productName ?? undefined,
     changelog: customer.changelogText ?? undefined,
@@ -157,6 +160,8 @@ async function processChurn(event: Stripe.Event) {
       triggerNeed: classification.triggerNeed,
       winBackSubject: classification.winBackSubject,
       winBackBody: classification.winBackBody,
+      handoffReasoning:   classification.handoffReasoning,
+      recoveryLikelihood: classification.recoveryLikelihood,
       status: classification.suppress ? 'lost' : 'pending',
       fallbackDays: 90,
       cancelledAt: signals.cancelledAt,

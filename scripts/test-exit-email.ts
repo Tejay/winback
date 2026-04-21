@@ -44,6 +44,9 @@ async function main() {
     triggerNeed: null,
     winBackSubject: '',
     winBackBody: '',
+    handoff: false,
+    handoffReasoning: '',
+    recoveryLikelihood: 'low',
   }
 
   await scheduleExitEmail({

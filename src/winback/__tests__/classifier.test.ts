@@ -279,6 +279,87 @@ describe('classifySubscriber', () => {
     expect(ClassificationSchema.safeParse(result).success).toBe(true)
   })
 
+  it('parses handoff + handoffReasoning + recoveryLikelihood when the LLM emits them', async () => {
+    const signals = makeSignals({ replyText: 'Can I talk to your founder about enterprise pricing?' })
+    mockLLMResponse({
+      tier: 1,
+      tierReason: 'Explicit pricing negotiation request in reply',
+      cancellationReason: 'Wants enterprise pricing discussion',
+      cancellationCategory: 'Price',
+      confidence: 0.9,
+      suppress: false,
+      firstMessage: { subject: 's', body: 'b', sendDelaySecs: 60 },
+      triggerKeyword: 'enterprise pricing',
+      winBackSubject: 'w', winBackBody: 'b',
+      handoff: true,
+      handoffReasoning: "They're explicitly asking to speak to someone about pricing flexibility — a short personal reply has a real shot.",
+      recoveryLikelihood: 'high',
+    })
+    const result = await classifySubscriber(signals, {})
+    expect(result.handoff).toBe(true)
+    expect(result.recoveryLikelihood).toBe('high')
+    expect(result.handoffReasoning).toContain('personal reply')
+  })
+
+  it('defaults handoff fields when the LLM omits them', async () => {
+    const signals = makeSignals()
+    mockLLMResponse({
+      tier: 3, tierReason: 't', cancellationReason: 'r', cancellationCategory: 'Other',
+      confidence: 0.5, suppress: false,
+      firstMessage: { subject: 's', body: 'b', sendDelaySecs: 60 },
+      triggerKeyword: null, winBackSubject: 'w', winBackBody: 'b',
+    })
+    const result = await classifySubscriber(signals, {})
+    expect(result.handoff).toBe(false)
+    expect(result.handoffReasoning).toBe('')
+    expect(result.recoveryLikelihood).toBe('low')
+  })
+
+  it('system prompt contains the HAND-OFF JUDGMENT section with all three factor headers', async () => {
+    const signals = makeSignals()
+    mockLLMResponse({
+      tier: 3, tierReason: 't', cancellationReason: 'r', cancellationCategory: 'Other',
+      confidence: 0.5, suppress: false,
+      firstMessage: { subject: 's', body: 'b', sendDelaySecs: 60 },
+      triggerKeyword: null, winBackSubject: 'w', winBackBody: 'b',
+    })
+    await classifySubscriber(signals, {})
+    const systemPrompt = mockCreate.mock.calls[0][0].system as string
+    expect(systemPrompt).toContain('HAND-OFF JUDGMENT')
+    expect(systemPrompt).toContain('CONVERTIBILITY')
+    expect(systemPrompt).toContain('ANTI-SPAM BIAS')
+    expect(systemPrompt).toContain('BUDGET AWARENESS')
+    expect(systemPrompt).toContain('handoffReasoning')
+    expect(systemPrompt).toContain('recoveryLikelihood')
+    expect(systemPrompt).toMatch(/3 emails from us total/i)
+  })
+
+  it('buildPrompt renders emails_sent when signals.emailsSent is provided', async () => {
+    const signals = makeSignals({ emailsSent: 2 })
+    mockLLMResponse({
+      tier: 3, tierReason: 't', cancellationReason: 'r', cancellationCategory: 'Other',
+      confidence: 0.5, suppress: false,
+      firstMessage: { subject: 's', body: 'b', sendDelaySecs: 60 },
+      triggerKeyword: null, winBackSubject: 'w', winBackBody: 'b',
+    })
+    await classifySubscriber(signals, {})
+    const userPrompt = mockCreate.mock.calls[0][0].messages[0].content as string
+    expect(userPrompt).toContain('emails_sent: 2')
+  })
+
+  it('buildPrompt defaults emails_sent to 0 when not provided', async () => {
+    const signals = makeSignals()
+    mockLLMResponse({
+      tier: 3, tierReason: 't', cancellationReason: 'r', cancellationCategory: 'Other',
+      confidence: 0.5, suppress: false,
+      firstMessage: { subject: 's', body: 'b', sendDelaySecs: 60 },
+      triggerKeyword: null, winBackSubject: 'w', winBackBody: 'b',
+    })
+    await classifySubscriber(signals, {})
+    const userPrompt = mockCreate.mock.calls[0][0].messages[0].content as string
+    expect(userPrompt).toContain('emails_sent: 0')
+  })
+
   it('Scenario E — Tier 4, suppress (no email, short tenure)', async () => {
     const signals = makeSignals({
       email: null,

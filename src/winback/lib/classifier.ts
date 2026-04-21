@@ -44,6 +44,12 @@ const ClassificationSchema = z.object({
   triggerNeed:    z.string().nullable().default(null),  // Rich description (spec 19b)
   winBackSubject: z.string().default(''),                // Deprecated (spec 19c)
   winBackBody:    z.string().default(''),                // Deprecated (spec 19c)
+  // AI-decided hand-off judgment. The classifier itself (not a rule) decides
+  // on every pass whether this subscriber is better served by another AI
+  // email or by a personal reply from the founder.
+  handoff:            z.boolean().default(false),
+  handoffReasoning:   z.string().default(''),
+  recoveryLikelihood: z.enum(['high', 'medium', 'low']).default('low'),
 })
 
 const SYSTEM_PROMPT = `You are a win-back classification engine for subscription businesses.
@@ -164,7 +170,44 @@ CANCELLATION AGE (check cancelled_at):
 EMAIL TONE BY AGE (if not suppressed):
 - Fresh (< 7 days): "You recently cancelled..."
 - Medium (7–30 days): "A few weeks ago you cancelled..."
-- Older (30+ days): "We've made some changes since you left..."`
+- Older (30+ days): "We've made some changes since you left..."
+
+HAND-OFF JUDGMENT (handoff / handoffReasoning / recoveryLikelihood):
+You, not a rule, decide whether to hand this subscriber to the founder. On
+every classification pass, weigh these three factors together — no single
+factor is decisive:
+
+  (a) CONVERTIBILITY. If the founder personally replied to this subscriber
+      right now, what is the realistic chance they come back? Use the full
+      thread, stated objections, engagement signals (reply length, questions
+      asked, billing_portal_clicked), tenure, MRR, and whether their block
+      is concrete (pricing / contract / roadmap) vs. vague (not the right fit).
+
+  (b) ANTI-SPAM BIAS. The founder's inbox is expensive. Default to
+      handoff=false. Only set true when the expected recovery, weighted by
+      your own confidence, is clearly worth a personal email from the
+      founder. If you are unsure, handoff=false.
+
+  (c) BUDGET AWARENESS. The subscriber gets at most 3 emails from us total.
+      emails_sent tells you how many have been sent so far (0, 1, or 2).
+      Each slot you spend on an AI follow-up is a slot the founder cannot
+      use. Ask yourself: "Is THIS slot better spent on me, or them?" If
+      the thread has stalled on something AI can't resolve and one slot
+      remains, the founder is the better spend.
+
+Set recoveryLikelihood to your honest estimate of whether ANY further touch
+(AI or founder) recovers them:
+  - high:   concrete addressable block, high engagement, explicit interest in staying
+  - medium: stated reason but weak engagement, OR strong engagement with a fuzzy reason
+  - low:    no engagement, no reply, or a clear "not coming back" signal
+
+Set handoffReasoning to 1–2 sentences in plain English explaining your
+decision. It will be persisted and shown to the founder verbatim. Examples:
+  - "They're explicitly asking to speak to someone and mentioned pricing flexibility twice — a short personal reply has a real shot."
+  - "Dead thread — one reply weeks ago, no engagement since. Not worth your time; closing out."
+  - "AI follow-up has one more slot but they want a roadmap commitment I can't give. Better spent by you than by me."
+
+Suppressed subscribers (tier 4) must always have handoff=false, recoveryLikelihood='low', and a short handoffReasoning noting the suppression reason.`
 
 export async function classifySubscriber(
   signals: SubscriberSignals,
@@ -240,6 +283,7 @@ SUBSCRIBER SIGNALS:
 - reply_text: ${signals.replyText ?? 'not_provided'}
 - billing_portal_clicked: ${signals.billingPortalClicked ?? false}
 - cancelled_at: ${signals.cancelledAt.toISOString()}
+- emails_sent: ${signals.emailsSent ?? 0}   (0 = nothing sent yet; 3 is the maximum we will ever send)
 
 BUSINESS CONTEXT:
 - product_name: ${context.productName ?? 'not_provided'}
