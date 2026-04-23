@@ -33,6 +33,11 @@ interface Subscriber {
   aiPausedReason: string | null
   // Spec 21a
   doNotContact?: boolean | null
+  // Migration 017 — AI-decided hand-off judgment, persisted on every
+  // classification pass (not just when hand-off fires). Lets the founder
+  // see WHY the AI made the call it made.
+  handoffReasoning: string | null
+  recoveryLikelihood: 'high' | 'medium' | 'low' | null
 }
 
 interface Stats {
@@ -506,6 +511,39 @@ export function DashboardClient({ changelog, isTrial, firstRecovery }: Dashboard
                 <div className="text-sm font-medium text-slate-900 italic mb-1">{selected.cancellationReason}</div>
                 {selected.cancellationCategory && (
                   <div className="text-xs text-slate-400">Category: {selected.cancellationCategory}</div>
+                )}
+              </div>
+            )}
+
+            {/* Migration 017 — AI judgment panel. Renders on every subscriber
+                that's been classified, not just handed-off ones, so you can
+                see why the AI escalated / kept going / closed out. */}
+            {(selected.handoffReasoning || selected.recoveryLikelihood) && (
+              <div className="mx-6 mt-4 bg-slate-50 rounded-xl p-4 border border-slate-100">
+                <div className="flex items-center justify-between mb-2 gap-2">
+                  <div className="text-xs font-semibold uppercase tracking-widest text-slate-500">
+                    AI Judgment
+                  </div>
+                  {selected.recoveryLikelihood && (
+                    <span
+                      className={`text-xs font-semibold px-2 py-0.5 rounded-full border whitespace-nowrap ${
+                        selected.recoveryLikelihood === 'high'
+                          ? 'bg-green-50 text-green-700 border-green-200'
+                          : selected.recoveryLikelihood === 'medium'
+                            ? 'bg-amber-50 text-amber-700 border-amber-200'
+                            : 'bg-slate-100 text-slate-500 border-slate-200'
+                      }`}
+                    >
+                      Recovery: {selected.recoveryLikelihood}
+                    </span>
+                  )}
+                </div>
+                {selected.handoffReasoning ? (
+                  <p className="text-sm text-slate-700 italic leading-relaxed">
+                    &ldquo;{selected.handoffReasoning}&rdquo;
+                  </p>
+                ) : (
+                  <p className="text-xs text-slate-400 italic">No reasoning persisted yet.</p>
                 )}
               </div>
             )}
