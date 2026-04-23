@@ -131,12 +131,21 @@ describe('classifySubscriber', () => {
     expect(systemPrompt).toContain('MESSAGE WRITING')
     expect(systemPrompt).toContain('Banned phrases')
     expect(systemPrompt).toContain('RESULT FOCUS')
+    expect(systemPrompt).toContain('HUMAN VOICE')
+    expect(systemPrompt).toContain('CONCESSION BEAT')
+    expect(systemPrompt).toContain('RECIPROCITY')
     // Length constraint must be explicit.
     expect(systemPrompt).toMatch(/2 or 3 complete sentences/)
     // Representative banned phrases must be spelled out verbatim.
     expect(systemPrompt.toLowerCase()).toContain('just checking in')
     expect(systemPrompt.toLowerCase()).toContain("we'd love to have you back")
     expect(systemPrompt.toLowerCase()).toContain('limited time')
+    // New human-voice anti-patterns must be present.
+    expect(systemPrompt.toLowerCase()).toContain('no hard feelings')
+    expect(systemPrompt.toLowerCase()).toContain('hope this finds you well')
+    // The concession-beat whitelist must be spelled out so the model has phrases to draw from.
+    expect(systemPrompt).toContain('Fair call')
+    expect(systemPrompt).toContain('That makes sense')
     // No exclamation marks rule must be present.
     expect(systemPrompt).toMatch(/no exclamation marks/i)
   })

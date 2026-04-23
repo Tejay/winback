@@ -76,6 +76,7 @@ RULES:
 - Return ONLY valid JSON with no preamble and no markdown code fences
 
 MESSAGE WRITING (firstMessage.body) — HARD CONSTRAINTS:
+
 Shape:
   Line 1:  "Hi <firstName>," (first name only, no surname, no title)
   Line 2:  blank
@@ -83,65 +84,87 @@ Shape:
   Line 4:  blank
   Line 5:  "— <founderFirstName>" (first name only; no "Best," / "Regards," / job title / company)
 
+HUMAN VOICE (sound like a person who just typed this at a desk, not a template):
+- Write the way you'd actually email a friend who cancelled your product. Contractions are mandatory ("I've", "we've", "it's", "didn't", "you're"). Textbook formality reads as AI.
+- Vary your punctuation. Don't put an em-dash in every sentence — one em-dash per email is a reasonable ceiling; two already reads as a tic. Commas, semicolons, and full stops all exist.
+- Concrete nouns, not abstractions. "The 1,000-row CSV cap" beats "the export limitation". "Six months of daily use" beats "your extended engagement period".
+- Short sentences are fine. A sentence fragment is fine ("Fair call."). Real people don't write every thought as a perfectly balanced compound sentence.
+- Starting a sentence with "And" / "But" / "So" is fine and often sounds more human than "However" / "Furthermore".
+- At most ONE honest intensifier per email ("honestly", "genuinely", "actually", "really"). More than one reads as performative.
+- Don't hedge everything. "I've been wondering" is fine; "I was just wondering if maybe you might possibly" is not.
+- No rhetorical flourishes, no "journeys", no "reaching out". Just say the thing.
+
 Tone:
 - First-person singular ("I"), never "we" or "the team" — this email is from one person to one person.
-- Warm and human, but never fluffy. Warmth comes from SPECIFICITY, not adjectives: reference their actual tenure, their actual stated reason, their actual plan name. Generic sentiment ("you're amazing", "we value you") is worse than no warmth at all.
-- Validate, don't grovel. Phrases like "fair call", "that makes sense", "I get it", "thanks for the real run" are good. "We're so sorry", "you're an incredible customer", "you mean so much to us" are not.
+- Warmth comes from SPECIFICITY, not adjectives. Reference their actual tenure, their actual stated reason, their actual plan. Generic sentiment ("you're amazing", "we value you") is worse than no warmth at all.
+- Validate, don't grovel. "Fair call" / "that makes sense" / "you're right" / "I get it" are good. "We're so sorry" / "you're an incredible customer" / "you mean so much to us" are not.
 - No exclamation marks anywhere in subject or body. Ever.
 - No apologies unless the signal data describes a concrete product failure we caused.
-- Never assume the subscriber will return. Phrase reactivation as optional ("if it's useful", "the door's open", "no pressure at all", "whenever it suits"), never directive ("come back now", "resubscribe today", "click to restart").
+- Never assume the subscriber will return. Reactivation is phrased as optional ("if it's useful", "the door's open", "no pressure at all", "whenever it suits"), never directive ("come back now", "resubscribe today", "click to restart").
 
-Acknowledgement (baked into the first sentence — don't spend a whole sentence on it):
-- If stripe_comment or reply_text contains a specific reason, briefly restate it in your own words before anything else ("Fair call on the CSV cap — 1,000 rows is limiting.").
-- If tenure_days >= 30, acknowledge the time in a single clause using the ACTUAL number in months or years ("Thanks for the four months with us", "After almost a year..."). Do NOT invent tenure. For tenure_days < 30, skip this beat.
-- Keep acknowledgement to one clause inside sentence 1. Never a standalone sentence — that wastes the budget.
+CONCESSION BEAT (sentence 1 — how you open decides whether the rest gets read):
+- Tier 1 (they stated a concrete reason): sentence 1 MUST open with a validation phrase drawn from this whitelist, then restate their reason in their own words in the same sentence:
+    Whitelist: "Fair call" / "Fair point" / "That makes sense" / "You're right" / "I hear you" / "I get it" / "Fair enough" / "Honestly, that's fair"
+    Example: "Fair call on the CSV cap — 1,000 rows was genuinely limiting after four months of using it daily."
+  Do NOT skip the whitelist phrase on Tier 1. It disarms reactance and is the single biggest lever in the email.
+- Tier 2 (Stripe enum only, no free text): you can't validate a specific reason because they didn't actually give one. Acknowledge the enum truthfully and signal you'd rather hear it in their own words. No validation phrase — that would be presumptuous.
+    Example: "I saw Stripe flagged 'too expensive' as the reason, but I'd rather hear it in your own words."
+- Tier 3 (silent churn): nothing to validate. If tenure_days >= 30, acknowledge the time in a single clause. Then declare you're not here to push.
+    Example: "Thanks for the eight months — genuinely. I'm not going to chase you here."
+
+RECIPROCITY (give something before you ask — the email should feel like a gift, not a request):
+- Tier 1 + recent_changelog has a matching fix: name the fix specifically. That IS the gift. "I rebuilt it last week so it's uncapped now and streams straight to S3."
+- Tier 1 + no matching fix: optionally drop ONE concrete, truthful sentence of behind-the-scenes context drawn from recent_changelog. "We've been heads-down on the import pipeline lately." Only if recent_changelog supports it — never invent.
+- Tier 2: a truthful one-line reframe of the pricing/value tradeoff, not a discount. "Sometimes the number is fine and it's actually the fit or the value that's off."
+- Tier 3: the gift is permission to not come back plus a low-effort question. Don't bolt anything else on.
+- A discount is NOT a gift. It implies they were overpaying before. Don't offer one.
 
 Banned phrases (do not use any of these, in any casing):
-- Corporate openers: "Just checking in", "Circling back", "Touching base", "Following up", "Reaching out"
+- Corporate openers: "Just checking in", "Circling back", "Touching base", "Following up", "Reaching out", "Just wanted to check", "I wanted to reach out", "Quick note"
 - Marketing fluff: "We'd love to have you back", "valued customer", "we value your", "we miss you", "we hate to see you go"
 - Urgency / scarcity: "limited time", "today only", "hurry", "act fast", "act now", "don't miss"
 - Generic flattery: "great customer", "loyal customer", "special offer"
 - Overshoot gratitude / sycophancy: "thank you so much", "you're amazing", "you were amazing", "mean so much to us", "so grateful for you", "incredible customer"
+- Weak feelings close: "How are you doing?", "How have you been?", "No hard feelings", "Hope you're well"
+- Passive close: "Let me know if", "Feel free to reach out", "Happy to chat if"
+- Meta-commentary: "I'll keep this brief", "Long story short", "Without going into too much detail"
+- AI tells: "I'm reaching out because", "I hope this finds you well", "I just wanted to say"
 
 Subject lines (firstMessage.subject):
 - 3–6 words. Lowercase-ish (sentence case is fine, Title Case is not). No emojis. No exclamation marks. No clickbait.
-- Good: "about the csv export" / "quick question" / "one thing about pricing"
-- Bad: "WE MISS YOU!" / "🎉 Come Back!" / "URGENT: Your account"
+- Name the SPECIFIC thing the email is about, not the relationship. Good: "about the csv export" / "one thing on pricing" / "quick question on your feedback". Bad: "We miss you" / "About your subscription" / "Come back".
 
 RESULT FOCUS — one path per body (never both):
 - Each body ends with EITHER one soft reactivation pointer OR one genuine question. Never both. Never stack them.
-- Tier 1 + the recent_changelog describes a concrete fix that addresses their stated reason:
-    End with a soft pointer. Example close sentences: "If that matters, the door's open." / "Worth another look when you have a minute." The actual reactivation link lives in the system footer, not in the body.
-- Tier 1 without a matching changelog fix, and ALL Tier 2 and Tier 3:
-    End with ONE genuine single-sentence question. Frame as curiosity, not a survey.
-    Good: "Would you mind sharing what happened? Hit reply — one line is enough."
-    Good: "What would have made it worth keeping?"
-    Bad: "Please complete our exit survey." / "Could you tell me why, and would you like to resubscribe?"
+- Tier 1 + matching changelog fix: end with a soft pointer. "If that was the blocker, it's gone." / "Worth another look when you have a minute." / "The door's open if that matters." The reactivation link lives in the system footer, not the body.
+- Tier 1 without a matching fix, and ALL Tier 2 and Tier 3: end with ONE specific, low-effort question (one line to answer).
+    Good: "What would have made it worth keeping?" / "What was the actual dealbreaker?" / "If one thing had been different, would you still be here?"
+    Bad: "Please complete our exit survey." / "How are you doing?" / "Could you tell me why, and would you like to resubscribe?"
 
 GOOD EXAMPLES — Tier 1 (reason stated + changelog match):
   "Hi Sarah,
 
-  Thanks for the four months with us — and fair call on the CSV export, the 1,000-row cap was genuinely limiting. I rebuilt it last week so it's uncapped now and streams directly to S3. No pressure at all, but if that was the blocker, it's gone.
+  Fair call on the CSV cap — 1,000 rows was genuinely limiting after four months of using it every day. I rebuilt it last week so it's uncapped now and streams straight to S3. If that was the blocker, it's gone.
 
   — Alex"
 
   "Hi Jordan,
 
-  After six months, I can see why the slow API pushed you out — that was a fair frustration. The new edge-cached layer we shipped drops p95 from 800ms to around 90ms. If that was the missing piece, take another look whenever it suits.
+  You're right that the API was too slow for anything serious. We shipped a new edge-cached layer last week that drops p95 from 800ms to around 90ms. If that was the missing piece, take another look whenever it suits.
 
   — Priya"
 
 GOOD EXAMPLES — Tier 2 (enum only, no detail):
   "Hi Sam,
 
-  I saw your Pro plan ended and Stripe flagged 'too expensive' as the reason. I'd rather hear what was actually going on for you — sometimes the number is fine, it's the fit or the value that's off. No pressure to reply, but if you have a second, what would have made it worth keeping?
+  I saw Stripe flagged 'too expensive' as the reason your Pro plan ended, but I'd rather hear it in your own words. Sometimes the number's fine and it's actually the fit or value that's off. If one thing had been different, would you still be here?
 
   — Jamie"
 
 GOOD EXAMPLES — Tier 3 (silent churn):
   "Hi Morgan,
 
-  Thanks for the eight months with us — genuinely. I'm not going to chase you, and there's nothing I'm trying to sell here. If you've got a spare second though, what was it that pushed you away?
+  Thanks for the eight months — genuinely. I'm not going to chase you, and there's nothing I'm selling here. If you've got a spare second though, what was the actual dealbreaker?
 
   — Taylor"
 
@@ -152,6 +175,10 @@ BAD EXAMPLES — do NOT write anything like these:
     (banned opener, banned fluff, exclamation, pushy)
   "Hi Chris, I noticed you cancelled. Would you like to come back? Here's a link to reactivate."
     (question AND CTA in same body — pick one)
+  "Hi Morgan, hope you're well! I wanted to reach out and see how you're doing. Let me know if there's anything I can do!"
+    (weak feelings close, passive close, exclamation marks, zero substance)
+  "Hi Pat, I hope this finds you well. I was just wondering if you might possibly consider giving us another chance?"
+    (AI-tell opener, excessive hedging, zero specificity, begging)
 
 RE-CLASSIFICATION (when reply_text is present):
 - When reply_text is provided, this is a RE-CLASSIFICATION. The subscriber replied to our earlier email.
@@ -337,6 +364,21 @@ const BANNED_PHRASES: Array<{ label: string; re: RegExp }> = [
   { label: 'mean so much to us',    re: /\bmean so much to us\b/i },
   { label: 'so grateful for you',   re: /\bso grateful for you\b/i },
   { label: 'incredible customer',   re: /\bincredible customer\b/i },
+  // Weak feelings close — cheerful but empty.
+  { label: 'how are you doing',     re: /\bhow are you doing\b/i },
+  { label: 'how have you been',     re: /\bhow have you been\b/i },
+  { label: 'no hard feelings',      re: /\bno hard feelings\b/i },
+  { label: "hope you're well",      re: /\bhope you['’ ]?re well\b/i },
+  // Passive close — makes the next step their job instead of yours.
+  { label: 'let me know if',        re: /\blet me know if\b/i },
+  { label: 'feel free to reach out',re: /\bfeel free to reach out\b/i },
+  // Meta-commentary — tells the reader what you're doing instead of just doing it.
+  { label: "i'll keep this brief",  re: /\bi['’ ]?ll keep this brief\b/i },
+  { label: 'long story short',      re: /\blong story short\b/i },
+  // AI-tell openers — dead giveaways that a machine wrote this.
+  { label: 'hope this finds you well', re: /\bhope(s)? this (email )?finds you well\b/i },
+  { label: "i'm reaching out because",  re: /\bi['’ ]?m reaching out because\b/i },
+  { label: 'i just wanted to say',  re: /\bi just wanted to say\b/i },
 ]
 
 // Directive reactivation phrases that collide with a "soft pointer + no CTA" body.

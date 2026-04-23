@@ -14,47 +14,47 @@ export interface Golden {
 
 export const good: Golden[] = [
   {
-    name: 'Tier 1, changelog match, CSV export fix (tenure ack + reason ack)',
+    name: 'Tier 1, changelog match, CSV export fix (concession beat opener + gift)',
     tier: 1,
     hasChangelogMatch: true,
     body: [
       'Hi Sarah,',
       '',
-      "Thanks for the four months with us — and fair call on the CSV export, the 1,000-row cap was genuinely limiting. I rebuilt it last week so it's uncapped now and streams directly to S3. No pressure at all, but if that was the blocker, it's gone.",
+      "Fair call on the CSV cap — 1,000 rows was genuinely limiting after four months of using it every day. I rebuilt it last week so it's uncapped now and streams straight to S3. If that was the blocker, it's gone.",
       '',
       '— Alex',
     ].join('\n'),
   },
   {
-    name: 'Tier 1, changelog match, API latency fix (tenure ack + reason ack)',
+    name: 'Tier 1, changelog match, API latency fix (concession beat opener + gift)',
     tier: 1,
     hasChangelogMatch: true,
     body: [
       'Hi Jordan,',
       '',
-      'After six months, I can see why the slow API pushed you out — that was a fair frustration. The new edge-cached layer we shipped drops p95 from 800ms to around 90ms. If that was the missing piece, take another look whenever it suits.',
+      "You're right that the API was too slow for anything serious. We shipped a new edge-cached layer last week that drops p95 from 800ms to around 90ms. If that was the missing piece, take another look whenever it suits.",
       '',
       '— Priya',
     ].join('\n'),
   },
   {
-    name: 'Tier 2, enum only (too_expensive) — warmer, still ends with question',
+    name: 'Tier 2, enum only — honest reframe (gift) + specific question',
     tier: 2,
     body: [
       'Hi Sam,',
       '',
-      "I saw your Pro plan ended and Stripe flagged 'too expensive' as the reason. I'd rather hear what was actually going on for you — sometimes the number is fine, it's the fit or the value that's off. No pressure to reply, but if you have a second, what would have made it worth keeping?",
+      "I saw Stripe flagged 'too expensive' as the reason your Pro plan ended, but I'd rather hear it in your own words. Sometimes the number's fine and it's actually the fit or value that's off. If one thing had been different, would you still be here?",
       '',
       '— Jamie',
     ].join('\n'),
   },
   {
-    name: 'Tier 3, silent churn — warm acknowledgement of tenure, ends with question',
+    name: 'Tier 3, silent churn — tenure ack + permission to leave + specific question',
     tier: 3,
     body: [
       'Hi Morgan,',
       '',
-      "Thanks for the eight months with us — genuinely. I'm not going to chase you, and there's nothing I'm trying to sell here. If you've got a spare second though, what was it that pushed you away?",
+      "Thanks for the eight months — genuinely. I'm not going to chase you, and there's nothing I'm selling here. If you've got a spare second though, what was the actual dealbreaker?",
       '',
       '— Taylor',
     ].join('\n'),

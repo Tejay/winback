@@ -79,4 +79,52 @@ describe('validateFirstMessage — individual rule spot checks', () => {
     const result = validateFirstMessage(body, 1, { hasChangelogMatch: false })
     expect(result.issues.some(i => i.includes('stacks'))).toBe(true)
   })
+
+  it("flags weak feelings close 'how are you doing'", () => {
+    const body = [
+      'Hi Sam,',
+      '',
+      'I saw you cancelled last week. Just wondering, how are you doing these days?',
+      '',
+      '— Jamie',
+    ].join('\n')
+    const result = validateFirstMessage(body, 3)
+    expect(result.issues.some(i => i.includes('how are you doing'))).toBe(true)
+  })
+
+  it("flags AI-tell opener 'hope this finds you well'", () => {
+    const body = [
+      'Hi Sam,',
+      '',
+      "Hope this finds you well. I wanted to ask what would have made our product worth keeping?",
+      '',
+      '— Jamie',
+    ].join('\n')
+    const result = validateFirstMessage(body, 2)
+    expect(result.issues.some(i => i.includes('hope this finds you well'))).toBe(true)
+  })
+
+  it("flags passive close 'let me know if'", () => {
+    const body = [
+      'Hi Sam,',
+      '',
+      "I saw your plan ended. Let me know if there's anything I can help with. What would have made it worth keeping?",
+      '',
+      '— Jamie',
+    ].join('\n')
+    const result = validateFirstMessage(body, 2)
+    expect(result.issues.some(i => i.includes('let me know if'))).toBe(true)
+  })
+
+  it("flags 'no hard feelings' as an empty-feelings close", () => {
+    const body = [
+      'Hi Morgan,',
+      '',
+      'Thanks for the eight months — genuinely, no hard feelings here. What was the actual dealbreaker?',
+      '',
+      '— Taylor',
+    ].join('\n')
+    const result = validateFirstMessage(body, 3)
+    expect(result.issues.some(i => i.includes('no hard feelings'))).toBe(true)
+  })
 })
