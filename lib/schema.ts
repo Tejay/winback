@@ -108,6 +108,9 @@ export const emailsSent = pgTable('wb_emails_sent', {
   gmailThreadId:  text('gmail_thread_id'),  // Legacy name — stores reference ID
   type:           text('type').notNull(),
   subject:        text('subject'),
+  // Spec 27 — full body text (already-footered) so the subscriber inspector
+  // can render the conversation turn-by-turn. Migration 019.
+  bodyText:       text('body_text'),
   sentAt:         timestamp('sent_at').defaultNow(),
   repliedAt:      timestamp('replied_at'),
 })

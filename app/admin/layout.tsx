@@ -34,6 +34,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
             <NavLink href="/admin/ai-quality">AI quality</NavLink>
             <NavLink href="/admin/billing">Billing</NavLink>
             <NavLink href="/admin/events">Events</NavLink>
+            <NavLink href="/admin/audit-log">Audit log</NavLink>
             <Link
               href="/dashboard"
               className="ml-3 text-xs text-slate-400 hover:text-slate-600"
