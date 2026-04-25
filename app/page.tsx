@@ -292,6 +292,26 @@ export default function LandingPage() {
               See full pricing ›
             </Link>
           </div>
+
+          {/* Enterprise opt-in — escape hatch for high-volume customers.
+              Visually subordinate to the SMB pitch above (no solid CTA button,
+              lighter typography). The "One rate, always" promise above stays
+              correct because this is an opt-in path for outliers, not a tier. */}
+          <div className="mt-12 max-w-xl mx-auto bg-white border border-slate-200 rounded-2xl px-6 py-5 text-left">
+            <div className="text-xs font-semibold tracking-widest uppercase text-blue-600">
+              Enterprise
+            </div>
+            <p className="mt-2 text-sm text-slate-700">
+              <strong className="font-semibold text-slate-900">Running high volumes?</strong>{' '}
+              Custom pricing for enterprise customers — get in touch.
+            </p>
+            <a
+              href="mailto:sales@winbackflow.co"
+              className="mt-3 inline-block text-sm font-medium text-blue-600 hover:text-blue-700"
+            >
+              sales@winbackflow.co →
+            </a>
+          </div>
         </div>
       </section>
 
