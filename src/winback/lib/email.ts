@@ -321,11 +321,16 @@ export async function scheduleExitEmail(params: {
   // sendEmail returns empty messageId if DNC — shouldn't happen here (we pre-checked) but guard anyway
   if (!messageId) return
 
+  // Spec 27 — persist the full body so /admin/subscribers/[id] can render
+  // the conversation turn-by-turn. Use the already-footered body so what we
+  // store matches what the subscriber actually received.
+  const fullBody = appendStandardFooter(body, subscriberId, fromName)
   await db.insert(emailsSent).values({
     subscriberId,
     gmailMessageId: messageId,
     type: 'exit',
     subject,
+    bodyText: fullBody,
   })
 
   await db
@@ -488,6 +493,7 @@ export async function sendReplyEmail(params: {
     gmailThreadId: originalEmail?.messageId ?? null,
     type: 'followup',
     subject,
+    bodyText: fullBody,  // spec 27 — Inspector renders this
   })
 
   // Persist the AI's per-pass judgment for observability, even though we
@@ -603,6 +609,7 @@ If you'd rather not hear from us, unsubscribe: ${unsubLink}`
     gmailMessageId: res.data?.id ?? '',
     type: 'dunning',
     subject,
+    bodyText: body,  // spec 27 — Inspector renders this
   })
 
   await db

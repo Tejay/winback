@@ -319,7 +319,7 @@ function SubscriberCard({
         </div>
       )}
 
-      <div className="flex flex-wrap gap-2 pt-2 border-t border-slate-100 mt-3">
+      <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-100 mt-3">
         <button
           onClick={() => onAction('unsubscribe', row)}
           disabled={busy || row.doNotContact === true}
@@ -341,6 +341,14 @@ function SubscriberCard({
         >
           Delete (GDPR)
         </button>
+        {/* Spec 27 — quick path from this row's quick-scan view to the full
+            inspector page (timeline, body view, re-run classifier). */}
+        <Link
+          href={`/admin/subscribers/${row.id}`}
+          className="text-xs ml-auto text-blue-600 hover:underline"
+        >
+          View full inspector →
+        </Link>
       </div>
     </div>
   )
