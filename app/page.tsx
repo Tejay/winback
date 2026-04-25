@@ -293,21 +293,21 @@ export default function LandingPage() {
             </Link>
           </div>
 
-          {/* Enterprise opt-in — escape hatch for high-volume customers.
-              Visually subordinate to the SMB pitch above (no solid CTA button,
-              lighter typography). The "One rate, always" promise above stays
-              correct because this is an opt-in path for outliers, not a tier. */}
-          <div className="mt-12 max-w-xl mx-auto bg-white border border-slate-200 rounded-2xl px-6 py-5 text-left">
-            <div className="text-xs font-semibold tracking-widest uppercase text-blue-600">
-              Enterprise
-            </div>
-            <p className="mt-2 text-sm text-slate-700">
-              <strong className="font-semibold text-slate-900">Running high volumes?</strong>{' '}
-              Custom pricing for enterprise customers — get in touch.
+          {/* Fixed-contract alternative — for teams that need predictable
+              budgeting (SSO + signed SLA) instead of the 15% performance
+              model. Quiet copy, no bordered card; subtle divider above to
+              separate from the SMB block without competing with it. */}
+          <div className="mt-12 max-w-xl mx-auto pt-10 border-t border-slate-200 text-center">
+            <h3 className="text-sm font-semibold text-slate-900">
+              Need a fixed annual contract?
+            </h3>
+            <p className="mt-3 text-sm text-slate-500 leading-relaxed">
+              For teams that need predictable budgeting with SSO and a signed SLA —
+              we offer fixed annual contracts as an alternative to the 15% performance model.
             </p>
             <a
               href="mailto:sales@winbackflow.co"
-              className="mt-3 inline-block text-sm font-medium text-blue-600 hover:text-blue-700"
+              className="mt-4 inline-block text-sm font-medium text-blue-600 hover:text-blue-700"
             >
               sales@winbackflow.co →
             </a>
