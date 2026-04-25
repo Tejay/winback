@@ -9,7 +9,7 @@
 
 import { sql, and, eq, gte, inArray } from 'drizzle-orm'
 import { getDbReadOnly } from '../db'
-import { wbEvents, customers, churnedSubscribers, recoveries } from '../schema'
+import { wbEvents, recoveries, users } from '../schema'
 
 /**
  * Spec 26 — full set of error-class event names. Matches the entries logged
@@ -102,11 +102,18 @@ export interface OverviewRollup {
     mrrCents: number[]
     errors: number[]
   }
-  totals: {
-    activeCustomers: number
-    paidCustomers: number
-    trialCustomers: number
-    subscribersEver: number
+  /**
+   * Spec 26.5 — actionable growth + health signals (replaces the old static
+   * "platform totals" row, which was point-in-time decoration). Each has
+   * today's value plus the 7-day total so trends are visible at a glance.
+   */
+  growth: {
+    signupsToday: number
+    signups7d: number
+    conversionsToday: number
+    conversions7d: number
+    customersActive24h: number
+    customersActive7d: number
   }
   redLights: Array<{ metric: string; today: number; median7d: number }>
 }
@@ -264,11 +271,50 @@ function median(values: number[]): number {
 }
 
 /**
- * Build the full overview rollup in parallel. ~10 small queries, all hit
- * indexes; should respond in well under 300ms even at 100k events/day.
+ * Spec 26.5 — Growth + health queries. Each returns one integer.
+ * Cheap: signups hits wb_users.created_at (small table); conversions and
+ * active hit (name, created_at) and (customer_id, created_at) indexes.
+ */
+async function signupsSince(since: Date): Promise<number> {
+  const [row] = await getDbReadOnly()
+    .select({ n: sql<number>`count(*)::int` })
+    .from(users)
+    .where(gte(users.createdAt, since))
+  return row?.n ?? 0
+}
+
+async function trialToPaidSince(since: Date): Promise<number> {
+  // billing_card_captured fires when a founder completes the platform card
+  // capture flow — the moment trial → paid happens on our side.
+  const [row] = await getDbReadOnly()
+    .select({ n: sql<number>`count(*)::int` })
+    .from(wbEvents)
+    .where(and(eq(wbEvents.name, 'billing_card_captured'), gte(wbEvents.createdAt, since)))
+  return row?.n ?? 0
+}
+
+async function customersActiveSince(since: Date): Promise<number> {
+  // Distinct customer_ids that have produced any event in the window.
+  // Better proxy for "actually integrated and producing data" than just
+  // "has a stripe access token".
+  const [row] = await getDbReadOnly()
+    .select({ n: sql<number>`count(distinct ${wbEvents.customerId})::int` })
+    .from(wbEvents)
+    .where(and(
+      gte(wbEvents.createdAt, since),
+      sql`${wbEvents.customerId} is not null`,
+    ))
+  return row?.n ?? 0
+}
+
+/**
+ * Build the full overview rollup in parallel. All queries hit indexes;
+ * should respond in well under 300ms even at 100k events/day.
  */
 export async function buildOverviewRollup(): Promise<OverviewRollup> {
   const todayStart = startOfTodayUtc()
+  const sevenDaysAgo = nDaysAgo(7)
+  const oneDayAgo = new Date(Date.now() - DAY_MS)
 
   const [
     emailsSentToday,
@@ -281,8 +327,13 @@ export async function buildOverviewRollup(): Promise<OverviewRollup> {
     recoveriesSpark,
     mrrSpark,
     errorsSpark,
-    customerCounts,
-    subscribersEverRow,
+    // Spec 26.5 — growth + health (replaces the old static totals row).
+    signupsToday,
+    signups7d,
+    conversionsToday,
+    conversions7d,
+    customersActive24h,
+    customersActive7d,
   ] = await Promise.all([
     countEventsSince('email_sent', todayStart),
     // Spec 26 — replaces replies (which was a weak signal). Handoffs map
@@ -296,16 +347,12 @@ export async function buildOverviewRollup(): Promise<OverviewRollup> {
     dailyBucketsForEvent('subscriber_recovered', 7),
     mrrCentsBuckets(7),
     errorBuckets(7),
-    getDbReadOnly()
-      .select({
-        active: sql<number>`count(*) filter (where ${customers.stripeAccessToken} is not null)::int`,
-        paid:   sql<number>`count(*) filter (where ${customers.plan} = 'paid')::int`,
-        trial:  sql<number>`count(*) filter (where ${customers.plan} = 'trial' or ${customers.plan} is null)::int`,
-      })
-      .from(customers),
-    getDbReadOnly()
-      .select({ n: sql<number>`count(*)::int` })
-      .from(churnedSubscribers),
+    signupsSince(todayStart),
+    signupsSince(sevenDaysAgo),
+    trialToPaidSince(todayStart),
+    trialToPaidSince(sevenDaysAgo),
+    customersActiveSince(oneDayAgo),
+    customersActiveSince(sevenDaysAgo),
   ])
 
   // Red lights: any metric where today > 3 × median(last 7 days, excluding today).
@@ -327,8 +374,6 @@ export async function buildOverviewRollup(): Promise<OverviewRollup> {
     }
   }
 
-  const cc = customerCounts[0] ?? { active: 0, paid: 0, trial: 0 }
-
   return {
     today: {
       classifications: emailsSentToday,  // proxy — every send corresponds to one classification
@@ -345,11 +390,13 @@ export async function buildOverviewRollup(): Promise<OverviewRollup> {
       mrrCents: mrrSpark,
       errors: errorsSpark,
     },
-    totals: {
-      activeCustomers: cc.active,
-      paidCustomers: cc.paid,
-      trialCustomers: cc.trial,
-      subscribersEver: subscribersEverRow[0]?.n ?? 0,
+    growth: {
+      signupsToday,
+      signups7d,
+      conversionsToday,
+      conversions7d,
+      customersActive24h,
+      customersActive7d,
     },
     redLights,
   }

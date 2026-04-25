@@ -32,11 +32,13 @@ interface OverviewRollup {
     mrrCents: number[]
     errors: number[]
   }
-  totals: {
-    activeCustomers: number
-    paidCustomers: number
-    trialCustomers: number
-    subscribersEver: number
+  growth: {
+    signupsToday: number
+    signups7d: number
+    conversionsToday: number
+    conversions7d: number
+    customersActive24h: number
+    customersActive7d: number
   }
   redLights: Array<{ metric: string; today: number; median7d: number }>
 }
@@ -152,15 +154,33 @@ export function OverviewClient() {
         <ErrorsCounter today={t.errors} spark={data.sparklines.errors} />
       </section>
 
-      <section className="bg-white rounded-2xl border border-slate-200 p-5 text-sm">
-        <div className="text-xs font-semibold uppercase tracking-widest text-slate-500 mb-2">
-          Platform totals
+      {/* Spec 26.5 — growth + health signals (replaces the static "platform
+          totals" line, which was decoration). Each tile shows today's value
+          plus the 7-day total to make the trend visible at a glance. */}
+      <section>
+        <div className="text-xs font-semibold uppercase tracking-widest text-slate-500 mb-3">
+          Growth &amp; health
         </div>
-        <div className="text-slate-900">
-          <strong>{data.totals.activeCustomers}</strong> active customers (
-          {data.totals.paidCustomers} paid, {data.totals.trialCustomers} trial)
-          &middot; <strong>{data.totals.subscribersEver.toLocaleString()}</strong> subscribers
-          processed all-time
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <GrowthTile
+            label="New signups"
+            today={data.growth.signupsToday}
+            sevenDay={data.growth.signups7d}
+            valueColor="text-slate-900"
+          />
+          <GrowthTile
+            label="Trial → paid conversions"
+            today={data.growth.conversionsToday}
+            sevenDay={data.growth.conversions7d}
+            valueColor={data.growth.conversionsToday > 0 ? 'text-green-600' : 'text-slate-900'}
+          />
+          <GrowthTile
+            label="Customers active (24h)"
+            today={data.growth.customersActive24h}
+            sevenDay={data.growth.customersActive7d}
+            sevenDayLabel="7d unique"
+            valueColor="text-slate-900"
+          />
         </div>
       </section>
     </div>
@@ -243,6 +263,42 @@ function ErrorsCounter({
             </Link>
           )
         })}
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Spec 26.5 — small "growth & health" tile with today's number + 7-day
+ * comparison. Lighter visual weight than the top counter row (no sparkline)
+ * — these are slow-moving signals that reward weekly rhythm, not minute-by-
+ * minute polling.
+ */
+function GrowthTile({
+  label,
+  today,
+  sevenDay,
+  sevenDayLabel = 'last 7d',
+  valueColor,
+}: {
+  label: string
+  today: number
+  sevenDay: number
+  sevenDayLabel?: string
+  valueColor: string
+}) {
+  return (
+    <div className="bg-white rounded-2xl border border-slate-200 p-4">
+      <div className="text-xs font-semibold uppercase tracking-widest text-slate-500 mb-2">
+        {label}
+      </div>
+      <div className="flex items-baseline gap-3">
+        <div className={`text-3xl font-bold ${valueColor}`}>
+          {today.toLocaleString()}
+        </div>
+        <div className="text-xs text-slate-400">
+          today &middot; {sevenDay.toLocaleString()} {sevenDayLabel}
+        </div>
       </div>
     </div>
   )
