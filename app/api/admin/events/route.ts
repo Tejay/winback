@@ -95,5 +95,24 @@ export async function GET(req: NextRequest) {
     .orderBy(desc(wbEvents.createdAt))
     .limit(limit)
 
+  // Spec 26 — when a customer is filtered and the date window returns zero,
+  // tell the UI whether the customer has events outside the chosen range.
+  // Avoids the silent-zero failure mode ("looks broken" when really it's
+  // just "no recent activity").
+  if (customerId && rows.length === 0) {
+    const [outside] = await getDbReadOnly()
+      .select({ n: sql<number>`count(*)::int` })
+      .from(wbEvents)
+      .where(eq(wbEvents.customerId, customerId))
+    const outsideCount = outside?.n ?? 0
+    if (outsideCount > 0) {
+      return NextResponse.json({
+        rows: [],
+        total: 0,
+        customerEventsOutsideRange: outsideCount,
+      })
+    }
+  }
+
   return NextResponse.json({ rows, total: rows.length })
 }

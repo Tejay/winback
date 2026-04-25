@@ -30,6 +30,16 @@ export async function POST(req: Request) {
     )
   } catch (err) {
     console.error('Webhook signature failed:', err)
+    // Spec 26 — observability: emit so the overview's Errors counter
+    // catches webhook-secret rotations and impersonation attempts. Source
+    // IP helps distinguish "we rotated the secret" from real bad-actor.
+    await logEvent({
+      name: 'webhook_signature_invalid',
+      properties: {
+        sourceIp: req.headers.get('x-forwarded-for') ?? req.headers.get('x-real-ip') ?? null,
+        errorMessage: err instanceof Error ? err.message : String(err),
+      },
+    })
     return new Response('Invalid signature', { status: 400 })
   }
 
