@@ -31,6 +31,47 @@ export function SubscribersSearchClient() {
   const [error, setError] = useState<string | null>(null)
   const [actionMsg, setActionMsg] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
+  // Spec 26 — bulk DNC: track selected subscriber ids for the multi-select.
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [bulkBusy, setBulkBusy] = useState(false)
+
+  function toggleSelected(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+  function clearSelection() {
+    setSelected(new Set())
+  }
+  function selectAll() {
+    setSelected(new Set(rows.filter((r) => !r.doNotContact).map((r) => r.id)))
+  }
+
+  async function bulkDnc() {
+    const ids = Array.from(selected)
+    if (ids.length === 0) return
+    setBulkBusy(true)
+    setActionMsg(null)
+    try {
+      const res = await fetch('/api/admin/actions/bulk-unsubscribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ subscriberIds: ids }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error ?? 'Bulk DNC failed')
+      setActionMsg(`✓ Marked ${json.count} subscriber${json.count === 1 ? '' : 's'} as DNC`)
+      clearSelection()
+      if (submitted) await searchEmail(submitted)
+    } catch (e) {
+      setActionMsg(`✗ ${e instanceof Error ? e.message : String(e)}`)
+    } finally {
+      setBulkBusy(false)
+    }
+  }
 
   async function search(e?: React.FormEvent) {
     if (e) e.preventDefault()
@@ -45,6 +86,7 @@ export function SubscribersSearchClient() {
       if (!res.ok) throw new Error(json.error ?? 'Search failed')
       setRows(json.rows)
       setSubmitted(q)
+      clearSelection()
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
@@ -153,10 +195,49 @@ export function SubscribersSearchClient() {
         </div>
       )}
 
+      {rows.length > 0 && selected.size > 0 && (
+        <div className="sticky top-16 z-20 bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-center justify-between text-sm">
+          <span className="text-amber-900">
+            <strong>{selected.size}</strong> selected
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={selectAll}
+              disabled={bulkBusy}
+              className="text-xs border border-slate-200 bg-white text-slate-700 rounded-full px-3 py-1.5 hover:bg-slate-50 disabled:opacity-50"
+            >
+              Select all (eligible)
+            </button>
+            <button
+              onClick={clearSelection}
+              disabled={bulkBusy}
+              className="text-xs border border-slate-200 bg-white text-slate-700 rounded-full px-3 py-1.5 hover:bg-slate-50 disabled:opacity-50"
+            >
+              Clear
+            </button>
+            <button
+              onClick={bulkDnc}
+              disabled={bulkBusy}
+              className="text-xs bg-[#0f172a] text-white rounded-full px-3 py-1.5 font-medium hover:bg-[#1e293b] disabled:opacity-50"
+            >
+              {bulkBusy ? '…' : `Mark all ${selected.size} as DNC`}
+            </button>
+          </div>
+        </div>
+      )}
+
       {rows.length > 0 && (
         <div className="space-y-3">
           {rows.map((r) => (
-            <SubscriberCard key={r.id} row={r} busy={busyId === r.id} onAction={rowAction} onExport={exportRow} />
+            <SubscriberCard
+              key={r.id}
+              row={r}
+              busy={busyId === r.id}
+              selected={selected.has(r.id)}
+              onToggleSelected={toggleSelected}
+              onAction={rowAction}
+              onExport={exportRow}
+            />
           ))}
         </div>
       )}
@@ -167,23 +248,39 @@ export function SubscribersSearchClient() {
 function SubscriberCard({
   row,
   busy,
+  selected,
+  onToggleSelected,
   onAction,
   onExport,
 }: {
   row: Row
   busy: boolean
+  selected: boolean
+  onToggleSelected: (id: string) => void
   onAction: (action: 'unsubscribe' | 'dsr-delete', row: Row) => void
   onExport: (row: Row) => void
 }) {
   const handedOff = !!row.founderHandoffAt && !row.founderHandoffResolvedAt
   const paused = !!row.aiPausedUntil && new Date(row.aiPausedUntil).getTime() > Date.now()
   const aiState = handedOff ? 'handoff' : paused ? 'paused' : row.status === 'recovered' || row.status === 'lost' ? 'done' : 'active'
+  // Already-DNC rows are not eligible for bulk DNC — disable the checkbox.
+  const dncEligible = !row.doNotContact
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 p-4">
-      <div className="flex items-start justify-between gap-4 mb-2">
-        <div>
-          <div className="font-medium text-slate-900">{row.name ?? '(no name)'} <span className="text-slate-400 font-normal">· {row.email}</span></div>
+    <div className={`bg-white rounded-2xl border p-4 ${selected ? 'border-amber-400 ring-2 ring-amber-100' : 'border-slate-200'}`}>
+      <div className="flex items-start gap-3 mb-2">
+        <input
+          type="checkbox"
+          checked={selected}
+          disabled={!dncEligible}
+          onChange={() => onToggleSelected(row.id)}
+          aria-label={dncEligible ? `Select ${row.email ?? row.id}` : 'Already DNC'}
+          title={dncEligible ? 'Select for bulk DNC' : 'Already DNC — can\'t bulk-mark'}
+          className="mt-1 cursor-pointer disabled:cursor-not-allowed disabled:opacity-30"
+        />
+        <div className="flex-1 flex items-start justify-between gap-4">
+          <div>
+            <div className="font-medium text-slate-900">{row.name ?? '(no name)'} <span className="text-slate-400 font-normal">· {row.email}</span></div>
           <div className="text-xs text-slate-500 mt-0.5">
             on{' '}
             <Link
@@ -198,15 +295,16 @@ function SubscriberCard({
             ${(row.mrrCents / 100).toFixed(2)}/mo
           </div>
         </div>
-        <div className="flex flex-wrap gap-1.5">
-          <Badge color={statusColor(row.status)}>{row.status}</Badge>
-          <Badge color={aiStateColor(aiState)}>AI: {aiState}</Badge>
-          {row.doNotContact && <Badge color="red">DNC</Badge>}
-          {row.recoveryLikelihood && (
-            <Badge color={likelihoodColor(row.recoveryLikelihood)}>
-              recovery: {row.recoveryLikelihood}
-            </Badge>
-          )}
+          <div className="flex flex-wrap gap-1.5">
+            <Badge color={statusColor(row.status)}>{row.status}</Badge>
+            <Badge color={aiStateColor(aiState)}>AI: {aiState}</Badge>
+            {row.doNotContact && <Badge color="red">DNC</Badge>}
+            {row.recoveryLikelihood && (
+              <Badge color={likelihoodColor(row.recoveryLikelihood)}>
+                recovery: {row.recoveryLikelihood}
+              </Badge>
+            )}
+          </div>
         </div>
       </div>
 

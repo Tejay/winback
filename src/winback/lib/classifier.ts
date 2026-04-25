@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { z } from 'zod'
 import { SubscriberSignals, ClassificationResult } from './types'
+import { logEvent } from './events'
 
 function getClient() {
   // process.env.ANTHROPIC_API_KEY may be empty string locally
@@ -242,50 +243,69 @@ export async function classifySubscriber(
 ): Promise<ClassificationResult> {
   const userPrompt = buildPrompt(signals, context)
 
-  const response = await getClient().messages.create({
-    model: 'claude-haiku-4-5-20251001',
-    max_tokens: 1500,
-    temperature: 0,
-    system: SYSTEM_PROMPT,
-    messages: [{ role: 'user', content: userPrompt }],
-  })
-
-  let raw = response.content[0].type === 'text' ? response.content[0].text : ''
-
-  // Strip markdown code fences if present
-  raw = raw.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim()
-
-  let parsed: Record<string, unknown>
+  // Spec 26 — observability: any failure path (API call, JSON parse, Zod
+  // validation) emits a classifier_failed event BEFORE re-throwing so we can
+  // see the rate of regressions on /admin (model outages, prompt drift
+  // producing invalid JSON, schema mismatches after a model update).
+  let errorType: 'api' | 'parse' | 'schema' = 'api'
   try {
-    parsed = JSON.parse(raw)
-  } catch {
-    console.error('Raw LLM output:', raw)
-    throw new Error('Failed to parse LLM output as JSON')
-  }
+    const response = await getClient().messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 1500,
+      temperature: 0,
+      system: SYSTEM_PROMPT,
+      messages: [{ role: 'user', content: userPrompt }],
+    })
 
-  // Normalize LLM output — handle common field name variations
-  if (parsed.shouldEmail !== undefined && parsed.suppress === undefined) {
-    parsed.suppress = !parsed.shouldEmail
-  }
-  // Derive suppress from tier if missing
-  if (parsed.suppress === undefined && parsed.tier === 4) {
-    parsed.suppress = true
-  }
-  // Copy firstMessage to winback fields if missing
-  if (parsed.firstMessage && !parsed.winBackSubject) {
-    const fm = parsed.firstMessage as Record<string, unknown>
-    parsed.winBackSubject = fm.subject ?? ''
-    parsed.winBackBody = fm.body ?? ''
-  }
+    let raw = response.content[0].type === 'text' ? response.content[0].text : ''
 
-  const result = ClassificationSchema.safeParse(parsed)
-  if (!result.success) {
-    console.error('Failed LLM object:', parsed)
-    console.error('Zod errors:', result.error.issues)
-    throw new Error('LLM output failed Zod validation')
-  }
+    // Strip markdown code fences if present
+    raw = raw.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim()
 
-  return result.data
+    errorType = 'parse'
+    let parsed: Record<string, unknown>
+    try {
+      parsed = JSON.parse(raw)
+    } catch {
+      console.error('Raw LLM output:', raw)
+      throw new Error('Failed to parse LLM output as JSON')
+    }
+
+    // Normalize LLM output — handle common field name variations
+    if (parsed.shouldEmail !== undefined && parsed.suppress === undefined) {
+      parsed.suppress = !parsed.shouldEmail
+    }
+    // Derive suppress from tier if missing
+    if (parsed.suppress === undefined && parsed.tier === 4) {
+      parsed.suppress = true
+    }
+    // Copy firstMessage to winback fields if missing
+    if (parsed.firstMessage && !parsed.winBackSubject) {
+      const fm = parsed.firstMessage as Record<string, unknown>
+      parsed.winBackSubject = fm.subject ?? ''
+      parsed.winBackBody = fm.body ?? ''
+    }
+
+    errorType = 'schema'
+    const result = ClassificationSchema.safeParse(parsed)
+    if (!result.success) {
+      console.error('Failed LLM object:', parsed)
+      console.error('Zod errors:', result.error.issues)
+      throw new Error('LLM output failed Zod validation')
+    }
+
+    return result.data
+  } catch (err) {
+    await logEvent({
+      name: 'classifier_failed',
+      properties: {
+        stripeCustomerId: signals.stripeCustomerId,
+        errorType,
+        errorMessage: err instanceof Error ? err.message : String(err),
+      },
+    })
+    throw err
+  }
 }
 
 function buildPrompt(

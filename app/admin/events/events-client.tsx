@@ -24,7 +24,10 @@ const EVENT_NAMES = [
   'billing_invoice_paid',
   'billing_portal_opened',
   'billing_setup_started',
+  // Spec 26 — observability error events
+  'classifier_failed',
   'email_replied',
+  'email_send_failed',
   'email_sent',
   'founder_handoff_triggered',
   'handoff_resolved_manually',
@@ -43,6 +46,7 @@ const EVENT_NAMES = [
   'subscriber_auto_lost',
   'subscriber_recovered',
   'subscriber_unsubscribed',
+  'webhook_signature_invalid',
 ]
 
 const SINCE_OPTIONS = [
@@ -77,6 +81,7 @@ function EventsClientInner() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [customerNotFound, setCustomerNotFound] = useState(false)
+  const [eventsOutsideRange, setEventsOutsideRange] = useState<number | null>(null)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
 
   const load = useCallback(async () => {
@@ -92,6 +97,7 @@ function EventsClientInner() {
       if (!res.ok) throw new Error(json.error ?? 'Failed to load events')
       setRows(json.rows)
       setCustomerNotFound(!!json.customerNotFound)
+      setEventsOutsideRange(typeof json.customerEventsOutsideRange === 'number' ? json.customerEventsOutsideRange : null)
       setError(null)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
@@ -179,6 +185,20 @@ function EventsClientInner() {
       {customerNotFound && (
         <div className="bg-amber-50 border border-amber-200 text-amber-900 rounded-xl p-3 text-sm">
           No customer matches <strong>{customer}</strong>. Drop the customer filter to search across all customers.
+        </div>
+      )}
+
+      {eventsOutsideRange !== null && eventsOutsideRange > 0 && (
+        <div className="bg-amber-50 border border-amber-200 text-amber-900 rounded-xl p-3 text-sm flex items-center justify-between gap-3">
+          <span>
+            This customer has <strong>{eventsOutsideRange}</strong> event{eventsOutsideRange === 1 ? '' : 's'} outside the chosen date range.
+          </span>
+          <button
+            onClick={() => setSince('30d')}
+            className="text-xs bg-white border border-amber-200 text-amber-800 rounded-full px-3 py-1 hover:bg-amber-100"
+          >
+            Extend to 30 days
+          </button>
         </div>
       )}
 

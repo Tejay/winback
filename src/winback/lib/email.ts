@@ -248,6 +248,16 @@ export async function sendEmail(params: {
   })
 
   if (res.error) {
+    // Spec 26 — emit BEFORE re-throwing so the row lands even when the
+    // surrounding handler converts the error to a 500.
+    await logEvent({
+      name: 'email_send_failed',
+      properties: {
+        subscriberId,
+        type: 'sendEmail',
+        errorMessage: res.error.message,
+      },
+    })
     throw new Error(`Resend error: ${res.error.message}`)
   }
 
@@ -460,6 +470,15 @@ export async function sendReplyEmail(params: {
   })
 
   if (res.error) {
+    // Spec 26 — observability: emit BEFORE re-throwing.
+    await logEvent({
+      name: 'email_send_failed',
+      properties: {
+        subscriberId,
+        type: 'followup',
+        errorMessage: res.error.message,
+      },
+    })
     throw new Error(`Resend error: ${res.error.message}`)
   }
 
@@ -567,6 +586,15 @@ If you'd rather not hear from us, unsubscribe: ${unsubLink}`
   })
 
   if (res.error) {
+    // Spec 26 — observability: emit BEFORE re-throwing.
+    await logEvent({
+      name: 'email_send_failed',
+      properties: {
+        subscriberId,
+        type: 'dunning',
+        errorMessage: res.error.message,
+      },
+    })
     throw new Error(`Resend error: ${res.error.message}`)
   }
 
