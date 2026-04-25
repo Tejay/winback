@@ -234,8 +234,11 @@ export async function sendEmail(params: {
 
   const resend = getResendClient()
 
-  // Use reply+{subscriberId}@winbackflow.co so inbound webhook can match replies
-  const from = `${fromName} <reply+${subscriberId}@winbackflow.co>`
+  // Use reply+{subscriberId}@reply.winbackflow.co so subscriber replies route
+  // to Resend Inbound (root MX still points at Neo for tejay@winbackflow.co
+  // etc.). The inbound webhook regex parses the prefix only, so the host
+  // doesn't matter as long as MX is set up. See spec 27 + inbound DNS plan.
+  const from = `${fromName} <reply+${subscriberId}@reply.winbackflow.co>`
 
   const fullBody = appendStandardFooter(body, subscriberId, fromName)
 
@@ -454,7 +457,9 @@ export async function sendReplyEmail(params: {
   const { subject, body } = classification.firstMessage
   const resend = getResendClient()
 
-  const from = `${fromName} <reply+${subscriberId}@winbackflow.co>`
+  // reply+{id}@reply.winbackflow.co — see comment in sendEmail for why the
+  // subdomain. Same regex parses the prefix in /api/email/inbound.
+  const from = `${fromName} <reply+${subscriberId}@reply.winbackflow.co>`
   const fullBody = appendStandardFooter(body, subscriberId, fromName)
 
   // Thread headers — if we have the original message ID, use it

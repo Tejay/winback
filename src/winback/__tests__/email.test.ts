@@ -92,7 +92,7 @@ describe('sendEmail', () => {
     expect(callArgs.text).toContain('Hello Sarah, this is a test.')
     expect(callArgs.text).toContain('/api/reactivate/sub_abc123')
     expect(callArgs.from).toContain('Alex from Acme')
-    expect(callArgs.from).toContain('reply+sub_abc123@winbackflow.co')
+    expect(callArgs.from).toContain('reply+sub_abc123@reply.winbackflow.co')
     expect(result.messageId).toBe('msg_123')
   })
 
