@@ -22,30 +22,65 @@ function getInboundVerifier(): Webhook | null {
 }
 
 /**
- * Pull the email content out of Resend's `email.received` payload. Resend
- * wraps the actual email under `data` in standard webhook envelopes:
- *   { type: 'email.received', created_at, data: { from, to, subject, text } }
- * Earlier scaffolding code expected a flat shape — we try the wrapped form
- * first and fall back, so a payload-shape change at Resend's end doesn't
- * silently break us.
+ * Pull the metadata out of Resend's `email.received` payload. The webhook
+ * envelope wraps everything under `data`:
+ *   { type: 'email.received', created_at, data: { email_id, from, to, subject } }
+ *
+ * IMPORTANT: the inbound webhook is metadata-only by design — Resend does
+ * not include the body, headers, or attachments in the webhook payload.
+ * To get the actual reply text we must fetch via the API
+ * (GET /emails/receiving/{email_id}). See fetchInboundBody() below.
  */
-type ResendInboundShape = {
+type ResendInboundEnvelope = {
+  email_id?: string
   to?: string | string[] | { email?: string } | Array<{ email?: string }>
   from?: string | { email?: string }
-  text?: string
-  plain_text?: string
+  text?: string                  // never present today, but kept defensively
+  plain_text?: string            // legacy fallback
 }
 
-function extractEmail(body: unknown): { to: string; from: string; text: string } {
-  const wrapped = (body as { data?: ResendInboundShape })?.data
-  const src: ResendInboundShape = (wrapped ?? body) as ResendInboundShape
+function extractEnvelope(body: unknown): {
+  emailId: string
+  to: string
+  from: string
+  text: string                    // empty in normal Resend webhooks
+} {
+  const wrapped = (body as { data?: ResendInboundEnvelope })?.data
+  const src: ResendInboundEnvelope = (wrapped ?? body) as ResendInboundEnvelope
 
-  // `to` can be string, string[], object with .email, or array of those.
   const rawTo = Array.isArray(src.to) ? src.to[0] : src.to
   const to = typeof rawTo === 'string' ? rawTo : (rawTo?.email ?? '')
   const from = typeof src.from === 'string' ? src.from : (src.from?.email ?? '')
   const text = src.text ?? src.plain_text ?? ''
-  return { to, from, text }
+  const emailId = src.email_id ?? ''
+  return { emailId, to, from, text }
+}
+
+/**
+ * Fetch the actual body text of an inbound email from Resend's API.
+ * Resend's webhook envelope is metadata-only; the body lives behind a
+ * separate GET /emails/receiving/{id} call (per Resend docs).
+ *
+ * Returns the plain-text body, or empty string on failure (caller treats
+ * empty as "skip this reply" gracefully).
+ */
+async function fetchInboundBody(emailId: string): Promise<string> {
+  const apiKey = process.env.RESEND_API_KEY
+  if (!apiKey || !emailId) return ''
+  try {
+    const res = await fetch(`https://api.resend.com/emails/receiving/${emailId}`, {
+      headers: { Authorization: `Bearer ${apiKey}` },
+    })
+    if (!res.ok) {
+      console.error('Resend /emails/receiving/<id> returned', res.status, await res.text())
+      return ''
+    }
+    const json = (await res.json()) as { text?: string | null; html?: string | null }
+    return json.text ?? ''
+  } catch (err) {
+    console.error('fetchInboundBody failed:', err)
+    return ''
+  }
 }
 
 export async function POST(req: Request) {
@@ -85,7 +120,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
   }
 
-  const { to, from, text } = extractEmail(body)
+  const { emailId, to, from, text: envelopeText } = extractEnvelope(body)
 
   // Extract subscriberId from the "to" address: reply+{subscriberId}@<anyhost>.
   // Host doesn't matter for the parser — currently sent from
@@ -93,11 +128,17 @@ export async function POST(req: Request) {
   const match = to.match(/reply\+([a-f0-9-]+)@/i)
   if (!match) {
     console.log('Inbound email: no subscriber ID in to address:', to)
-    return NextResponse.json({ received: true, processed: false })
+    return NextResponse.json({ received: true, processed: false, reason: 'no_subscriber_id' })
   }
 
   const subscriberId = match[1]
-  console.log('Inbound reply for subscriber:', subscriberId, 'from:', from)
+  console.log('Inbound reply for subscriber:', subscriberId, 'from:', from, 'email_id:', emailId)
+
+  // Resend's email.received webhook is metadata-only — no body. Fetch the
+  // actual reply text via /emails/receiving/{id}. Keep the envelope-text
+  // fallback so a future webhook-shape change that DOES include body still
+  // works without code change.
+  const text = envelopeText || (emailId ? await fetchInboundBody(emailId) : '')
 
   // Strip quoted lines from reply
   const replyText = text
@@ -107,8 +148,8 @@ export async function POST(req: Request) {
     .trim()
 
   if (!replyText) {
-    console.log('Empty reply text after stripping quotes')
-    return NextResponse.json({ received: true, processed: false })
+    console.log('Empty reply text after stripping quotes (subscriberId:', subscriberId, 'emailId:', emailId, ')')
+    return NextResponse.json({ received: true, processed: false, reason: 'empty_reply_text' })
   }
 
   // Update email replied_at
