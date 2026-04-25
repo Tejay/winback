@@ -7,7 +7,7 @@
  * render without further client-side reshaping.
  */
 
-import { sql, and, eq, gte } from 'drizzle-orm'
+import { sql, and, eq, gte, inArray } from 'drizzle-orm'
 import { getDbReadOnly } from '../db'
 import { wbEvents, customers, churnedSubscribers, recoveries } from '../schema'
 
@@ -152,7 +152,10 @@ async function errorsTodayBySource(): Promise<{ total: number; bySource: Record<
     .from(wbEvents)
     .where(
       and(
-        sql`${wbEvents.name} = ANY(${ERROR_EVENT_NAMES as unknown as string[]})`,
+        // inArray generates a single $N::text[] placeholder — correct ANY() usage.
+        // `sql\`... = ANY(${array})\`` would expand each item to its own $N
+        // and produce invalid `ANY($1, $2, ...)` syntax.
+        inArray(wbEvents.name, ERROR_EVENT_NAMES as unknown as string[]),
         gte(wbEvents.createdAt, since),
       ),
     )
@@ -186,7 +189,7 @@ async function errorBuckets(days: number): Promise<number[]> {
     .from(wbEvents)
     .where(
       and(
-        sql`${wbEvents.name} = ANY(${ERROR_EVENT_NAMES as unknown as string[]})`,
+        inArray(wbEvents.name, ERROR_EVENT_NAMES as unknown as string[]),
         gte(wbEvents.createdAt, since),
       ),
     )
