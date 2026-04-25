@@ -153,7 +153,7 @@ export function CustomerDetailClient({ customerId }: { customerId: string }) {
       </Section>
 
       <Section label="Recent events (last 50)" rightSlot={
-        <Link href={`/admin/events?customerId=${id.id}`} className="text-xs text-blue-600 hover:underline">
+        <Link href={`/admin/events?customer=${id.id}`} className="text-xs text-blue-600 hover:underline">
           view all events →
         </Link>
       }>

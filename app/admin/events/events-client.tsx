@@ -66,13 +66,17 @@ function EventsClientInner() {
   const pathname = usePathname()
 
   const [name, setName] = useState(searchParams.get('name') ?? '')
-  const [customerId, setCustomerId] = useState(searchParams.get('customerId') ?? '')
+  // Accept either ?customer (preferred) or ?customerId (legacy) on initial load.
+  const [customer, setCustomer] = useState(
+    searchParams.get('customer') ?? searchParams.get('customerId') ?? '',
+  )
   const [since, setSince] = useState(searchParams.get('since') ?? '24h')
   const [q, setQ] = useState(searchParams.get('q') ?? '')
 
   const [rows, setRows] = useState<EventRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [customerNotFound, setCustomerNotFound] = useState(false)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
 
   const load = useCallback(async () => {
@@ -80,26 +84,27 @@ function EventsClientInner() {
     try {
       const params = new URLSearchParams()
       if (name) params.set('name', name)
-      if (customerId) params.set('customerId', customerId)
+      if (customer) params.set('customer', customer)
       if (since) params.set('since', since)
       if (q) params.set('q', q)
       const res = await fetch(`/api/admin/events?${params}`, { cache: 'no-store' })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error ?? 'Failed to load events')
       setRows(json.rows)
+      setCustomerNotFound(!!json.customerNotFound)
       setError(null)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
       setLoading(false)
     }
-  }, [name, customerId, since, q])
+  }, [name, customer, since, q])
 
   useEffect(() => {
-    // Sync filters to URL so links are shareable
+    // Sync filters to URL so links are shareable.
     const params = new URLSearchParams()
     if (name) params.set('name', name)
-    if (customerId) params.set('customerId', customerId)
+    if (customer) params.set('customer', customer)
     if (since !== '24h') params.set('since', since)
     if (q) params.set('q', q)
     const qs = params.toString()
@@ -107,7 +112,7 @@ function EventsClientInner() {
     const t = setTimeout(load, q ? 200 : 0)
     return () => clearTimeout(t)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [name, customerId, since, q])
+  }, [name, customer, since, q])
 
   function toggle(id: string) {
     setExpanded((prev) => {
@@ -138,12 +143,12 @@ function EventsClientInner() {
             {EVENT_NAMES.map((n) => <option key={n} value={n}>{n}</option>)}
           </select>
         </Field>
-        <Field label="Customer ID">
+        <Field label="Customer (email or UUID)">
           <input
-            value={customerId}
-            onChange={(e) => setCustomerId(e.target.value)}
-            placeholder="paste UUID…"
-            className="w-full border border-slate-200 rounded-full px-3 py-2 text-sm font-mono"
+            value={customer}
+            onChange={(e) => setCustomer(e.target.value)}
+            placeholder="alex@acme.co or paste UUID…"
+            className="w-full border border-slate-200 rounded-full px-3 py-2 text-sm"
           />
         </Field>
         <Field label="Date range">
@@ -168,6 +173,12 @@ function EventsClientInner() {
       {error && (
         <div className="bg-red-50 border border-red-200 text-red-800 rounded-xl p-3 text-sm">
           {error}
+        </div>
+      )}
+
+      {customerNotFound && (
+        <div className="bg-amber-50 border border-amber-200 text-amber-900 rounded-xl p-3 text-sm">
+          No customer matches <strong>{customer}</strong>. Drop the customer filter to search across all customers.
         </div>
       )}
 
