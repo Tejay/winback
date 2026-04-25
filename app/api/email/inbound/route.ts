@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { emailsSent, churnedSubscribers, customers, users } from '@/lib/schema'
 import { eq, count } from 'drizzle-orm'
+import { Webhook } from 'svix'
 import { classifySubscriber } from '@/src/winback/lib/classifier'
 import { sendReplyEmail, resolveFounderNotificationEmail } from '@/src/winback/lib/email'
 import { buildReplyAfterHandoffNotification } from '@/src/winback/lib/founder-handoff-email'
@@ -9,15 +10,86 @@ import { Resend } from 'resend'
 import { SubscriberSignals } from '@/src/winback/lib/types'
 import { logEvent } from '@/src/winback/lib/events'
 
+/**
+ * Lazy-initialised Svix verifier. Per CLAUDE.md's serverless-safe rule, don't
+ * read env vars at module load — read them inside the handler so missing-secret
+ * doesn't crash the build.
+ */
+function getInboundVerifier(): Webhook | null {
+  const secret = process.env.RESEND_WEBHOOK_SECRET
+  if (!secret) return null
+  return new Webhook(secret)
+}
+
+/**
+ * Pull the email content out of Resend's `email.received` payload. Resend
+ * wraps the actual email under `data` in standard webhook envelopes:
+ *   { type: 'email.received', created_at, data: { from, to, subject, text } }
+ * Earlier scaffolding code expected a flat shape — we try the wrapped form
+ * first and fall back, so a payload-shape change at Resend's end doesn't
+ * silently break us.
+ */
+type ResendInboundShape = {
+  to?: string | string[] | { email?: string } | Array<{ email?: string }>
+  from?: string | { email?: string }
+  text?: string
+  plain_text?: string
+}
+
+function extractEmail(body: unknown): { to: string; from: string; text: string } {
+  const wrapped = (body as { data?: ResendInboundShape })?.data
+  const src: ResendInboundShape = (wrapped ?? body) as ResendInboundShape
+
+  // `to` can be string, string[], object with .email, or array of those.
+  const rawTo = Array.isArray(src.to) ? src.to[0] : src.to
+  const to = typeof rawTo === 'string' ? rawTo : (rawTo?.email ?? '')
+  const from = typeof src.from === 'string' ? src.from : (src.from?.email ?? '')
+  const text = src.text ?? src.plain_text ?? ''
+  return { to, from, text }
+}
+
 export async function POST(req: Request) {
-  const body = await req.json()
+  // Read raw body up-front — Svix needs the unparsed string to verify HMAC.
+  const rawBody = await req.text()
 
-  // Resend inbound webhook payload — to can be string or array
-  const to = Array.isArray(body.to) ? body.to[0] : (body.to ?? '')
-  const from = body.from ?? ''
-  const text = body.text ?? body.plain_text ?? ''
+  // Verify the webhook signature. Without this, anyone could POST forged
+  // "subscriber replies" and trigger AI re-classifications + founder
+  // notifications. See specs/27 §observability for the broader pattern.
+  const wh = getInboundVerifier()
+  if (!wh) {
+    console.error('Inbound webhook: RESEND_WEBHOOK_SECRET not set; rejecting')
+    return NextResponse.json(
+      { error: 'Webhook signing secret not configured' },
+      { status: 503 },
+    )
+  }
+  try {
+    // svix expects a flat header object; req.headers is a Headers iterable.
+    wh.verify(rawBody, Object.fromEntries(req.headers))
+  } catch (err) {
+    await logEvent({
+      name: 'webhook_signature_invalid',
+      properties: {
+        source: 'resend_inbound',
+        sourceIp: req.headers.get('x-forwarded-for') ?? null,
+        errorMessage: err instanceof Error ? err.message : String(err),
+      },
+    })
+    return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
+  }
 
-  // Extract subscriberId from the "to" address: reply+{subscriberId}@winbackflow.co
+  let body: unknown
+  try {
+    body = JSON.parse(rawBody)
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
+  }
+
+  const { to, from, text } = extractEmail(body)
+
+  // Extract subscriberId from the "to" address: reply+{subscriberId}@<anyhost>.
+  // Host doesn't matter for the parser — currently sent from
+  // reply+<id>@reply.winbackflow.co (spec 27 / inbound subdomain).
   const match = to.match(/reply\+([a-f0-9-]+)@/i)
   if (!match) {
     console.log('Inbound email: no subscriber ID in to address:', to)
