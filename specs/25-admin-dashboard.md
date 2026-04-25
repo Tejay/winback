@@ -292,5 +292,41 @@ Powerful for support but unsafe without separate review (session forgery, audit 
 
 ## Out of scope (future phases)
 
-- **Phase 2** — `/admin/ai-quality` (handoff trends, recovery likelihood histogram, audit sample), `/admin/billing` (run status, failed-invoice retry, outstanding obligations)
-- **Phase 3** — admin audit-log UI, customer impersonation, webhook replay, real-time WebSocket updates, email template editor, manage-admins UI
+### Phase 2 — AI quality + billing + observability gaps + UX refinements
+
+The original Phase 2 scope (AI quality + billing) plus a set of follow-ups identified during Phase 1 build / dogfooding:
+
+**New surfaces:**
+- `/admin/ai-quality` — handoff volume trend (30d), recovery-likelihood histogram, tier distribution, last 50 hand-off reasonings for audit, last 50 `subscriber_auto_lost` events
+- `/admin/billing` — latest run status breakdown, failed-invoice retry, outstanding obligations report, MRR-recovered trend
+
+**Observability gaps (close the error-event taxonomy):**
+
+The `/admin` overview's *Errors* counter currently sums `oauth_error` + `billing_invoice_failed` + `reactivate_failed` — the only error events instrumented as first-class `wb_events` rows today. Other failure paths throw exceptions but don't emit events, so they go invisible on the overview. Each one is ~6 lines in the relevant catch block:
+
+- **Resend email send failures** — `src/winback/lib/email.ts` throws on Resend errors. Add `logEvent({ name: 'email_send_failed', customerId, properties: { subscriberId, errorMessage } })` before re-throwing. Without this, a flaky transactional-email provider goes unnoticed.
+- **Anthropic classifier failures** — `src/winback/lib/classifier.ts` throws on parse / API failure. Add `logEvent({ name: 'classifier_failed', ... })`. Catches model outages and JSON-parse regressions.
+- **Stripe webhook signature failures** — `app/api/stripe/webhook/route.ts` returns 400 silently. Add `logEvent({ name: 'webhook_signature_invalid', properties: { sourceIp } })`. Catches webhook secret rotations and impersonation attempts.
+- **DB connection / timeout errors** — currently uncaught at top level. Wrap top-level handlers and emit `db_error` events.
+
+Once these four are wired, the overview's Errors counter reflects actual platform health (not just "the three things I happened to instrument first") — and the spike-detection logic catches more failure modes.
+
+**Overview refinements (data-driven):**
+- **Replies → handoffs metric swap.** Reply count is a weak signal (doesn't distinguish happy from angry). Once enough volume exists, swap the Replies counter for "Hand-offs triggered today" — directly maps to AI-quality, more actionable on a daily glance.
+- **Add MRR-recovered dollar figure.** Recoveries are counted by row but you have to do mental math to translate to revenue. Add a sixth counter: `$X recovered today` with a 7-day sparkline. The single most important business metric should be visible at a glance.
+- **Split errors counter.** OAuth, Billing, Reactivate (and the new ones above) lumped together makes triage harder. At scale, render as three side-by-side micro-counters with their own sparklines.
+
+**Events page refinements:**
+- **"Customer found, but no events in this date range" hint.** When a valid customer email/UUID is searched and the date filter returns zero, the API should also return `customerEventsOutsideRange: <count>` so the UI can render *"This customer has 39 events outside the chosen range — extend the range to see them"* instead of a silent zero. Avoids the "looks broken" failure mode I hit when testing.
+
+**Subscribers page refinements:**
+- **Bulk DNC.** Multi-select rows + one button. When a complaint cites multiple customers ("I'm getting emails from three different products"), one click closes them all.
+
+### Phase 3 — Operations & SOC 2 prep
+
+- Admin audit-log UI (filtered view of `admin_action` events, retention guarantees, SOC 2 trail)
+- Customer impersonation ("view `/dashboard` as if I were customer X") — needs separate security review
+- Webhook replay (re-fire a Stripe webhook from logs)
+- Real-time WebSocket / Server-Sent Events on overview
+- Email template editor (per-customer tone customisation)
+- Manage-admins UI (replace the SQL `UPDATE` for adding new admins)
