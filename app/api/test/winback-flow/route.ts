@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import Stripe from 'stripe'
-import { auth } from '@/lib/auth'
+import { requireAdmin } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { customers, churnedSubscribers, recoveries } from '@/lib/schema'
 import { eq, and, inArray } from 'drizzle-orm'
@@ -114,7 +114,7 @@ async function wipeTestSubscribers(stripe: Stripe | null, customerId: string): P
 
 /**
  * Dev-only test harness for the full winback funnel.
- * Restricted to tejaasvi@gmail.com.
+ * Restricted to admin users (wb_users.is_admin = true) — see spec 25.
  *
  * Actions (POST { action: '...' }):
  *  - seed       — create 4 churned subscribers with different cancel reasons,
@@ -187,18 +187,18 @@ const SCENARIOS = [
 ]
 
 async function requireDevAuth() {
-  // Hard refuse in production — this is a dev-only test harness
+  // Hard refuse in production — this is a dev/preview-only test harness.
   if (process.env.NODE_ENV === 'production' && process.env.VERCEL_ENV !== 'preview') {
     return { error: 'This endpoint is disabled in production', status: 403 } as const
   }
-  const session = await auth()
-  if (!session?.user?.id) {
-    return { error: 'Not signed in', status: 401 } as const
-  }
+  // Spec 25 — admin-only. Replaces the prior pattern of "has any session +
+  // has a customer record", which was too permissive.
+  const adminCheck = await requireAdmin()
+  if ('error' in adminCheck) return adminCheck
   const [customer] = await db
     .select()
     .from(customers)
-    .where(eq(customers.userId, session.user.id))
+    .where(eq(customers.userId, adminCheck.userId))
     .limit(1)
   if (!customer) {
     return { error: 'No customer record found for this user — finish onboarding first', status: 404 } as const

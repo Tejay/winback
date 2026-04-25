@@ -10,7 +10,7 @@ import { useState, useEffect } from 'react'
  *
  * No real emails are sent. All content is generated and displayed here.
  *
- * Restricted to tejaasvi@gmail.com via the API route.
+ * Restricted to admin users (wb_users.is_admin = true) via the API route — see spec 25.
  */
 
 interface HandoffFields {

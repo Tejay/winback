@@ -5,6 +5,9 @@ export const users = pgTable('wb_users', {
   email:        text('email').notNull().unique(),
   passwordHash: text('password_hash').notNull(),
   name:         text('name'),
+  // Spec 25 — gates /admin and /api/admin/*. Adding admins is a SQL UPDATE
+  // until we build a manage-admins UI in Phase 3. Migration 018.
+  isAdmin:      boolean('is_admin').notNull().default(false),
   createdAt:    timestamp('created_at').defaultNow(),
 })
 
