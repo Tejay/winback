@@ -5,7 +5,7 @@ import { db } from '@/lib/db'
 import { customers, recoveries, users } from '@/lib/schema'
 import { eq } from 'drizzle-orm'
 import { slugifyWorkspaceName, confirmationMatches } from '@/src/winback/lib/workspace'
-import { computeOpenObligations } from '@/src/winback/lib/obligations'
+import { cancelPlatformSubscription } from '@/src/winback/lib/subscription'
 
 const bodySchema = z.object({ confirmation: z.string().min(1).max(200) })
 
@@ -38,19 +38,16 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Confirmation does not match' }, { status: 400 })
   }
 
-  // Obligation guard — /terms §3 says 12-month attribution billing is not
-  // waived by deletion. Re-check server-side; never trust the client.
+  // Phase B — cancel any active platform subscription immediately. Stripe
+  // issues a prorated final invoice for the unused cycle automatically.
+  // Best-effort: if cancellation fails (Stripe down), we still proceed with
+  // workspace deletion — the subscription would be cancelled by Stripe's
+  // retry of the webhook on next failure, or manually from the dashboard.
   if (customer) {
-    const obligations = await computeOpenObligations(customer.id)
-    if (obligations.openObligationCents > 0) {
-      return NextResponse.json(
-        {
-          error: 'Open obligations remain; settle or pause before deleting.',
-          openObligationCents: obligations.openObligationCents,
-          liveCount: obligations.liveCount,
-        },
-        { status: 409 },
-      )
+    try {
+      await cancelPlatformSubscription(customer.id, { immediately: true })
+    } catch (err) {
+      console.error('[delete] subscription cancel failed for', customer.id, err)
     }
   }
 

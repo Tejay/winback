@@ -1,7 +1,7 @@
 import Stripe from 'stripe'
 import { db } from '@/lib/db'
 import { users, customers, churnedSubscribers, recoveries, emailsSent, billingRuns } from '@/lib/schema'
-import { eq, and, ne, inArray, desc } from 'drizzle-orm'
+import { eq, and, ne, inArray, desc, gt, isNull } from 'drizzle-orm'
 import { decrypt } from '@/src/winback/lib/encryption'
 import { extractSignals } from '@/src/winback/lib/stripe'
 import { classifySubscriber } from '@/src/winback/lib/classifier'
@@ -12,9 +12,69 @@ import {
   setDefaultPaymentMethod,
   detachPaymentMethod,
 } from '@/src/winback/lib/platform-billing'
+import { ensureActivation } from '@/src/winback/lib/activation'
+import { refundPerformanceFee, PERF_FEE_REFUND_WINDOW_DAYS } from '@/src/winback/lib/performance-fee'
 
 function getStripe() {
   return new Stripe(process.env.STRIPE_SECRET_KEY!)
+}
+
+/**
+ * Phase B — runs ensureActivation in a try/catch so a Stripe API blip never
+ * blocks the recovery webhook from acknowledging. Activation is idempotent;
+ * a retry (Stripe redelivers, or a follow-up webhook) will reach the same
+ * end state.
+ */
+async function triggerActivation(wbCustomerId: string, ctx: string): Promise<void> {
+  try {
+    const result = await ensureActivation(wbCustomerId)
+    console.log(`[activation:${ctx}] state=${result.state}`, wbCustomerId)
+  } catch (err) {
+    console.error(`[activation:${ctx}] failed for`, wbCustomerId, err)
+    logEvent({
+      name: 'activation_failed',
+      customerId: wbCustomerId,
+      properties: {
+        context: ctx,
+        errorMessage: err instanceof Error ? err.message : String(err),
+      },
+    })
+  }
+}
+
+/**
+ * Phase B — when a previously-recovered subscriber re-cancels, refund any
+ * win-back perf fee charged within the last 14 days. Idempotent and safe
+ * to call on every cancellation event.
+ */
+async function maybeRefundRecentWinBack(subscriberId: string): Promise<void> {
+  const cutoff = new Date(Date.now() - PERF_FEE_REFUND_WINDOW_DAYS * 24 * 60 * 60 * 1000)
+  const refundable = await db
+    .select({ id: recoveries.id })
+    .from(recoveries)
+    .where(
+      and(
+        eq(recoveries.subscriberId, subscriberId),
+        eq(recoveries.recoveryType, 'win_back'),
+        gt(recoveries.perfFeeChargedAt, cutoff),
+        isNull(recoveries.perfFeeRefundedAt),
+      ),
+    )
+    .orderBy(desc(recoveries.perfFeeChargedAt))
+    .limit(1)
+
+  if (!refundable.length) return
+
+  try {
+    const result = await refundPerformanceFee(refundable[0].id)
+    console.log(`[refund] win-back ${refundable[0].id} method=${result.method}`)
+    logEvent({
+      name: 'win_back_refunded',
+      properties: { recoveryId: refundable[0].id, method: result.method },
+    })
+  } catch (err) {
+    console.error('[refund] failed for recovery', refundable[0].id, err)
+  }
 }
 
 export async function POST(req: Request) {
@@ -47,7 +107,12 @@ export async function POST(req: Request) {
 
   try {
     if (event.type === 'customer.subscription.deleted') {
-      await processChurn(event)
+      if (event.account) {
+        await processChurn(event)
+      } else {
+        // Phase B — platform-side subscription canceled (our $99/mo).
+        await processPlatformSubscriptionDeleted(event)
+      }
     }
     if (event.type === 'customer.subscription.created') {
       await processRecovery(event)
@@ -128,7 +193,10 @@ async function processChurn(event: Stripe.Event) {
     .limit(1)
 
   if (existing) {
-    console.log('Duplicate webhook, skipping')
+    // Duplicate connected-account event — but if this is a re-cancel within
+    // the win-back refund window, refund the previous performance fee
+    // (Phase B). Idempotent and safe.
+    await maybeRefundRecentWinBack(existing.id)
     return
   }
 
@@ -302,6 +370,7 @@ async function processRecovery(event: Stripe.Event) {
     newStripeSubId: subscription.id,
     attributionEndsAt,
     attributionType,
+    recoveryType: 'win_back',
   })
 
   // Spec 21b — also resolve any pending handoff
@@ -329,6 +398,14 @@ async function processRecovery(event: Stripe.Event) {
   })
 
   console.log(`${attributionType.toUpperCase()} RECOVERY:`, churned.email, 'at', mrrCents, 'cents/mo')
+
+  // Phase B — converge on activation. ensureActivation is idempotent and
+  // only charges the perf fee when the recovery is strong-attribution AND
+  // a subscription is live (i.e. card on file). Otherwise it queues the
+  // recovery and waits for the card-capture webhook to call back.
+  if (attributionType === 'strong') {
+    await triggerActivation(customer.id, 'subscription_created')
+  }
 }
 
 async function processCheckoutRecovery(event: Stripe.Event) {
@@ -358,6 +435,7 @@ async function processCheckoutRecovery(event: Stripe.Event) {
     newStripeSubId: session.subscription as string ?? null,
     attributionEndsAt,
     attributionType: 'strong',
+    recoveryType: 'win_back',
   })
 
   // Spec 21b — also resolve any pending handoff
@@ -385,6 +463,9 @@ async function processCheckoutRecovery(event: Stripe.Event) {
   })
 
   console.log('STRONG RECOVERY:', subscriber.email, 'at', mrrCents, 'cents/mo')
+
+  // Phase B — converge on activation (always strong here, so always trigger).
+  await triggerActivation(customerId, 'checkout_recovery')
 }
 
 async function processPaymentFailed(event: Stripe.Event) {
@@ -608,6 +689,9 @@ async function processPaymentSucceeded(event: Stripe.Event) {
     newStripeSubId: typeof invoice.subscription === 'string' ? invoice.subscription : null,
     attributionEndsAt,
     attributionType,
+    // Phase B — dunning recoveries are card saves: covered by the platform
+    // fee, no per-recovery performance fee.
+    recoveryType: 'card_save',
   })
 
   // Spec 21b — also resolve any pending handoff
@@ -635,6 +719,9 @@ async function processPaymentSucceeded(event: Stripe.Event) {
   })
 
   console.log(`${attributionType.toUpperCase()} DUNNING RECOVERY:`, subscriber.email)
+
+  // Phase B — kick off platform-fee billing (no perf fee for card saves).
+  await triggerActivation(customer.id, 'dunning_recovery')
 }
 
 /**
@@ -703,6 +790,42 @@ async function processPlatformCardCapture(event: Stripe.Event) {
   })
 
   console.log(`[webhook] Platform card ${wasUpdate ? 'updated' : 'captured'} for customer ${wbCustomerId}`)
+
+  // Phase B — converge on activation now that a card is on file. If a
+  // recovery has already been delivered, this is the moment we create the
+  // $99/mo Stripe Subscription and drain any queued win-back perf fees onto
+  // its first invoice. No-op for an Update (subscription already exists).
+  await triggerActivation(wbCustomerId, 'card_capture')
+}
+
+/**
+ * Phase B — handle our own platform-side subscription cancellation. Fires
+ * when Stripe ends the subscription (cancel_at_period_end reached, or the
+ * customer cancelled directly via the billing portal). Just clears the
+ * cached subscription_id so a future recovery can ensurePlatformSubscription
+ * cleanly.
+ */
+async function processPlatformSubscriptionDeleted(event: Stripe.Event) {
+  const subscription = event.data.object as Stripe.Subscription
+  const wbCustomerId = subscription.metadata?.winback_customer_id
+
+  if (!wbCustomerId) {
+    console.warn('[webhook] platform subscription.deleted without winback_customer_id metadata:', subscription.id)
+    return
+  }
+
+  await db
+    .update(customers)
+    .set({ stripeSubscriptionId: null, updatedAt: new Date() })
+    .where(eq(customers.id, wbCustomerId))
+
+  logEvent({
+    name: 'platform_subscription_canceled',
+    customerId: wbCustomerId,
+    properties: { stripeSubscriptionId: subscription.id },
+  })
+
+  console.log(`[webhook] Platform subscription canceled for customer ${wbCustomerId}`)
 }
 
 /**
@@ -743,7 +866,10 @@ async function processPlatformInvoiceEvent(event: Stripe.Event) {
   }
 
   if (!run) {
-    console.warn('[webhook] No billing_run found for platform invoice', invoiceId)
+    // Phase B — subscription-driven invoices have no billing_run row;
+    // Stripe is the source of truth for invoice state. Log info-level
+    // so observability dashboards aren't noisy.
+    console.log('[webhook] Platform invoice without billing_run (subscription-driven):', invoiceId)
     return
   }
 

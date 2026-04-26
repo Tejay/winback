@@ -144,30 +144,55 @@ export default async function SettingsPage({
               Subscription
             </h2>
             <p className="text-sm text-slate-500 mt-1 mb-6">
-              You only pay once Winback is actively recovering customers.
+              {customer?.activatedAt
+                ? 'Your billing is active.'
+                : 'No charge until we deliver your first save or win-back.'}
             </p>
 
-            {/* Plan card */}
+            {/* Plan card — Phase B: $99/mo platform + 1× MRR per win-back */}
             <div className="border border-slate-200 rounded-2xl p-5">
               <div className="flex items-center">
                 <span className="text-xs font-semibold uppercase tracking-widest text-slate-400">
                   Current plan
                 </span>
-                <span className="bg-amber-50 text-amber-700 border border-amber-200 rounded-full px-3 py-1 text-xs font-semibold ml-2">
-                  🌟 Free trial
-                </span>
+                {customer?.activatedAt && customer?.stripeSubscriptionId ? (
+                  <span className="bg-green-50 text-green-700 border border-green-200 rounded-full px-3 py-1 text-xs font-semibold ml-2">
+                    Active
+                  </span>
+                ) : customer?.activatedAt ? (
+                  <span className="bg-amber-50 text-amber-700 border border-amber-200 rounded-full px-3 py-1 text-xs font-semibold ml-2">
+                    Awaiting card
+                  </span>
+                ) : (
+                  <span className="bg-blue-50 text-blue-700 border border-blue-200 rounded-full px-3 py-1 text-xs font-semibold ml-2">
+                    Free until first delivery
+                  </span>
+                )}
               </div>
 
               <div className="mt-4">
-                <span className="text-3xl font-bold text-slate-900">15%</span>
-                <span className="text-slate-400"> of recovered revenue</span>
+                <span className="text-3xl font-bold text-slate-900">$99</span>
+                <span className="text-slate-400">/mo platform fee</span>
               </div>
               <p className="text-sm text-slate-500 mt-2">
-                For 12 months per recovered subscriber. No base fee, no cap.
+                Includes unlimited card saves. Plus a one-time fee of <strong className="text-slate-900">1× MRR</strong> per voluntary-cancellation win-back, refundable if they re-cancel within 14 days.
               </p>
-              <p className="text-xs text-slate-400 mt-3">
-                No card at signup · We ask for payment after your first recovery · Cancel anytime
-              </p>
+              {customer?.activatedAt && (
+                <p className="text-xs text-slate-400 mt-3">
+                  Active since{' '}
+                  {customer.activatedAt.toLocaleDateString('en-GB', {
+                    day: 'numeric',
+                    month: 'short',
+                    year: 'numeric',
+                  })}
+                  {' · Cancel anytime'}
+                </p>
+              )}
+              {!customer?.activatedAt && (
+                <p className="text-xs text-slate-400 mt-3">
+                  No card at signup · Billing starts after your first save or win-back · Cancel anytime
+                </p>
+              )}
             </div>
 
             {/* Payment method (spec 23) */}

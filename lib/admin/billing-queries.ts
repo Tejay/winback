@@ -6,7 +6,7 @@
  * their period). Plus a 90-day weekly MRR-recovered trend.
  */
 
-import { sql, and, eq, desc, gte } from 'drizzle-orm'
+import { sql, and, eq, desc, gte, isNull } from 'drizzle-orm'
 import { getDbReadOnly } from '../db'
 import { billingRuns, customers, users, recoveries } from '../schema'
 
@@ -101,13 +101,13 @@ export interface OutstandingObligationRow {
 }
 
 /**
- * Strong recoveries that don't have a paid billing run covering their
- * recovery period. The "money we should have collected but haven't" report.
+ * Phase B — win-back recoveries with a performance fee owed but not yet
+ * charged (typically because the customer hasn't added a card yet, so the
+ * Stripe Subscription couldn't be created and the fee is queued in the DB).
+ * The "money we should be invoicing but aren't" report.
  *
- * Note: this is an approximation. The cron creates one billing_run per
- * (customer, period); if that run is paid, we assume all strong recoveries
- * for that period were billed. A failed/pending run = obligations are
- * still outstanding.
+ * Once the customer activates (card lands → ensureActivation drains the
+ * queue), perf_fee_charged_at gets stamped and the row drops off this list.
  */
 export async function outstandingObligations(): Promise<OutstandingObligationRow[]> {
   const rows = await getDbReadOnly()
@@ -125,13 +125,9 @@ export async function outstandingObligations(): Promise<OutstandingObligationRow
     .innerJoin(users, eq(users.id, customers.userId))
     .where(and(
       eq(recoveries.attributionType, 'strong'),
-      eq(recoveries.stillActive, true),
-      sql`NOT EXISTS (
-        SELECT 1 FROM ${billingRuns} br
-        WHERE br.customer_id = ${recoveries.customerId}
-          AND br.status = 'paid'
-          AND br.period_yyyymm = to_char(${recoveries.recoveredAt}, 'YYYY-MM')
-      )`,
+      eq(recoveries.recoveryType, 'win_back'),
+      isNull(recoveries.perfFeeChargedAt),
+      isNull(recoveries.perfFeeRefundedAt),
     ))
     .orderBy(desc(recoveries.recoveredAt))
 
@@ -140,7 +136,8 @@ export async function outstandingObligations(): Promise<OutstandingObligationRow
     customerId: r.customerId,
     recoveredAt: r.recoveredAt,
     planMrrCents: r.planMrrCents,
-    feeCents: Math.round(r.planMrrCents * 0.15),
+    // Phase B — win-back fee is 1× MRR, charged once.
+    feeCents: r.planMrrCents,
     period: r.period,
     productName: r.productName,
     customerEmail: r.customerEmail,
