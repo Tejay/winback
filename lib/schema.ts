@@ -24,9 +24,14 @@ export const customers = pgTable('wb_customers', {
   onboardingComplete: boolean('onboarding_complete').default(false),
   plan:               text('plan').default('trial'),
   notificationEmail:  text('notification_email'),  // Spec 21c — overrides user.email for handoff alerts
-  // Spec 23 — Winback's platform Stripe customer (for billing the founder 15% fees).
+  // Spec 23 — Winback's platform Stripe customer (for billing the founder).
   // Separate from stripeAccountId (Connected account for webhooks).
   stripePlatformCustomerId: text('stripe_platform_customer_id'),
+  // Phase A — $99/mo platform fee Stripe Subscription. Created on first
+  // delivered save or win-back via activation.ts. Null until activation.
+  stripeSubscriptionId: text('stripe_subscription_id'),
+  // Timestamp of first delivered save or win-back — when billing started.
+  activatedAt:          timestamp('activated_at'),
   pausedAt:             timestamp('paused_at'),
   settlementPaidAt:     timestamp('settlement_paid_at'),
   backfillTotal:        integer('backfill_total').default(0),
@@ -171,4 +176,13 @@ export const recoveries = pgTable('wb_recoveries', {
   attributionType:   text('attribution_type').default('weak'),
   stillActive:       boolean('still_active').default(true),
   lastCheckedAt:     timestamp('last_checked_at').defaultNow(),
+  // Phase A — new-model billing fields.
+  // recoveryType distinguishes the trigger: 'win_back' (voluntary cancel
+  // → reactivation) bills a 1× MRR performance fee; 'card_save' (failed
+  // payment recovered) does not bill — the $99/mo platform fee covers it.
+  recoveryType:      text('recovery_type'),
+  perfFeeChargedAt:  timestamp('perf_fee_charged_at'),
+  perfFeeRefundedAt: timestamp('perf_fee_refunded_at'),
+  perfFeeStripeItemId: text('perf_fee_stripe_item_id'),
+  perfFeeAmountCents: integer('perf_fee_amount_cents'),
 })
