@@ -1,12 +1,11 @@
 import Link from 'next/link'
-import { PricingCalculator } from '@/components/pricing-calculator'
 import { PoweredByStripe } from '@/components/powered-by-stripe'
 import { StickyNav } from '@/components/landing/sticky-nav'
 import { FlowIllustration } from '@/components/landing/flow-illustration'
 import Image from 'next/image'
 import { StepCard } from '@/components/landing/step-card'
 import { RevealOnScroll } from '@/components/landing/reveal-on-scroll'
-import { Zap, Brain, Send, CheckCircle, CreditCard } from 'lucide-react'
+import { Zap, Brain, Send, CreditCard } from 'lucide-react'
 
 export default function LandingPage() {
   return (
@@ -223,87 +222,262 @@ export default function LandingPage() {
 
       {/* Section 4 — Pricing */}
       <section id="pricing" className="bg-[#f5f5f5] py-24 sm:py-32">
-        <div className="max-w-3xl mx-auto px-6 text-center">
-          <div className="text-xs font-semibold tracking-widest uppercase text-blue-600">
-            Pricing
+        <div className="max-w-3xl mx-auto px-6">
+          <div className="text-center">
+            <div className="text-xs font-semibold tracking-widest uppercase text-blue-600">
+              Pricing
+            </div>
+            <h2 className="mt-6 text-4xl sm:text-5xl font-bold text-slate-900 tracking-tight leading-[1.1]">
+              No win-back,<br />no performance fee.
+            </h2>
+            <p className="mt-5 text-base text-slate-600 max-w-lg mx-auto">
+              Pay $99/mo for the platform — unlimited card saves included. The
+              performance fee only earns when we bring a cancelled subscriber back.
+            </p>
           </div>
 
-          <h2 className="mt-6 text-4xl sm:text-5xl font-bold text-slate-900 tracking-tight">
-            15% of recovered subscription revenue.
-          </h2>
+          {/* Pricing card — two-fee structure */}
+          <div className="mt-12 bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
+            <div className="grid grid-cols-1 sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-slate-100">
+              <div className="p-8">
+                <div className="text-[11px] font-semibold tracking-widest uppercase text-slate-400">
+                  Platform
+                </div>
+                <div className="mt-3 flex items-baseline gap-1.5">
+                  <span className="text-5xl font-bold text-slate-900 tracking-tight">$99</span>
+                  <span className="text-sm text-slate-500">/mo</span>
+                </div>
+                <p className="mt-3 text-sm text-slate-600 leading-relaxed">
+                  Flat. Includes unlimited card saves — one or a thousand, same price.
+                </p>
+              </div>
 
-          <p className="mt-5 text-base sm:text-lg text-slate-600 max-w-xl mx-auto leading-relaxed">
-            of what we bring back — for{' '}
-            <strong className="text-slate-900 font-semibold">
-              12 months per recovered subscriber
-            </strong>
-            . After that, it&apos;s yours forever.
+              <div className="p-8 bg-slate-50/50">
+                <div className="text-[11px] font-semibold tracking-widest uppercase text-blue-600">
+                  Performance
+                </div>
+                <div className="mt-3 flex items-baseline gap-1.5">
+                  <span className="text-5xl font-bold text-slate-900 tracking-tight">1×</span>
+                  <span className="text-sm text-slate-500">MRR · once per win-back</span>
+                </div>
+                <p className="mt-3 text-sm text-slate-600 leading-relaxed">
+                  Charged only when a cancelled subscriber comes back. 14-day refund if
+                  they re-cancel.
+                </p>
+              </div>
+            </div>
+
+            <div className="border-t border-slate-100" />
+
+            <div className="p-8">
+              <div className="text-[11px] font-semibold tracking-widest uppercase text-slate-400 mb-5">
+                What&apos;s included
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-3 text-sm">
+                <div className="flex gap-2.5">
+                  <span className="text-blue-600 font-bold">→</span>
+                  <span className="text-slate-700">
+                    <strong className="text-slate-900">Under 60 seconds</strong> from cancel to email
+                  </span>
+                </div>
+                <div className="flex gap-2.5">
+                  <span className="text-blue-600 font-bold">→</span>
+                  <span className="text-slate-700">
+                    <strong className="text-slate-900">AI-written per subscriber</strong>, not templated
+                  </span>
+                </div>
+                <div className="flex gap-2.5">
+                  <span className="text-blue-600 font-bold">→</span>
+                  <span className="text-slate-700">
+                    <strong className="text-slate-900">Changelog-aware</strong> — re-engages when you ship
+                  </span>
+                </div>
+                <div className="flex gap-2.5">
+                  <span className="text-blue-600 font-bold">→</span>
+                  <span className="text-slate-700">
+                    <strong className="text-slate-900">Replies route to your dashboard</strong>
+                  </span>
+                </div>
+                <div className="flex gap-2.5">
+                  <span className="text-blue-600 font-bold">→</span>
+                  <span className="text-slate-700">
+                    <strong className="text-slate-900">Unlimited card saves</strong> when payments fail
+                  </span>
+                </div>
+                <div className="flex gap-2.5">
+                  <span className="text-blue-600 font-bold">→</span>
+                  <span className="text-slate-700">
+                    <strong className="text-slate-900">Live in 5 minutes</strong> — connect Stripe
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="px-8 pb-8 flex flex-col sm:flex-row sm:items-center gap-4 border-t border-slate-100 pt-6">
+              <Link
+                href="/register"
+                className="bg-[#0f172a] text-white rounded-full px-6 py-3 text-sm font-medium hover:bg-[#1e293b] inline-flex items-center gap-2"
+              >
+                Start recovering revenue →
+              </Link>
+              <p className="text-xs text-slate-500">
+                No card at signup. Billing starts after your first save or win-back.
+              </p>
+            </div>
+          </div>
+
+          {/* Worked example with ROI */}
+          <div className="mt-10 rounded-2xl bg-white border border-slate-200 overflow-hidden">
+            <div className="px-6 sm:px-8 py-5 border-b border-slate-100 flex items-baseline justify-between">
+              <div className="text-[11px] font-semibold tracking-widest uppercase text-blue-600">
+                A typical month
+              </div>
+              <div className="text-xs text-slate-400">Sub MRR: $25 avg</div>
+            </div>
+            <dl className="text-sm">
+              <div className="flex justify-between px-6 sm:px-8 py-4 border-b border-slate-100">
+                <dt className="text-slate-700">Platform fee</dt>
+                <dd className="text-slate-900 font-medium tabular-nums">$99</dd>
+              </div>
+              <div className="flex justify-between px-6 sm:px-8 py-4 border-b border-slate-100">
+                <dt className="text-slate-700">40 card saves</dt>
+                <dd className="text-green-700 font-medium">included</dd>
+              </div>
+              <div className="flex justify-between px-6 sm:px-8 py-4 border-b border-slate-100">
+                <dt className="text-slate-700">
+                  3 cancellers won back <span className="text-slate-400">($25 × 3)</span>
+                </dt>
+                <dd className="text-slate-900 font-medium tabular-nums">$75</dd>
+              </div>
+              <div className="flex justify-between px-6 sm:px-8 py-5 bg-slate-50">
+                <dt className="text-slate-900 font-semibold">You pay this month</dt>
+                <dd className="text-slate-900 font-bold text-base tabular-nums">$174</dd>
+              </div>
+            </dl>
+
+            <div className="px-6 sm:px-8 py-6 bg-gradient-to-br from-blue-50 to-blue-50/40 border-t border-blue-100">
+              <div className="flex items-baseline justify-between gap-4">
+                <div>
+                  <div className="text-[11px] font-semibold tracking-widest uppercase text-blue-700">
+                    If those 3 stay 12 months
+                  </div>
+                  <div className="mt-1 text-sm text-slate-600">$25 × 3 × 12 months recovered</div>
+                </div>
+                <div className="text-right">
+                  <div className="text-3xl font-bold text-slate-900 tabular-nums">$900</div>
+                  <div className="text-xs text-slate-500">kept revenue</div>
+                </div>
+              </div>
+              <div className="mt-4 pt-4 border-t border-blue-200/60 flex items-baseline justify-between gap-4">
+                <div className="text-sm text-slate-700">Return on the $75 win-back fee</div>
+                <div className="text-2xl font-bold text-blue-700 tabular-nums">12×</div>
+              </div>
+            </div>
+          </div>
+
+          <p className="mt-3 text-xs text-slate-400 italic px-1">
+            Card-save revenue not included above.
           </p>
 
-          <PricingCalculator />
+          {/* Scale strip — same model at other business sizes */}
+          <div className="mt-6 text-[11px] font-semibold tracking-widest uppercase text-slate-400 px-1">
+            And at other scales
+          </div>
+          <div className="mt-2 grid grid-cols-1 sm:grid-cols-3 gap-3">
+            {/* Indie */}
+            <div className="rounded-xl bg-white border border-slate-200 p-5">
+              <div className="flex items-baseline justify-between">
+                <div className="text-[11px] font-semibold tracking-widest uppercase text-slate-400">Indie</div>
+                <div className="text-xs text-slate-500 tabular-nums">$19 MRR</div>
+              </div>
+              <div className="mt-1 text-xs text-slate-500">2 win-backs · 25 saves</div>
+              <div className="mt-4 pt-4 border-t border-slate-100 grid grid-cols-2 gap-3">
+                <div>
+                  <div className="text-[10px] text-slate-500 uppercase tracking-wider">Monthly</div>
+                  <div className="mt-0.5 text-lg font-bold text-slate-900 tabular-nums">$137</div>
+                  <div className="text-[10px] text-slate-400 tabular-nums">$99 + 2 × $19</div>
+                </div>
+                <div className="text-right">
+                  <div className="text-[10px] text-slate-500 uppercase tracking-wider">12-mo recovered</div>
+                  <div className="mt-0.5 text-lg font-bold text-blue-700 tabular-nums">$456</div>
+                  <div className="text-[10px] text-slate-400 tabular-nums">$19 × 2 × 12</div>
+                </div>
+              </div>
+            </div>
 
-          <div className="mt-10 text-sm text-slate-600">
-            <p className="font-medium text-slate-900">
-              Your fee is always less than what we recover.
-            </p>
-            <p className="text-slate-500 mt-1">
-              If we recover nothing, you pay nothing.
-            </p>
+            {/* SMB — highlighted, mirrors the hero example above */}
+            <div className="rounded-xl bg-white border-2 border-blue-200 p-5">
+              <div className="flex items-baseline justify-between">
+                <div className="text-[11px] font-semibold tracking-widest uppercase text-blue-700">SMB · shown above</div>
+                <div className="text-xs text-slate-500 tabular-nums">$25 MRR</div>
+              </div>
+              <div className="mt-1 text-xs text-slate-500">3 win-backs · 40 saves</div>
+              <div className="mt-4 pt-4 border-t border-blue-100 grid grid-cols-2 gap-3">
+                <div>
+                  <div className="text-[10px] text-slate-500 uppercase tracking-wider">Monthly</div>
+                  <div className="mt-0.5 text-lg font-bold text-slate-900 tabular-nums">$174</div>
+                  <div className="text-[10px] text-slate-400 tabular-nums">$99 + 3 × $25</div>
+                </div>
+                <div className="text-right">
+                  <div className="text-[10px] text-slate-500 uppercase tracking-wider">12-mo recovered</div>
+                  <div className="mt-0.5 text-lg font-bold text-blue-700 tabular-nums">$900</div>
+                  <div className="text-[10px] text-slate-400 tabular-nums">$25 × 3 × 12</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Mid-market */}
+            <div className="rounded-xl bg-white border border-slate-200 p-5">
+              <div className="flex items-baseline justify-between">
+                <div className="text-[11px] font-semibold tracking-widest uppercase text-slate-400">Mid-market</div>
+                <div className="text-xs text-slate-500 tabular-nums">$89 MRR</div>
+              </div>
+              <div className="mt-1 text-xs text-slate-500">4 win-backs · 30 saves</div>
+              <div className="mt-4 pt-4 border-t border-slate-100 grid grid-cols-2 gap-3">
+                <div>
+                  <div className="text-[10px] text-slate-500 uppercase tracking-wider">Monthly</div>
+                  <div className="mt-0.5 text-lg font-bold text-slate-900 tabular-nums">$455</div>
+                  <div className="text-[10px] text-slate-400 tabular-nums">$99 + 4 × $89</div>
+                </div>
+                <div className="text-right">
+                  <div className="text-[10px] text-slate-500 uppercase tracking-wider">12-mo recovered</div>
+                  <div className="mt-0.5 text-lg font-bold text-blue-700 tabular-nums">$4,272</div>
+                  <div className="text-[10px] text-slate-400 tabular-nums">$89 × 4 × 12</div>
+                </div>
+              </div>
+            </div>
           </div>
 
-          <div className="mt-10 flex flex-col items-center gap-3">
-            <Link
-              href="/register"
-              className="bg-[#0f172a] text-white rounded-full px-6 py-2.5 text-sm font-medium hover:bg-[#1e293b]"
-            >
-              See it on your own customers →
-            </Link>
-            <p className="text-xs text-slate-400 max-w-md">
-              No card at signup. We ask for payment after your first recovery.
-            </p>
+          {/* Trust strip */}
+          <div className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-x-8 gap-y-3 text-xs text-slate-500">
+            <span className="flex items-center gap-1.5">
+              <span className="text-green-600">✓</span> Cancel anytime
+            </span>
+            <span className="text-slate-300 hidden sm:inline">·</span>
+            <span className="flex items-center gap-1.5">
+              <span className="text-green-600">✓</span> 14-day refund on performance fee
+            </span>
+            <span className="text-slate-300 hidden sm:inline">·</span>
+            <span className="flex items-center gap-1.5">
+              <span className="text-green-600">✓</span> No setup fees
+            </span>
           </div>
 
-          <ul className="mt-16 max-w-2xl mx-auto text-left space-y-4">
-            <li className="flex items-start gap-3">
-              <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
-              <span className="text-sm text-slate-600">
-                <strong className="text-slate-900 font-semibold">One rate, always.</strong>{' '}
-                15% whether you recover £50 or £5,000. No tier games.
-              </span>
-            </li>
-            <li className="flex items-start gap-3">
-              <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
-              <span className="text-sm text-slate-600">
-                <strong className="text-slate-900 font-semibold">Attribution stops at 12 months.</strong>{' '}
-                After that, recovered subscribers are fully yours.
-              </span>
-            </li>
-            <li className="flex items-start gap-3">
-              <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
-              <span className="text-sm text-slate-600">
-                <strong className="text-slate-900 font-semibold">No base fee.</strong>{' '}
-                Zero cost unless we&apos;re actively recovering revenue for you.
-              </span>
-            </li>
-          </ul>
-
-          <div className="mt-10">
+          <div className="mt-10 text-center">
             <Link href="/pricing" className="text-sm text-blue-600 font-medium hover:text-blue-700">
               See full pricing ›
             </Link>
           </div>
 
           {/* Fixed-contract alternative — for teams that need predictable
-              budgeting (SSO + signed SLA) instead of the 15% performance
-              model. Quiet copy, no bordered card; subtle divider above to
-              separate from the SMB block without competing with it. */}
+              budgeting (SSO + signed SLA) instead of the performance model. */}
           <div className="mt-12 max-w-xl mx-auto pt-10 border-t border-slate-200 text-center">
             <h3 className="text-sm font-semibold text-slate-900">
               Need a fixed annual contract?
             </h3>
             <p className="mt-3 text-sm text-slate-500 leading-relaxed">
               For teams that need predictable budgeting with SSO and a signed SLA —
-              we offer fixed annual contracts as an alternative to the 15% performance model.
+              we offer fixed annual contracts as an alternative to the performance model.
             </p>
             <a
               href="mailto:sales@winbackflow.co"
@@ -322,7 +496,7 @@ export default function LandingPage() {
             Powered by AI tuned for retention
           </div>
           <h2 className="text-3xl sm:text-4xl font-bold text-slate-900 mt-3">
-            Free to start. Pay only when we recover.
+            Connect Stripe. Stop the leak.
           </h2>
 
           <div className="mt-8">
@@ -335,7 +509,7 @@ export default function LandingPage() {
           </div>
 
           <p className="mt-6 text-sm text-slate-500">
-            No card at signup. Pay only when we recover.
+            Free until we deliver your first save or win-back.
           </p>
         </div>
       </section>

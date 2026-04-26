@@ -3,7 +3,7 @@ import Link from 'next/link'
 export const metadata = {
   title: 'FAQ — Winback',
   description:
-    'Stripe access, win-back + card-recovery emails, attribution-based pricing, and GDPR — answered.',
+    'Stripe access, win-back + card-save emails, pricing, and GDPR — answered.',
 }
 
 interface QA {
@@ -183,72 +183,67 @@ const SECTIONS: Array<{ heading: string; items: QA[] }> = [
     heading: 'Pricing & recovery',
     items: [
       {
-        q: 'What counts as a \u201Crecovery\u201D?',
+        q: 'How does pricing work?',
         a: (
           <>
             <p>
-              A recovery is when a cancelled or dunned subscriber comes back
-              and starts paying you again after we&rsquo;ve reached out.
-              Winback tracks two kinds of attribution for these, and we only
-              bill on one.
+              Two fees. A flat <strong>$99/mo platform fee</strong> that
+              includes unlimited card saves &mdash; the emails we send when a
+              subscriber&rsquo;s payment fails so they can update their card.
+              And a one-time <strong>performance fee equal to one month of
+              the subscriber&rsquo;s MRR</strong> when we win back a cancelled
+              subscriber. Charged once per win-back, never recurring.
             </p>
-            <ul className="mt-3 space-y-2 list-disc pl-5">
-              <li>
-                <strong>Strong attribution.</strong> The subscriber clicked a
-                tracked link in the Winback email &mdash; the reactivate link
-                for a cancellation, or the update-payment link for a failed
-                card &mdash; and their subscription resumed. We can prove we
-                caused it, so we bill 15% of their MRR for up to 12 months.
-              </li>
-              <li>
-                <strong>Weak attribution.</strong> We sent the email, they
-                came back or their payment method changed, but they never
-                clicked our link. Maybe our email nudged them. Maybe Stripe&rsquo;s
-                own retry succeeded. We can&rsquo;t prove it was us, so we
-                show it on your dashboard (labelled &ldquo;resubscribed
-                organically&rdquo;) but <strong>never</strong> invoice you
-                for it.
-              </li>
-            </ul>
             <p className="mt-3">
-              If Stripe&rsquo;s automatic retries recover a failed payment on
-              the same card with no action from us, we don&rsquo;t record a
-              recovery at all. You&rsquo;re never billed for Stripe doing
-              its own job.
+              <Link href="/pricing" className="text-blue-600 hover:underline">
+                See full pricing &rarr;
+              </Link>
             </p>
           </>
         ),
       },
       {
-        q: 'Why don\u2019t you charge on \u201Cweak\u201D attribution?',
+        q: 'What counts as a win-back?',
         a: (
           <p>
-            Because &ldquo;we sent an email and something happened&rdquo;
-            isn&rsquo;t causation. Charging 15% on recoveries we can&rsquo;t
-            prove we caused feels like a tax on doing normal operations,
-            which erodes trust. Strong-only billing means every invoice
-            line has a tracked click behind it &mdash; you can audit the
-            math, and we don&rsquo;t get paid for anything we didn&rsquo;t
-            provably cause.
+            A subscriber who actively cancelled on Stripe, then clicked the
+            reactivate link in our email and resumed their subscription. We
+            can prove the click, so we bill the one-time fee. Card saves
+            (failed-payment recoveries) are different &mdash; those are
+            covered by the platform fee, no separate charge.
           </p>
         ),
       },
       {
-        q: 'What happens after the 12-month attribution window?',
+        q: 'What if someone reactivates without clicking our email?',
         a: (
           <p>
-            Nothing &mdash; they&rsquo;re yours permanently. From month 13
-            onwards we stop billing on that subscriber and you keep 100% of
-            their revenue.
+            We don&rsquo;t bill for it. Maybe our email nudged them
+            indirectly, maybe not &mdash; but &ldquo;we sent an email and
+            something happened&rdquo; isn&rsquo;t proof. The win-back fee
+            only fires when there&rsquo;s a tracked click on our reactivation
+            link, so every invoice has a verifiable trigger behind it.
           </p>
         ),
       },
       {
-        q: 'What if a recovered subscriber cancels again?',
+        q: 'What if a won-back subscriber cancels again?',
         a: (
           <p>
-            We stop billing immediately. You only pay 15% for the months
-            they&rsquo;re actively paying you.
+            If they re-cancel within 14 days of the win-back, we refund the
+            entire performance fee. After 14 days, the fee stands &mdash;
+            they had a real period of paid revenue.
+          </p>
+        ),
+      },
+      {
+        q: 'What about Stripe\u2019s own retries?',
+        a: (
+          <p>
+            Stripe&rsquo;s Smart Retries already recover a chunk of failed
+            payments on their own. Our card-save emails handle the rest
+            &mdash; the failures Stripe gives up on. Either way, you pay the
+            same $99/mo. No incremental fee per save.
           </p>
         ),
       },
@@ -256,21 +251,10 @@ const SECTIONS: Array<{ heading: string; items: QA[] }> = [
         q: 'Do I pay anything at signup?',
         a: (
           <p>
-            No card at signup. We ask for a payment method after your first
-            recovery and bill monthly from there. If we recover nothing, you
-            pay nothing.
-          </p>
-        ),
-      },
-      {
-        q: 'How is the fee calculated?',
-        a: (
-          <p>
-            15% of each recovered subscriber&rsquo;s monthly revenue, for up
-            to 12 months each. No base fee, no cap, no tiers.{' '}
-            <Link href="/pricing" className="text-blue-600 hover:underline">
-              Calculator &rarr;
-            </Link>
+            No card at signup. We ask for a payment method after we deliver
+            your first card save or win-back, whichever comes first. The
+            $99 platform fee starts on that same invoice. If we deliver
+            nothing, you pay nothing.
           </p>
         ),
       },
