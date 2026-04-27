@@ -5,6 +5,7 @@ import { eq, and, ne, inArray, desc, gt, isNull } from 'drizzle-orm'
 import { decrypt } from '@/src/winback/lib/encryption'
 import { extractSignals } from '@/src/winback/lib/stripe'
 import { classifySubscriber } from '@/src/winback/lib/classifier'
+import type { ClassificationResult } from '@/src/winback/lib/types'
 import { scheduleExitEmail, sendDunningEmail } from '@/src/winback/lib/email'
 import { logEvent } from '@/src/winback/lib/events'
 import {
@@ -181,9 +182,18 @@ async function processChurn(event: Stripe.Event) {
     ? subscription.customer
     : subscription.customer.id
 
-  // Idempotency check
+  // Spec 28 — find-or-resend. If a row already exists for this subscriber,
+  // we're seeing a Stripe redelivery (or a re-cancel). Branch on whether
+  // the exit email actually went out:
+  //   * email already sent  → return (or refund if within 14d window)
+  //   * row exists, no email → re-classify and resend (the prior pass died
+  //     between insert and email send)
   const [existing] = await db
-    .select({ id: churnedSubscribers.id })
+    .select({
+      id: churnedSubscribers.id,
+      email: churnedSubscribers.email,
+      status: churnedSubscribers.status,
+    })
     .from(churnedSubscribers)
     .where(
       and(
@@ -194,62 +204,106 @@ async function processChurn(event: Stripe.Event) {
     .limit(1)
 
   if (existing) {
-    // Duplicate connected-account event — but if this is a re-cancel within
-    // the win-back refund window, refund the previous performance fee
-    // (Phase B). Idempotent and safe.
+    // Re-cancel within the win-back refund window? Refund the perf fee.
     await maybeRefundRecentWinBack(existing.id)
-    return
+
+    // Did the exit email actually go out last time?
+    const [sent] = await db
+      .select({ id: emailsSent.id })
+      .from(emailsSent)
+      .where(
+        and(
+          eq(emailsSent.subscriberId, existing.id),
+          eq(emailsSent.type, 'exit'),
+        ),
+      )
+      .limit(1)
+
+    if (sent) {
+      // Happy path: row exists + email sent → done.
+      return
+    }
+    if (existing.status === 'lost') {
+      // Classifier suppressed last time and intentionally sent nothing.
+      // Don't reclassify — that was the policy decision.
+      return
+    }
+    // Row exists, no email — fall through to resend the email below.
+    console.log('Resending exit email for stuck pending row:', existing.id)
   }
 
-  const decryptedToken = decrypt(customer.stripeAccessToken!)
-  const signals = await extractSignals(subscription, decryptedToken)
+  let subscriberId: string
+  let subscriberEmail: string | null
+  let classification: ClassificationResult
 
-  // Initial churn — nothing sent yet, so the classifier sees emails_sent=0.
-  const signalsForClassifier = { ...signals, emailsSent: 0 }
+  if (existing && existing.status !== 'lost') {
+    // Resend path — re-classify so we have the firstMessage payload again.
+    // (Cheaper than persisting the full classification on the row.)
+    const decryptedToken = decrypt(customer.stripeAccessToken!)
+    const signals = await extractSignals(subscription, decryptedToken)
+    classification = await classifySubscriber(
+      { ...signals, emailsSent: 0 },
+      {
+        founderName: customer.founderName ?? undefined,
+        productName: customer.productName ?? undefined,
+        changelog: customer.changelogText ?? undefined,
+      },
+    )
+    subscriberId = existing.id
+    subscriberEmail = existing.email
+  } else {
+    // First delivery — full pipeline.
+    const decryptedToken = decrypt(customer.stripeAccessToken!)
+    const signals = await extractSignals(subscription, decryptedToken)
+    classification = await classifySubscriber(
+      { ...signals, emailsSent: 0 },
+      {
+        founderName: customer.founderName ?? undefined,
+        productName: customer.productName ?? undefined,
+        changelog: customer.changelogText ?? undefined,
+      },
+    )
 
-  const classification = await classifySubscriber(signalsForClassifier, {
-    founderName: customer.founderName ?? undefined,
-    productName: customer.productName ?? undefined,
-    changelog: customer.changelogText ?? undefined,
-  })
+    const [newSub] = await db
+      .insert(churnedSubscribers)
+      .values({
+        customerId: customer.id,
+        stripeCustomerId: signals.stripeCustomerId,
+        stripeSubscriptionId: signals.stripeSubscriptionId,
+        stripePriceId: signals.stripePriceId,
+        email: signals.email,
+        name: signals.name,
+        planName: signals.planName,
+        mrrCents: signals.mrrCents,
+        tenureDays: signals.tenureDays,
+        everUpgraded: signals.everUpgraded,
+        nearRenewal: signals.nearRenewal,
+        paymentFailures: signals.paymentFailures,
+        previousSubs: signals.previousSubs,
+        stripeEnum: signals.stripeEnum,
+        stripeComment: signals.stripeComment,
+        cancellationReason: classification.cancellationReason,
+        cancellationCategory: classification.cancellationCategory,
+        tier: classification.tier,
+        confidence: String(classification.confidence),
+        triggerKeyword: classification.triggerKeyword,
+        triggerNeed: classification.triggerNeed,
+        winBackSubject: classification.winBackSubject,
+        winBackBody: classification.winBackBody,
+        handoffReasoning:   classification.handoffReasoning,
+        recoveryLikelihood: classification.recoveryLikelihood,
+        status: classification.suppress ? 'lost' : 'pending',
+        fallbackDays: 90,
+        cancelledAt: signals.cancelledAt,
+      })
+      .returning({ id: churnedSubscribers.id })
 
-  const [newSub] = await db
-    .insert(churnedSubscribers)
-    .values({
-      customerId: customer.id,
-      stripeCustomerId: signals.stripeCustomerId,
-      stripeSubscriptionId: signals.stripeSubscriptionId,
-      stripePriceId: signals.stripePriceId,
-      email: signals.email,
-      name: signals.name,
-      planName: signals.planName,
-      mrrCents: signals.mrrCents,
-      tenureDays: signals.tenureDays,
-      everUpgraded: signals.everUpgraded,
-      nearRenewal: signals.nearRenewal,
-      paymentFailures: signals.paymentFailures,
-      previousSubs: signals.previousSubs,
-      stripeEnum: signals.stripeEnum,
-      stripeComment: signals.stripeComment,
-      cancellationReason: classification.cancellationReason,
-      cancellationCategory: classification.cancellationCategory,
-      tier: classification.tier,
-      confidence: String(classification.confidence),
-      triggerKeyword: classification.triggerKeyword,
-      triggerNeed: classification.triggerNeed,
-      winBackSubject: classification.winBackSubject,
-      winBackBody: classification.winBackBody,
-      handoffReasoning:   classification.handoffReasoning,
-      recoveryLikelihood: classification.recoveryLikelihood,
-      status: classification.suppress ? 'lost' : 'pending',
-      fallbackDays: 90,
-      cancelledAt: signals.cancelledAt,
-    })
-    .returning({ id: churnedSubscribers.id })
+    console.log('Churned subscriber saved:', newSub.id, signals.email)
+    subscriberId = newSub.id
+    subscriberEmail = signals.email
+  }
 
-  console.log('Churned subscriber saved:', newSub.id, signals.email)
-
-  if (!classification.suppress && signals.email) {
+  if (!classification.suppress && subscriberEmail) {
     // Get founder's name from users table if not set on customer
     let founderName = customer.founderName
     if (!founderName) {
@@ -261,8 +315,8 @@ async function processChurn(event: Stripe.Event) {
       founderName = user?.name ?? user?.email?.split('@')[0] ?? 'The team'
     }
     await scheduleExitEmail({
-      subscriberId: newSub.id,
-      email: signals.email,
+      subscriberId,
+      email: subscriberEmail,
       classification,
       fromName: founderName,
     })

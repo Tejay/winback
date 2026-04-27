@@ -5,7 +5,7 @@ import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { customers, churnedSubscribers, emailsSent } from '@/lib/schema'
 import { eq, and, isNotNull, isNull, inArray, sql } from 'drizzle-orm'
-import { sendEmail, resolveFounderNotificationEmail } from '@/src/winback/lib/email'
+import { sendEmail, resolveFounderNotificationEmail, recordEmailSentIdempotent } from '@/src/winback/lib/email'
 import { logEvent } from '@/src/winback/lib/events'
 import { matchChangelogToSubscribers, generateWinBackEmail } from '@/src/winback/lib/changelog-match'
 import { buildChangelogMatchAfterHandoffNotification } from '@/src/winback/lib/founder-handoff-email'
@@ -205,12 +205,16 @@ export async function POST(req: Request) {
         subscriberId: sub.id,
       })
 
-      await db.insert(emailsSent).values({
-        subscriberId: sub.id,
-        gmailMessageId: messageId,
-        type: 'win_back',
-        subject,
-      })
+      // Spec 28 — idempotent on (subscriber_id, type) per migration 023.
+      await recordEmailSentIdempotent(
+        {
+          subscriberId: sub.id,
+          gmailMessageId: messageId,
+          type: 'win_back',
+          subject,
+        },
+        'changelogWinBack',
+      )
 
       await db
         .update(churnedSubscribers)

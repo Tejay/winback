@@ -30,7 +30,7 @@ vi.mock('drizzle-orm', () => ({
   eq: vi.fn((a, b) => ({ a, b })),
 }))
 
-import { sendEmail, scheduleExitEmail } from '../lib/email'
+import { sendEmail, scheduleExitEmail, recordEmailSentIdempotent } from '../lib/email'
 import { ClassificationResult } from '../lib/types'
 
 /**
@@ -235,5 +235,55 @@ describe('scheduleExitEmail', () => {
       fromName: 'Alex',
     })
     expect(mockSend).toHaveBeenCalledOnce()
+  })
+})
+
+// Spec 28 — idempotency at the wb_emails_sent layer.
+describe('recordEmailSentIdempotent', () => {
+  beforeEach(() => {
+    vi.resetAllMocks()
+  })
+
+  it('treats Postgres unique-violation (23505) as already-sent success', async () => {
+    const violation = Object.assign(new Error('duplicate key value violates unique constraint'), {
+      code: '23505',
+    })
+    mockInsert.mockReturnValue({
+      values: vi.fn().mockRejectedValue(violation),
+    })
+
+    await expect(
+      recordEmailSentIdempotent(
+        { subscriberId: 'sub_x', type: 'exit', subject: 'hi' },
+        'test',
+      ),
+    ).resolves.toBeUndefined()
+  })
+
+  it('rethrows non-unique-violation errors', async () => {
+    const other = Object.assign(new Error('connection refused'), { code: '08006' })
+    mockInsert.mockReturnValue({
+      values: vi.fn().mockRejectedValue(other),
+    })
+
+    await expect(
+      recordEmailSentIdempotent(
+        { subscriberId: 'sub_x', type: 'exit', subject: 'hi' },
+        'test',
+      ),
+    ).rejects.toBe(other)
+  })
+
+  it('happy path resolves when insert succeeds', async () => {
+    mockInsert.mockReturnValue({
+      values: vi.fn().mockResolvedValue(undefined),
+    })
+
+    await expect(
+      recordEmailSentIdempotent(
+        { subscriberId: 'sub_x', type: 'exit', subject: 'hi' },
+        'test',
+      ),
+    ).resolves.toBeUndefined()
   })
 })

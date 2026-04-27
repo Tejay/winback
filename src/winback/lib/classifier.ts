@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { z } from 'zod'
 import { SubscriberSignals, ClassificationResult } from './types'
 import { logEvent } from './events'
+import { callWithRetry } from './retry'
 
 function getClient() {
   // process.env.ANTHROPIC_API_KEY may be empty string locally
@@ -249,13 +250,20 @@ export async function classifySubscriber(
   // producing invalid JSON, schema mismatches after a model update).
   let errorType: 'api' | 'parse' | 'schema' = 'api'
   try {
-    const response = await getClient().messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 1500,
-      temperature: 0,
-      system: SYSTEM_PROMPT,
-      messages: [{ role: 'user', content: userPrompt }],
-    })
+    // Spec 28 — wrap the Anthropic call in callWithRetry so transient
+    // 429s (Tier 2 = 50 RPM) are absorbed inside the function call rather
+    // than bubbling up as webhook 5xxs.
+    const response = await callWithRetry(
+      () =>
+        getClient().messages.create({
+          model: 'claude-haiku-4-5-20251001',
+          max_tokens: 1500,
+          temperature: 0,
+          system: SYSTEM_PROMPT,
+          messages: [{ role: 'user', content: userPrompt }],
+        }),
+      { ctx: 'classifier' },
+    )
 
     let raw = response.content[0].type === 'text' ? response.content[0].text : ''
 

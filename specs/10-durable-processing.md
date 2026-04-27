@@ -1,5 +1,23 @@
 # Spec 10 — Durable Event Processing (DB-Backed Queue)
 
+> **⚠️ Superseded for now (2026-04-27)** — [Spec 28](28-targeted-reliability-fix.md)
+> ships the targeted fixes (email-level idempotency, find-or-resend in
+> webhook handlers, 429-aware retry wrapper) that close the actual
+> stuck-pending bug at a fraction of this spec's surface area. This
+> queue + cron + dispatcher design stays here as the system to build
+> when traffic warrants it. **Build the full design when any of these
+> trigger thresholds fire:**
+>
+> - 🚨 A real customer's churn email is lost in production (one is enough)
+> - 📈 Webhook p95 latency >10s in production for a sustained day
+> - 🔁 Anthropic 429s appear in `wb_events` more than once per week
+> - 📊 Volume sustained >1k events/day for a full week
+>
+> The async-webhook + waitUntil pattern in Part B specifically depends
+> on the cron safety net in Part D — they're not separable. Don't
+> implement just async webhook without the cron, or you'll add a silent-
+> loss-on-crash failure mode.
+
 **Phase:** 11
 **Depends on:** Spec 04 (webhook handler), Spec 05 (dashboard), Spec 09 (dunning)
 **Estimated time:** ~2 days
