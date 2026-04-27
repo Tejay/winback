@@ -36,6 +36,11 @@ vi.mock('../lib/platform-stripe', () => ({
   getPlatformStripe: () => mockStripe,
 }))
 
+const mockLogEvent = vi.hoisted(() => vi.fn())
+vi.mock('../lib/events', () => ({
+  logEvent: mockLogEvent,
+}))
+
 import {
   chargePerformanceFee,
   refundPerformanceFee,
@@ -293,6 +298,44 @@ describe('refundPerformanceFee', () => {
 
     expect(result.method).toBe('noop')
     expect(mockStripe.invoiceItems.retrieve).not.toHaveBeenCalled()
+    expect(mockUpdate).toHaveBeenCalled()
+  })
+
+  // Phase D — graceful no-line path. If Stripe's invoice expansion doesn't
+  // include the matching line (paginated, manually edited, async lag), we
+  // mark the recovery refunded locally and emit an admin event rather than
+  // throwing into Stripe's webhook retry loop forever.
+  it('marks refunded + emits event when finalized invoice has no matching line', async () => {
+    setupReads({
+      recovery: { ...baseRecovery, perfFeeStripeItemId: 'ii_orphan' },
+    })
+    mockStripe.invoiceItems.retrieve.mockResolvedValue({
+      id: 'ii_orphan',
+      invoice: 'inv_paid',
+    })
+    mockStripe.invoices.retrieve.mockResolvedValue({
+      id: 'inv_paid',
+      status: 'paid',
+      lines: {
+        data: [{ id: 'il_other', invoice_item: 'some_other_item' }],
+      },
+    })
+
+    const result = await refundPerformanceFee('rec_1')
+
+    expect(result.method).toBe('line_not_found')
+    expect(mockStripe.creditNotes.create).not.toHaveBeenCalled()
+    expect(mockStripe.invoiceItems.del).not.toHaveBeenCalled()
+    expect(mockLogEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'win_back_refund_line_missing',
+        properties: expect.objectContaining({
+          invoiceId: 'inv_paid',
+          invoiceItemId: 'ii_orphan',
+        }),
+      }),
+    )
+    // Still marks refunded locally so we don't keep retrying.
     expect(mockUpdate).toHaveBeenCalled()
   })
 })

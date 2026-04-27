@@ -463,6 +463,22 @@ async function processCheckoutRecovery(event: Stripe.Event) {
   await triggerActivation(customerId, 'checkout_recovery')
 }
 
+/**
+ * Phase D — dunning subscriber defaults.
+ *
+ * Failed-payment cases don't go through the LLM classifier (their cause is
+ * always mechanical — card expired, declined, etc.) so we tier them as a
+ * single homogenous group instead of guessing per-subscriber. Tier 2 = the
+ * "send the standard retention email" lane; confidence 0.90 reflects that
+ * the cause is well-understood, not that the recovery probability is.
+ *
+ * If you ever add a finer-grained dunning classifier (signal: tenure, MRR,
+ * payment-failure history), replace these with its output and migrate.
+ */
+const DUNNING_TIER = 2 as const
+const DUNNING_CONFIDENCE = '0.90' as const
+const DUNNING_CATEGORY = 'Other' as const
+
 async function processPaymentFailed(event: Stripe.Event) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const invoice = event.data.object as any
@@ -554,9 +570,9 @@ async function processPaymentFailed(event: Stripe.Event) {
         planName: invoice.lines?.data[0]?.description ?? 'Subscription',
         mrrCents: invoice.amount_due ?? 0,
         cancellationReason: 'Payment failed',
-        cancellationCategory: 'Other',
-        tier: 2,
-        confidence: '0.90',
+        cancellationCategory: DUNNING_CATEGORY,
+        tier: DUNNING_TIER,
+        confidence: DUNNING_CONFIDENCE,
         status: 'pending',
         paymentMethodAtFailure: paymentMethodId,
       })

@@ -527,7 +527,6 @@ async function handlePost(req: Request) {
         planMrrCents: sub.mrrCents,
         newStripeSubId: null,   // synthetic — no real Stripe sub
         attributionType,
-        stillActive: true,
         // Phase B — synthetic recoveries simulate voluntary win-backs so
         // the activation flow can be exercised end-to-end from this harness.
         recoveryType: 'win_back',
