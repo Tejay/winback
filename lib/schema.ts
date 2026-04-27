@@ -33,7 +33,6 @@ export const customers = pgTable('wb_customers', {
   // Timestamp of first delivered save or win-back — when billing started.
   activatedAt:          timestamp('activated_at'),
   pausedAt:             timestamp('paused_at'),
-  settlementPaidAt:     timestamp('settlement_paid_at'),
   backfillTotal:        integer('backfill_total').default(0),
   backfillProcessed:    integer('backfill_processed').default(0),
   backfillStartedAt:    timestamp('backfill_started_at'),
@@ -120,36 +119,6 @@ export const emailsSent = pgTable('wb_emails_sent', {
   repliedAt:      timestamp('replied_at'),
 })
 
-export const settlementRequests = pgTable('wb_settlement_requests', {
-  id:               uuid('id').primaryKey().defaultRandom(),
-  customerId:       uuid('customer_id').notNull().references(() => customers.id, { onDelete: 'cascade' }),
-  obligationCents:  integer('obligation_cents').notNull(),
-  liveCount:        integer('live_count').notNull(),
-  status:           text('status').notNull().default('pending'), // 'pending' | 'settled' | 'cancelled'
-  requestedAt:      timestamp('requested_at').notNull().defaultNow(),
-  settledAt:        timestamp('settled_at'),
-  stripeSessionId:  text('stripe_session_id'),
-  notes:            text('notes'),
-})
-
-// Spec 24a — Monthly platform-billing idempotency + audit.
-// One row per (customer, month). Insert at cron start; update as the Stripe
-// invoice progresses (pending → paid | failed). UNIQUE constraint prevents
-// double-billing in a single month.
-export const billingRuns = pgTable('wb_billing_runs', {
-  id:              uuid('id').primaryKey().defaultRandom(),
-  customerId:      uuid('customer_id').notNull().references(() => customers.id, { onDelete: 'cascade' }),
-  periodYyyymm:    text('period_yyyymm').notNull(),       // 'YYYY-MM' — period COVERED, in arrears
-  stripeInvoiceId: text('stripe_invoice_id'),
-  amountCents:     integer('amount_cents').notNull().default(0),
-  status:          text('status').notNull().default('pending'),
-  // 'pending' | 'paid' | 'failed' | 'skipped_no_obligations' | 'skipped_no_card'
-  lineItemCount:   integer('line_item_count').notNull().default(0),
-  createdAt:       timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  finalizedAt:     timestamp('finalized_at', { withTimezone: true }),
-  paidAt:          timestamp('paid_at', { withTimezone: true }),
-})
-
 // First-party events table for conversion funnels. See migration 010 and
 // src/winback/lib/events.ts for the logEvent helper. Properties is a free-form
 // jsonb blob (error type, stripe account id, etc.) — keep it small.
@@ -172,11 +141,9 @@ export const recoveries = pgTable('wb_recoveries', {
   recoveredAt:       timestamp('recovered_at').defaultNow(),
   planMrrCents:      integer('plan_mrr_cents').notNull(),
   newStripeSubId:    text('new_stripe_sub_id'),
-  attributionEndsAt: timestamp('attribution_ends_at').notNull(),
   attributionType:   text('attribution_type').default('weak'),
   stillActive:       boolean('still_active').default(true),
   lastCheckedAt:     timestamp('last_checked_at').defaultNow(),
-  // Phase A — new-model billing fields.
   // recoveryType distinguishes the trigger: 'win_back' (voluntary cancel
   // → reactivation) bills a 1× MRR performance fee; 'card_save' (failed
   // payment recovered) does not bill — the $99/mo platform fee covers it.

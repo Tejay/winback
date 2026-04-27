@@ -3,10 +3,6 @@
     {
       "path": "/api/cron/reengagement",
       "schedule": "0 9 * * *"
-    },
-    {
-      "path": "/api/cron/billing",
-      "schedule": "0 0 1 * *"
     }
   ]
 }

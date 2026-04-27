@@ -40,14 +40,10 @@ export async function POST(
     return NextResponse.json({ error: 'Subscriber not found' }, { status: 404 })
   }
 
-  const attributionEndsAt = new Date()
-  attributionEndsAt.setFullYear(attributionEndsAt.getFullYear() + 1)
-
   await db.insert(recoveries).values({
     subscriberId: id,
     customerId: customer.id,
     planMrrCents: subscriber.mrrCents,
-    attributionEndsAt,
   })
 
   await db

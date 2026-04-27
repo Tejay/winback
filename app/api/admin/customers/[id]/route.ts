@@ -8,9 +8,8 @@ import {
   emailsSent,
   wbEvents,
   recoveries,
-  billingRuns,
 } from '@/lib/schema'
-import { eq, and, sql, desc } from 'drizzle-orm'
+import { eq, and, sql, desc, isNull } from 'drizzle-orm'
 
 /**
  * GET /api/admin/customers/[id]
@@ -60,7 +59,6 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
     recentOauthErrors,
     recentEmails,
     recentEvents,
-    lastBillingRun,
     outstandingObligations,
     openHandoffs,
   ] = await Promise.all([
@@ -112,16 +110,9 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
       .where(eq(wbEvents.customerId, id))
       .orderBy(desc(wbEvents.createdAt))
       .limit(50),
-    // Most recent billing run row
-    ro
-      .select()
-      .from(billingRuns)
-      .where(eq(billingRuns.customerId, id))
-      .orderBy(desc(billingRuns.createdAt))
-      .limit(1),
-    // Outstanding obligations: strong recoveries that haven't been billed.
-    // Approximate — counts strong recoveries minus paid runs' line items;
-    // exact reconciliation lives in the billing cron itself.
+    // Outstanding obligations: strong win-back recoveries with the perf fee
+    // not yet charged (typically waiting on a card to land). Phase C — old
+    // billing_runs reconciliation removed.
     ro
       .select({ n: sql<number>`count(*)::int` })
       .from(recoveries)
@@ -129,7 +120,9 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
         and(
           eq(recoveries.customerId, id),
           eq(recoveries.attributionType, 'strong'),
-          eq(recoveries.stillActive, true),
+          eq(recoveries.recoveryType, 'win_back'),
+          isNull(recoveries.perfFeeChargedAt),
+          isNull(recoveries.perfFeeRefundedAt),
         ),
       ),
     // Open handoffs that emergency action could resolve
@@ -154,7 +147,6 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
     recentEmails,
     recentEvents,
     billing: {
-      lastRun: lastBillingRun[0] ?? null,
       outstandingObligations: outstandingObligations[0]?.n ?? 0,
     },
     openHandoffs: openHandoffs[0]?.n ?? 0,

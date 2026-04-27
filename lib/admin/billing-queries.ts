@@ -1,93 +1,17 @@
 /**
- * Spec 26 — Aggregation queries for /admin/billing.
+ * Phase C — Aggregation queries for /admin/billing, slimmed for the new
+ * Stripe-Subscription-driven billing model.
  *
- * Three blocks: current-period status breakdown, failed invoices (90d), and
- * outstanding obligations (strong recoveries with no paid run covering
- * their period). Plus a 90-day weekly MRR-recovered trend.
+ * Two blocks: queued win-back fees (recovery rows that haven't been billed
+ * yet — typically waiting for a card) and the 13-week MRR-recovered trend.
+ *
+ * The old per-period billing_runs status breakdown and failed-run retry
+ * dashboard are gone; Stripe Subscriptions handle their own dunning.
  */
 
 import { sql, and, eq, desc, gte, isNull } from 'drizzle-orm'
 import { getDbReadOnly } from '../db'
-import { billingRuns, customers, users, recoveries } from '../schema'
-
-export interface BillingStatusBreakdown {
-  period: string                            // current YYYY-MM
-  paid: number
-  pending: number
-  failed: number
-  skippedNoObligations: number
-  skippedNoCard: number
-}
-
-/**
- * Current-period (YYYY-MM) status breakdown across wb_billing_runs.
- */
-export async function currentPeriodBreakdown(): Promise<BillingStatusBreakdown> {
-  const period = new Date().toISOString().slice(0, 7)  // YYYY-MM in UTC
-  const rows = await getDbReadOnly()
-    .select({
-      status: billingRuns.status,
-      n: sql<number>`count(*)::int`,
-    })
-    .from(billingRuns)
-    .where(eq(billingRuns.periodYyyymm, period))
-    .groupBy(billingRuns.status)
-
-  const out: BillingStatusBreakdown = {
-    period,
-    paid: 0,
-    pending: 0,
-    failed: 0,
-    skippedNoObligations: 0,
-    skippedNoCard: 0,
-  }
-  for (const r of rows) {
-    if (r.status === 'paid') out.paid = r.n
-    else if (r.status === 'pending') out.pending = r.n
-    else if (r.status === 'failed') out.failed = r.n
-    else if (r.status === 'skipped_no_obligations') out.skippedNoObligations = r.n
-    else if (r.status === 'skipped_no_card') out.skippedNoCard = r.n
-  }
-  return out
-}
-
-export interface FailedRunRow {
-  id: string
-  customerId: string
-  periodYyyymm: string
-  amountCents: number
-  stripeInvoiceId: string | null
-  createdAt: Date
-  productName: string | null
-  customerEmail: string | null
-}
-
-/**
- * Failed billing runs in the last 90 days. Each row gets a Retry button
- * in the UI that calls /api/admin/actions/billing-retry.
- */
-export async function failedRuns(days = 90): Promise<FailedRunRow[]> {
-  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000)
-  return await getDbReadOnly()
-    .select({
-      id:              billingRuns.id,
-      customerId:      billingRuns.customerId,
-      periodYyyymm:    billingRuns.periodYyyymm,
-      amountCents:     billingRuns.amountCents,
-      stripeInvoiceId: billingRuns.stripeInvoiceId,
-      createdAt:       billingRuns.createdAt,
-      productName:     customers.productName,
-      customerEmail:   users.email,
-    })
-    .from(billingRuns)
-    .innerJoin(customers, eq(customers.id, billingRuns.customerId))
-    .innerJoin(users, eq(users.id, customers.userId))
-    .where(and(
-      eq(billingRuns.status, 'failed'),
-      gte(billingRuns.createdAt, since),
-    ))
-    .orderBy(desc(billingRuns.createdAt))
-}
+import { customers, users, recoveries } from '../schema'
 
 export interface OutstandingObligationRow {
   recoveryId: string
@@ -101,10 +25,9 @@ export interface OutstandingObligationRow {
 }
 
 /**
- * Phase B — win-back recoveries with a performance fee owed but not yet
- * charged (typically because the customer hasn't added a card yet, so the
- * Stripe Subscription couldn't be created and the fee is queued in the DB).
- * The "money we should be invoicing but aren't" report.
+ * Win-back recoveries with a performance fee owed but not yet charged
+ * (typically because the customer hasn't added a card yet, so the Stripe
+ * Subscription couldn't be created and the fee is queued in the DB).
  *
  * Once the customer activates (card lands → ensureActivation drains the
  * queue), perf_fee_charged_at gets stamped and the row drops off this list.
@@ -136,7 +59,7 @@ export async function outstandingObligations(): Promise<OutstandingObligationRow
     customerId: r.customerId,
     recoveredAt: r.recoveredAt,
     planMrrCents: r.planMrrCents,
-    // Phase B — win-back fee is 1× MRR, charged once.
+    // Win-back fee is 1× MRR, charged once.
     feeCents: r.planMrrCents,
     period: r.period,
     productName: r.productName,
@@ -145,7 +68,7 @@ export async function outstandingObligations(): Promise<OutstandingObligationRow
 }
 
 /**
- * 90-day weekly MRR-recovered trend, split by attribution type. Powers the
+ * Weekly MRR-recovered trend, split by attribution type. Powers the
  * stacked-bar chart at the bottom of /admin/billing.
  */
 export async function mrrRecoveredWeeklyTrend(weeks = 13): Promise<Array<{

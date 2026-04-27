@@ -1,26 +1,23 @@
 import { NextResponse } from 'next/server'
 import { requireAdmin } from '@/lib/auth'
 import {
-  currentPeriodBreakdown,
-  failedRuns,
   outstandingObligations,
   mrrRecoveredWeeklyTrend,
 } from '@/lib/admin/billing-queries'
 
 /**
- * GET /admin/billing payload — current month status, failed invoices (90d),
- * outstanding obligations, MRR-recovered trend (13 weeks).
+ * GET /admin/billing payload — Phase C slim. Stripe Subscriptions own
+ * monthly billing now, so we only surface what's worth eyeballing in-app:
+ * queued win-back fees and the weekly MRR-recovered trend.
  */
 export async function GET() {
   const auth = await requireAdmin()
   if ('error' in auth) {
     return NextResponse.json({ error: auth.error }, { status: auth.status })
   }
-  const [breakdown, failed, outstanding, mrrTrend] = await Promise.all([
-    currentPeriodBreakdown(),
-    failedRuns(90),
+  const [outstanding, mrrTrend] = await Promise.all([
     outstandingObligations(),
     mrrRecoveredWeeklyTrend(13),
   ])
-  return NextResponse.json({ breakdown, failed, outstanding, mrrTrend })
+  return NextResponse.json({ outstanding, mrrTrend })
 }
