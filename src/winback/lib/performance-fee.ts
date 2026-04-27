@@ -78,14 +78,22 @@ async function loadSubscriberEmail(subscriberId: string): Promise<string> {
 
 /**
  * Charges the 1× MRR performance fee for a strong-attribution win-back
- * recovery as a Stripe invoice item attached to the customer's subscription.
+ * recovery as a Stripe invoice item.
+ *
+ * Two paths:
+ *   • Subscription exists → invoice item is attached to that subscription
+ *     and lands on the next cycle's invoice.
+ *   • No subscription yet → invoice item is created as PENDING (no
+ *     `subscription` field). The next time a subscription invoice is
+ *     generated for this customer (typically in `ensurePlatformSubscription`
+ *     immediately after this call), Stripe bundles the pending items onto
+ *     that first invoice automatically. This is how the prorated $99 plus
+ *     all win-back fees end up on a single first invoice.
  *
  * Preconditions:
  *   • Recovery must exist and have `recoveryType = 'win_back'`.
- *   • Customer must have an active Stripe Subscription (`stripeSubscriptionId`).
+ *   • Customer must have a platform Stripe customer.
  *   • If `perfFeeStripeItemId` is already set on the recovery, this is a no-op.
- *
- * The created invoice item rides the next subscription invoice cycle.
  */
 export async function chargePerformanceFee(recoveryId: string): Promise<{
   invoiceItemId: string
@@ -111,18 +119,12 @@ export async function chargePerformanceFee(recoveryId: string): Promise<{
   if (!cust?.stripePlatformCustomerId) {
     throw new Error(`customer ${rec.customerId} has no platform Stripe customer`)
   }
-  if (!cust.stripeSubscriptionId) {
-    throw new Error(
-      `customer ${rec.customerId} has no active subscription — call ensurePlatformSubscription first`,
-    )
-  }
 
   const email = await loadSubscriberEmail(rec.subscriberId)
   const stripe = getPlatformStripe()
 
-  const item = await stripe.invoiceItems.create({
+  const params: Stripe.InvoiceItemCreateParams = {
     customer: cust.stripePlatformCustomerId,
-    subscription: cust.stripeSubscriptionId,
     amount: rec.planMrrCents,
     currency: PLATFORM_FEE_CURRENCY,
     description: `Win-back: ${email}`,
@@ -130,7 +132,15 @@ export async function chargePerformanceFee(recoveryId: string): Promise<{
       winback_recovery_id: recoveryId,
       winback_customer_id: rec.customerId,
     },
-  })
+  }
+  // When a subscription is already live, attach the item to it so it lands
+  // on the next cycle's invoice. Otherwise leave it pending so Stripe picks
+  // it up onto the very first subscription invoice (the activation case).
+  if (cust.stripeSubscriptionId) {
+    params.subscription = cust.stripeSubscriptionId
+  }
+
+  const item = await stripe.invoiceItems.create(params)
 
   await db
     .update(recoveries)

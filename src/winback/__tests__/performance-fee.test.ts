@@ -169,13 +169,28 @@ describe('chargePerformanceFee', () => {
     await expect(chargePerformanceFee('rec_1')).rejects.toThrow(/not a win-back/)
   })
 
-  it('throws when no subscription is active', async () => {
+  it('creates a pending invoice item (no subscription field) when no subscription exists yet', async () => {
+    // This is the activation case: recovery → ensureActivation → charge first
+    // (creates pending item) → ensurePlatformSubscription (Stripe bundles
+    // pending items onto the first invoice).
     setupReads({
       recovery: baseRecovery,
       customer: { ...baseCustomer, stripeSubscriptionId: null },
     })
+    mockStripe.invoiceItems.create.mockResolvedValue({ id: 'ii_pending' })
 
-    await expect(chargePerformanceFee('rec_1')).rejects.toThrow(/no active subscription/)
+    const result = await chargePerformanceFee('rec_1')
+
+    expect(result.invoiceItemId).toBe('ii_pending')
+    expect(mockStripe.invoiceItems.create).toHaveBeenCalledWith(
+      expect.not.objectContaining({ subscription: expect.anything() }),
+    )
+    expect(mockStripe.invoiceItems.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        customer: 'cus_platform_1',
+        amount: 2500,
+      }),
+    )
   })
 
   it('throws when recovery does not exist', async () => {
