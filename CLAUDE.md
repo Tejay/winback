@@ -8,8 +8,11 @@ Resend within 60 seconds. An LLM classifies why they left and generates a
 targeted win-back message. When the product ships something matching their stated reason, the
 win-back fires automatically.
 
-**Pricing:** 15% of recovered revenue for 12 months per recovered subscriber. No base
-fee, no cap. No card at signup — we ask for payment after the first recovery.
+**Pricing:** Flat **$99/mo platform fee** covering unlimited card-save (failed payment)
+emails, plus a one-time **1× MRR performance fee** per voluntary-cancellation win-back,
+refundable in full if the subscriber re-cancels within 14 days. No card at signup —
+billing starts on the first delivered save or win-back, whichever comes first.
+Implemented as a Stripe Subscription on Winback's own Stripe account.
 
 **Live reference site:** https://churntool-jxgo.vercel.app
 Every UI decision must match this site exactly unless specified otherwise.
@@ -312,8 +315,12 @@ CRON_SECRET=           # any random string
 
 # Phase 3 — Stripe
 STRIPE_CLIENT_ID=      # Stripe Dashboard → Connect → OAuth tab → Test client ID
-STRIPE_SECRET_KEY=     # sk_test_...
+STRIPE_SECRET_KEY=     # sk_test_... (Winback's own Stripe account — drives platform billing)
 STRIPE_WEBHOOK_SECRET= # From the Connect webhook registered on the platform account (connect=true)
+STRIPE_PLATFORM_FEE_PRICE_ID=  # Optional. The Price ID for the $99/mo platform subscription.
+                       # If unset, src/winback/lib/subscription.ts looks up by lookup_key
+                       # 'winback_platform_monthly_v1' and creates the Product+Price on demand.
+                       # Set this in production for cleaner Stripe-dashboard auditing.
 
 # Phase 4 — Anthropic + Email
 ANTHROPIC_API_KEY=

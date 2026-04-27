@@ -1,5 +1,13 @@
 # Spec 24b — Phase 9.2b: Invoice display in Settings
 
+> **⚠️ Partly superseded (2026-04-27)** — the invoice-display surface is
+> still in place (`fetchPlatformInvoices` + the `InvoiceList` component
+> are alive), but the metadata/period semantics described below are now
+> Stripe-Subscription invoices, not cron-driven monthly runs. The
+> period-label heuristics still work because Stripe Subscriptions stamp
+> the cycle on `invoice.created`. `humanPeriodFromInvoice` no longer
+> reads `metadata.period_yyyymm` (the cron set that; cron is gone).
+
 **Phase:** Next up (April 2026)
 **Depends on:** Spec 24a (invoice cron), Spec 23 (card capture)
 **Unblocks:** Paid launch (customers can see where their money went)

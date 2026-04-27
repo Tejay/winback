@@ -1,5 +1,12 @@
 # Spec 26 — Operational Admin Dashboard (Phase 2)
 
+> **⚠️ Partly superseded (2026-04-27)** — Phase 2's billing pages
+> originally surfaced `wb_billing_runs` for retry. The billing engine
+> rewrite (PRs #35-#37) removed the cron + billing-runs table, so the
+> retry queue and per-period status breakdown described below are no
+> longer in the admin UI. Outstanding-obligations block was rewritten to
+> show queued win-back fees from `wb_recoveries.perf_fee_charged_at IS NULL`.
+
 **Phase:** Weeks 2–4 of live customers
 **Depends on:** Spec 25 (Phase 1 admin shell + auth + read-only role), migration 018
 

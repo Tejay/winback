@@ -1,5 +1,11 @@
 # Spec 07 — Billing Calculation + Changelog Trigger
 
+> **⚠️ Superseded (2026-04-27)** — the 15%-of-MRR-for-12-months billing model
+> below was replaced by **\$99/mo Stripe Subscription + 1× MRR per win-back
+> (refundable for 14 days)** in PRs #35–#38. Live implementation:
+> `src/winback/lib/{subscription,performance-fee,activation,billing-notifications}.ts`.
+> Preserved as the historical record of the original design.
+
 **Phase:** 7
 **Depends on:** Spec 04 (classifier, email), Spec 05 (wb_recoveries data)
 **Estimated time:** 2 hours

@@ -1,5 +1,17 @@
 # 07 — Review pack: data-flow diagram + screenshots
 
+> **Status (2026-04-27):** The data-flow diagram and screenshot manifest
+> below describe the **original** "15% × 12 months / monthly cron" billing
+> model. That model has been fully replaced by **\$99/mo Stripe Subscription
+> + 1× MRR per win-back, refundable for 14 days** (PRs #35-#38). Before
+> resubmitting to Stripe Connect, regenerate:
+> 1. The Mermaid diagram so it shows a Stripe Subscription on the platform
+>    account (not a monthly cron creating one-off invoices).
+> 2. The pricing screenshot — capture the live `/pricing` page (which now
+>    shows the two-fee model).
+> 3. The "monthly bill" screenshot if used — capture a real subscription
+>    invoice instead.
+
 Stripe's Connect review form lets you attach screenshots and a short
 "explain your platform" free-text section. A clear data-flow narrative plus
 six well-chosen screenshots moves the application from "kicked back with

@@ -1,5 +1,12 @@
 # Spec 24a — Phase 9.2a: Monthly invoice cron
 
+> **⚠️ Superseded (2026-04-27)** — the monthly cron + `wb_billing_runs`
+> + `processBillingRun` flow described below was replaced by a recurring
+> Stripe Subscription on the platform Stripe customer. Stripe drives the
+> cycle, dunning, and retries. Cron route, `billing.ts`, and
+> `wb_billing_runs` table all deleted in PR #37. Win-back fees are now
+> attached as one-off Stripe invoice items via `performance-fee.ts`.
+
 **Phase:** Next up (April 2026)
 **Depends on:** Spec 23 (card capture), `src/winback/lib/billing.ts`, `src/winback/lib/obligations.ts`
 **Unblocks:** Phase 9.2b (invoice display), Phase 9.3 (dunning)

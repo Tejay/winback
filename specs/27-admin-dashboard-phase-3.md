@@ -1,5 +1,9 @@
 # Spec 27 — Operational Admin Dashboard (Phase 3)
 
+> **Note (2026-04-27):** any references below to billing-runs status or
+> failed-run retry tables are stale — that surface was removed in PR #37.
+> The recovery-detail and email-flow pieces of Phase 3 still apply.
+
 **Phase:** Once Phases 1–2 are dogfooded for a few weeks
 **Depends on:** Spec 25 (Phase 1 admin shell + auth + read-only role), spec 26 (Phase 2 surfaces + observability instrumentation), migrations 018
 

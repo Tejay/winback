@@ -1,5 +1,11 @@
 # Spec 25 — Operational Admin Dashboard (Phase 1)
 
+> **Note (2026-04-27):** the dashboard described here is shipped, but the
+> billing-related blocks (per-period billing-runs status breakdown +
+> failed-runs retry table) were removed in PR #37 because Stripe
+> Subscriptions handle dunning automatically now. Active blocks are
+> outstanding queued win-back fees and the MRR-recovered weekly trend.
+
 **Phase:** Pre-launch / Week 1 of live customers
 **Depends on:** Spec 22a (AI state model), Spec 17 (`wb_events`), migration 017 (handoff judgment fields)
 
