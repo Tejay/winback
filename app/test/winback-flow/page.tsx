@@ -538,7 +538,7 @@ function ReplyCard({
             Attribution: <strong>{recoveryResult.attributionType}</strong> ·
             Plan MRR: ${(recoveryResult.planMrrCents / 100).toFixed(2)}/mo
             {recoveryResult.billableForInvoice
-              ? ' · ✓ Will be on next monthly invoice (15%)'
+              ? ' · ✓ Will be on next subscription invoice (1× MRR)'
               : ' · Not billable'}
           </div>
         </div>

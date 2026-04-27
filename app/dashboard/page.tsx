@@ -19,9 +19,14 @@ export default async function DashboardPage() {
   // Route protection: redirect to onboarding if Stripe not connected
   if (!customer?.stripeAccessToken) redirect('/onboarding/stripe')
 
-  // Check if billing alert should show
+  // First-recovery banner — only show before billing is active. The
+  // banner's job is to drive the "add a card" action; once the platform
+  // subscription exists, the prompt is wrong (and the customer has already
+  // added a card). Phase B uses `stripeSubscriptionId` as the activation
+  // signal (the Phase A `plan === 'trial'` field is legacy and stale).
+  const billingActive = !!customer?.stripeSubscriptionId
   let firstRecovery: { name: string | null; mrrCents: number } | null = null
-  if (customer?.plan === 'trial') {
+  if (customer && !billingActive) {
     const recs = await db
       .select()
       .from(recoveries)
@@ -29,7 +34,6 @@ export default async function DashboardPage() {
       .limit(1)
 
     if (recs.length > 0) {
-      // Get the recovered subscriber details from the recovery
       firstRecovery = { name: null, mrrCents: recs[0].planMrrCents }
     }
   }
@@ -41,7 +45,7 @@ export default async function DashboardPage() {
         <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
           <DashboardClient
             changelog={customer?.changelogText ?? ''}
-            isTrial={customer?.plan === 'trial'}
+            isTrial={!billingActive}
             firstRecovery={firstRecovery}
           />
         </div>

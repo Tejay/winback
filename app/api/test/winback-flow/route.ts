@@ -13,6 +13,7 @@ import {
 import { appendStandardFooter } from '@/src/winback/lib/email'
 import { buildHandoffNotification } from '@/src/winback/lib/founder-handoff-email'
 import { logEvent } from '@/src/winback/lib/events'
+import { ensureActivation } from '@/src/winback/lib/activation'
 import { SubscriberSignals } from '@/src/winback/lib/types'
 
 /**
@@ -531,6 +532,9 @@ async function handlePost(req: Request) {
         attributionEndsAt,
         attributionType,
         stillActive: true,
+        // Phase B — synthetic recoveries simulate voluntary win-backs so
+        // the activation flow can be exercised end-to-end from this harness.
+        recoveryType: 'win_back',
       })
       .returning({ id: recoveries.id })
 
@@ -557,12 +561,28 @@ async function handlePost(req: Request) {
       },
     })
 
+    // Phase B — fire activation when this is a billable (strong) win-back so
+    // the harness exercises the same path real webhooks do: subscription
+    // creation if a card is on file, perf-fee invoice item, or queueing in
+    // the DB if awaiting card.
+    let activationState: string | undefined
+    if (attributionType === 'strong') {
+      try {
+        const result = await ensureActivation(customer.id)
+        activationState = result.state
+      } catch (err) {
+        console.error('[test-harness] ensureActivation failed:', err)
+        activationState = 'error'
+      }
+    }
+
     return NextResponse.json({
       ok: true,
       recoveryId: recovery.id,
       attributionType,
       planMrrCents: sub.mrrCents,
       billableForInvoice: attributionType === 'strong',
+      activationState,
     })
   }
 

@@ -35,7 +35,10 @@ interface Props {
 }
 
 function formatMoney(cents: number, currency: string): string {
-  return (cents / 100).toLocaleString(undefined, {
+  // Pin the locale to avoid SSR/CSR hydration mismatches: Node's default
+  // locale (en-US) and the browser's default (often en-GB / user locale)
+  // render USD differently — "US$99.00" vs "$99.00".
+  return (cents / 100).toLocaleString('en-US', {
     style: 'currency',
     currency: currency.toUpperCase(),
   })

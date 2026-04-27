@@ -31,13 +31,28 @@ export default function TermsPage() {
           See also: <a href="/refunds" className="text-blue-600 hover:underline">Refunds &amp; cancellations</a>.
         </p>
         <p>
-          The Service is free to sign up and use until Winback recovers a cancelled
-          subscriber for you. For each recovered subscriber who remains active, we
-          charge <strong>15% of their monthly recurring revenue for 12 months from
-          the date of recovery</strong>. After 12 months the subscriber is no longer
-          subject to any fee. There is no base fee, no setup fee, and no minimum
-          commitment. Fees are billed monthly via Stripe against the payment method
-          you provide after your first recovery. All fees are exclusive of VAT.
+          The Service is free to sign up and use until Winback delivers your first
+          card save (failed-payment recovery email) or your first win-back (recovery
+          of a voluntarily-cancelled subscriber). At that point we ask for a payment
+          method and billing begins. There are two fees:
+        </p>
+        <ul>
+          <li>
+            <strong>Platform fee — $99 per month</strong>, billed as a recurring
+            Stripe Subscription (prorated for the first partial cycle). This covers
+            unlimited card saves and the platform itself.
+          </li>
+          <li>
+            <strong>Performance fee — one month of the recovered subscriber&rsquo;s
+            monthly recurring revenue per win-back</strong>, charged once and added
+            to the relevant Stripe Subscription invoice. If that subscriber re-cancels
+            within 14 days of recovery, we refund the performance fee in full.
+          </li>
+        </ul>
+        <p>
+          There is no setup fee and no minimum commitment. You can cancel the platform
+          subscription at any time from Settings — the cycle in progress finishes,
+          then no further charges are made. All fees are exclusive of VAT.
         </p>
 
         <h2>4. Your responsibilities</h2>

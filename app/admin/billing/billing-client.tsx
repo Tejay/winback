@@ -200,7 +200,7 @@ export function BillingClient() {
                 <th className="text-left py-2">Recovered</th>
                 <th className="text-left py-2">Period</th>
                 <th className="text-right py-2">MRR</th>
-                <th className="text-right py-2">Fee (15%)</th>
+                <th className="text-right py-2">Win-back fee (1× MRR)</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">

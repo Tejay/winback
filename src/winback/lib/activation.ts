@@ -81,12 +81,17 @@ export async function ensureActivation(wbCustomerId: string): Promise<Activation
     return { state: 'awaiting_card', activatedAt }
   }
 
-  // Card on file: ensure subscription exists. ensurePlatformSubscription
-  // is itself idempotent and will skip Stripe if already active.
-  const { subscriptionId, created } = await ensurePlatformSubscription(wbCustomerId)
-
-  // Drain any queued win-back perf fees onto the live subscription cycle.
+  // Order matters: when there is no subscription yet, charge pending perf
+  // fees FIRST (creates pending Stripe invoice items with no subscription
+  // field). Then ensurePlatformSubscription creates the subscription, and
+  // Stripe bundles the pending items onto the first invoice along with the
+  // prorated $99. Result: one first invoice = $99 prorated + Σ(win-back fees).
+  //
+  // When the subscription already exists, charging order doesn't matter —
+  // chargePerformanceFee attaches the item to the subscription and it
+  // lands on the next cycle's invoice.
   const { chargedRecoveryIds } = await chargePendingPerformanceFees(wbCustomerId)
+  const { subscriptionId, created } = await ensurePlatformSubscription(wbCustomerId)
 
   return {
     state: 'active',

@@ -134,13 +134,17 @@ export async function ensurePlatformSubscription(
 }
 
 /**
- * Cancels the platform subscription at period end (the customer keeps access
- * until the current cycle finishes; final prorated invoice goes out as
- * normal). Used when the customer deletes their account.
+ * Cancels the platform subscription. Default cancels at period end (customer
+ * keeps access through the current cycle, final cycle invoices normally).
+ * Pass `immediately: true` to terminate now — used by workspace deletion,
+ * where Stripe issues a prorated final invoice for the unused portion.
  *
  * Idempotent — no-op if there is no active subscription.
  */
-export async function cancelPlatformSubscription(wbCustomerId: string): Promise<void> {
+export async function cancelPlatformSubscription(
+  wbCustomerId: string,
+  opts: { immediately?: boolean } = {},
+): Promise<void> {
   const [row] = await db
     .select({ stripeSubscriptionId: customers.stripeSubscriptionId })
     .from(customers)
@@ -150,9 +154,13 @@ export async function cancelPlatformSubscription(wbCustomerId: string): Promise<
   if (!row?.stripeSubscriptionId) return
 
   const stripe = getPlatformStripe()
-  await stripe.subscriptions.update(row.stripeSubscriptionId, {
-    cancel_at_period_end: true,
-  })
+  if (opts.immediately) {
+    await stripe.subscriptions.cancel(row.stripeSubscriptionId)
+  } else {
+    await stripe.subscriptions.update(row.stripeSubscriptionId, {
+      cancel_at_period_end: true,
+    })
+  }
 }
 
 /**

@@ -216,8 +216,9 @@ export function DashboardClient({ changelog, isTrial, firstRecovery }: Dashboard
                 🎉 Your first recovery is in{firstRecovery.name ? ` — ${firstRecovery.name} is back` : ''} at ${(firstRecovery.mrrCents / 100).toFixed(0)}/mo.
               </p>
               <p className="text-sm text-slate-600 mt-1">
-                Add a payment method to keep recovering. Billing is{' '}
-                <strong>15% of recovered revenue</strong> for 12 months per subscriber. No base fee.
+                Add a payment method to start your $99/mo subscription —
+                covers unlimited card saves, plus a one-time fee of{' '}
+                <strong>1× MRR</strong> per win-back (refundable for 14 days).
               </p>
               <div className="mt-3 flex flex-wrap items-center gap-3 sm:gap-4">
                 <a href="/settings#billing" className="bg-[#0f172a] text-white rounded-full px-5 py-2 text-sm font-medium hover:bg-[#1e293b]">
