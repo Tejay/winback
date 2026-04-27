@@ -7,21 +7,6 @@ import { getPlatformStripe } from './platform-stripe'
 // ─── Date/period helpers ─────────────────────────────────────────────────
 
 /**
- * Returns the previous month as 'YYYY-MM'. Used to compute the period
- * covered by an invoice created on the 1st of a month (invoice in arrears
- * for the prior month's obligations).
- *
- * e.g. given 2026-06-01 → '2026-05'
- *      given 2026-01-01 → '2025-12'
- */
-export function previousMonthYYYYMM(now: Date = new Date()): string {
-  const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1))
-  const y = d.getUTCFullYear()
-  const m = String(d.getUTCMonth() + 1).padStart(2, '0')
-  return `${y}-${m}`
-}
-
-/**
  * Human label for a YYYY-MM period. e.g. '2026-05' → 'May 2026'.
  */
 export function humanPeriod(yyyymm: string): string {

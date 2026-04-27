@@ -38,7 +38,6 @@ interface Detail {
     createdAt: string
   }>
   billing: {
-    lastRun: { periodYyyymm: string; status: string; amountCents: number; createdAt: string } | null
     outstandingObligations: number
   }
   openHandoffs: number
@@ -177,10 +176,7 @@ export function CustomerDetailClient({ customerId }: { customerId: string }) {
       </Section>
 
       <Section label="Billing snapshot">
-        <KV k="Last run" v={data.billing.lastRun
-          ? `${data.billing.lastRun.periodYyyymm} · ${data.billing.lastRun.status} · $${(data.billing.lastRun.amountCents / 100).toFixed(2)}`
-          : 'no runs yet'} />
-        <KV k="Outstanding strong recoveries" v={String(data.billing.outstandingObligations)} />
+        <KV k="Queued win-back fees" v={String(data.billing.outstandingObligations)} />
         <KV k="Platform Stripe customer" v={id.stripePlatformCustomerId ?? '(no platform card on file)'} />
       </Section>
 

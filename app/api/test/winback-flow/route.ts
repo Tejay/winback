@@ -517,11 +517,8 @@ async function handlePost(req: Request) {
     }
 
     // Insert synthetic recovery row. Matches the shape of real recoveries
-    // from processRecovery/processCheckoutRecovery so billing + attribution
-    // logic sees it identically.
-    const attributionEndsAt = new Date()
-    attributionEndsAt.setFullYear(attributionEndsAt.getFullYear() + 1)
-
+    // from processRecovery/processCheckoutRecovery so the activation flow
+    // and attribution logic see it identically.
     const [recovery] = await db
       .insert(recoveries)
       .values({
@@ -529,7 +526,6 @@ async function handlePost(req: Request) {
         customerId: customer.id,
         planMrrCents: sub.mrrCents,
         newStripeSubId: null,   // synthetic — no real Stripe sub
-        attributionEndsAt,
         attributionType,
         stillActive: true,
         // Phase B — synthetic recoveries simulate voluntary win-backs so

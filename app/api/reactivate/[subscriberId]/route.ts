@@ -100,15 +100,11 @@ export async function GET(
           // Resume: flip the cancel flag → strong recovery
           await stripe.subscriptions.update(sub.id, { cancel_at_period_end: false })
 
-          const attributionEndsAt = new Date()
-          attributionEndsAt.setFullYear(attributionEndsAt.getFullYear() + 1)
-
           await db.insert(recoveries).values({
             subscriberId,
             customerId: customer.id,
             planMrrCents: subscriber.mrrCents,
             newStripeSubId: sub.id,
-            attributionEndsAt,
             attributionType: 'strong',
           })
 
