@@ -5,6 +5,34 @@ import { eq, and, count } from 'drizzle-orm'
 import { ClassificationResult } from './types'
 import { generateUnsubscribeToken } from './unsubscribe-token'
 import { logEvent } from './events'
+import { callWithRetry } from './retry'
+
+/**
+ * Spec 28 — Postgres unique-violation error code. The partial unique index
+ * on `wb_emails_sent (subscriber_id, type)` raises this when a webhook
+ * redelivery races past the find-or-resend check. We treat it as success
+ * (the previous send committed first; the email DID go out).
+ */
+const PG_UNIQUE_VIOLATION = '23505'
+
+function isUniqueViolation(err: unknown): boolean {
+  return (err as { code?: string } | null)?.code === PG_UNIQUE_VIOLATION
+}
+
+export async function recordEmailSentIdempotent(
+  values: typeof emailsSent.$inferInsert,
+  ctx: string,
+): Promise<void> {
+  try {
+    await db.insert(emailsSent).values(values)
+  } catch (err) {
+    if (isUniqueViolation(err)) {
+      console.log(`[${ctx}] duplicate (subscriber_id, type) — already sent, treating as success`)
+      return
+    }
+    throw err
+  }
+}
 
 /** Maximum follow-up emails per subscriber. After this, flag for founder. */
 const MAX_FOLLOWUPS = 2
@@ -242,13 +270,19 @@ export async function sendEmail(params: {
 
   const fullBody = appendStandardFooter(body, subscriberId, fromName)
 
-  const res = await resend.emails.send({
-    from,
-    to,
-    subject,
-    text: fullBody,
-    headers: listUnsubscribeHeaders(subscriberId),
-  })
+  // Spec 28 — wrap the Resend send so transient 429s are absorbed inside
+  // the function call rather than bubbling up as webhook 5xxs.
+  const res = await callWithRetry(
+    () =>
+      resend.emails.send({
+        from,
+        to,
+        subject,
+        text: fullBody,
+        headers: listUnsubscribeHeaders(subscriberId),
+      }),
+    { ctx: 'sendEmail' },
+  )
 
   if (res.error) {
     // Spec 26 — emit BEFORE re-throwing so the row lands even when the
@@ -328,13 +362,17 @@ export async function scheduleExitEmail(params: {
   // the conversation turn-by-turn. Use the already-footered body so what we
   // store matches what the subscriber actually received.
   const fullBody = appendStandardFooter(body, subscriberId, fromName)
-  await db.insert(emailsSent).values({
-    subscriberId,
-    gmailMessageId: messageId,
-    type: 'exit',
-    subject,
-    bodyText: fullBody,
-  })
+  // Spec 28 — idempotent on (subscriber_id, type) per migration 023.
+  await recordEmailSentIdempotent(
+    {
+      subscriberId,
+      gmailMessageId: messageId,
+      type: 'exit',
+      subject,
+      bodyText: fullBody,
+    },
+    'scheduleExitEmail',
+  )
 
   await db
     .update(churnedSubscribers)
@@ -471,13 +509,20 @@ export async function sendReplyEmail(params: {
     headers['References'] = `<${originalEmail.messageId}>`
   }
 
-  const res = await resend.emails.send({
-    from,
-    to: email,
-    subject: subject.startsWith('Re:') ? subject : `Re: ${subject}`,
-    text: fullBody,
-    headers,
-  })
+  // Spec 28 — wrap the Resend call in callWithRetry. (Followup type is
+  // intentionally multi-send so no unique-index protection here; we keep
+  // the bare insert.)
+  const res = await callWithRetry(
+    () =>
+      resend.emails.send({
+        from,
+        to: email,
+        subject: subject.startsWith('Re:') ? subject : `Re: ${subject}`,
+        text: fullBody,
+        headers,
+      }),
+    { ctx: 'sendFollowup' },
+  )
 
   if (res.error) {
     // Spec 26 — observability: emit BEFORE re-throwing.
@@ -588,13 +633,18 @@ ${updateLink}
 If you'd rather not hear from us, unsubscribe: ${unsubLink}`
   }
 
-  const res = await resend.emails.send({
-    from,
-    to: email,
-    subject,
-    text: body,
-    headers: listUnsubscribeHeaders(subscriberId),
-  })
+  // Spec 28 — wrap the Resend call in callWithRetry.
+  const res = await callWithRetry(
+    () =>
+      resend.emails.send({
+        from,
+        to: email,
+        subject,
+        text: body,
+        headers: listUnsubscribeHeaders(subscriberId),
+      }),
+    { ctx: 'sendDunning' },
+  )
 
   if (res.error) {
     // Spec 26 — observability: emit BEFORE re-throwing.
@@ -609,13 +659,17 @@ If you'd rather not hear from us, unsubscribe: ${unsubLink}`
     throw new Error(`Resend error: ${res.error.message}`)
   }
 
-  await db.insert(emailsSent).values({
-    subscriberId,
-    gmailMessageId: res.data?.id ?? '',
-    type: 'dunning',
-    subject,
-    bodyText: body,  // spec 27 — Inspector renders this
-  })
+  // Spec 28 — idempotent on (subscriber_id, type) per migration 023.
+  await recordEmailSentIdempotent(
+    {
+      subscriberId,
+      gmailMessageId: res.data?.id ?? '',
+      type: 'dunning',
+      subject,
+      bodyText: body,  // spec 27 — Inspector renders this
+    },
+    'sendDunning',
+  )
 
   await db
     .update(churnedSubscribers)
