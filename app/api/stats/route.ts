@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { customers, churnedSubscribers, recoveries } from '@/lib/schema'
-import { eq, and, inArray, sql } from 'drizzle-orm'
+import { eq, inArray, sql } from 'drizzle-orm'
 
 export async function GET() {
   const session = await auth()
@@ -32,15 +32,13 @@ export async function GET() {
   ).length
   const recoveryRate = total > 0 ? Math.round((recovered / total) * 100) : 0
 
+  // Phase D — `still_active` column dropped (column was never updated by
+  // production code post-Phase B). Counting all recoveries for this
+  // customer matches what was actually shown before the drop.
   const activeRecoveries = await db
     .select({ planMrrCents: recoveries.planMrrCents })
     .from(recoveries)
-    .where(
-      and(
-        eq(recoveries.customerId, customer.id),
-        eq(recoveries.stillActive, true)
-      )
-    )
+    .where(eq(recoveries.customerId, customer.id))
 
   const mrrRecoveredCents = activeRecoveries.reduce(
     (sum, r) => sum + r.planMrrCents,

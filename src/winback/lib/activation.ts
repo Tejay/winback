@@ -1,12 +1,13 @@
 import { db } from '@/lib/db'
 import { customers, recoveries } from '@/lib/schema'
-import { eq } from 'drizzle-orm'
+import { eq, and, isNull } from 'drizzle-orm'
 import {
   getOrCreatePlatformCustomer,
   getCurrentDefaultPaymentMethodId,
 } from './platform-billing'
 import { ensurePlatformSubscription } from './subscription'
 import { chargePendingPerformanceFees } from './performance-fee'
+import { logEvent } from './events'
 
 /**
  * Phase A — Single converging function for activating a customer's billing.
@@ -64,14 +65,30 @@ export async function ensureActivation(wbCustomerId: string): Promise<Activation
     cust.stripePlatformCustomerId ?? (await getOrCreatePlatformCustomer(wbCustomerId))
 
   // Mark activated_at on first qualifying delivery (audit trail) regardless
-  // of whether we can create a subscription yet.
+  // of whether we can create a subscription yet. Phase D — conditional UPDATE
+  // so that two concurrent ensureActivation calls can't both "win the race"
+  // and trample each other's clock; only the call whose UPDATE matches a
+  // still-NULL activated_at takes effect, and the other is a no-op. Also
+  // re-reads the row so any racer's value is observed.
   let activatedAt = cust.activatedAt
   if (!activatedAt) {
-    activatedAt = new Date()
-    await db
+    const now = new Date()
+    const claimed = await db
       .update(customers)
-      .set({ activatedAt, updatedAt: new Date() })
-      .where(eq(customers.id, wbCustomerId))
+      .set({ activatedAt: now, updatedAt: now })
+      .where(and(eq(customers.id, wbCustomerId), isNull(customers.activatedAt)))
+      .returning({ activatedAt: customers.activatedAt })
+    if (claimed.length) {
+      activatedAt = claimed[0].activatedAt as Date
+    } else {
+      // Lost the race — re-read whichever timestamp the winning call wrote.
+      const [latest] = await db
+        .select({ activatedAt: customers.activatedAt })
+        .from(customers)
+        .where(eq(customers.id, wbCustomerId))
+        .limit(1)
+      activatedAt = latest?.activatedAt ?? now
+    }
   }
 
   // Without a card we can't charge a subscription. Wait for card capture
@@ -92,6 +109,21 @@ export async function ensureActivation(wbCustomerId: string): Promise<Activation
   // lands on the next cycle's invoice.
   const { chargedRecoveryIds } = await chargePendingPerformanceFees(wbCustomerId)
   const { subscriptionId, created } = await ensurePlatformSubscription(wbCustomerId)
+
+  // Phase D — visibility: if a previously-activated customer just had queued
+  // fees drained, that means an earlier activation left the queue partially
+  // un-drained (transient Stripe error, late card capture, etc). The drain
+  // is the self-heal; the event makes it inspectable from /admin/events.
+  if (chargedRecoveryIds.length > 0 && cust.activatedAt) {
+    logEvent({
+      name: 'activation_self_heal',
+      customerId: wbCustomerId,
+      properties: {
+        drainedCount: chargedRecoveryIds.length,
+        recoveryIds: chargedRecoveryIds,
+      },
+    })
+  }
 
   return {
     state: 'active',

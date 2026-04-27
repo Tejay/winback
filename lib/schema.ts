@@ -141,9 +141,9 @@ export const recoveries = pgTable('wb_recoveries', {
   recoveredAt:       timestamp('recovered_at').defaultNow(),
   planMrrCents:      integer('plan_mrr_cents').notNull(),
   newStripeSubId:    text('new_stripe_sub_id'),
-  attributionType:   text('attribution_type').default('weak'),
-  stillActive:       boolean('still_active').default(true),
-  lastCheckedAt:     timestamp('last_checked_at').defaultNow(),
+  // Phase D — removed default 'weak' (every writer sets it explicitly;
+  // default never fires).
+  attributionType:   text('attribution_type'),
   // recoveryType distinguishes the trigger: 'win_back' (voluntary cancel
   // → reactivation) bills a 1× MRR performance fee; 'card_save' (failed
   // payment recovered) does not bill — the $99/mo platform fee covers it.

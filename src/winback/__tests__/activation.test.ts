@@ -14,6 +14,8 @@ vi.mock('@/lib/schema', () => ({
 
 vi.mock('drizzle-orm', () => ({
   eq: vi.fn((a, b) => ({ op: 'eq', a, b })),
+  and: vi.fn((...args: unknown[]) => ({ op: 'and', args })),
+  isNull: vi.fn((a) => ({ op: 'isNull', a })),
 }))
 
 const mockGetOrCreatePlatformCustomer = vi.hoisted(() =>
@@ -34,6 +36,11 @@ vi.mock('../lib/subscription', () => ({
 const mockChargePendingPerformanceFees = vi.hoisted(() => vi.fn())
 vi.mock('../lib/performance-fee', () => ({
   chargePendingPerformanceFees: mockChargePendingPerformanceFees,
+}))
+
+const mockLogEvent = vi.hoisted(() => vi.fn())
+vi.mock('../lib/events', () => ({
+  logEvent: mockLogEvent,
 }))
 
 import { ensureActivation } from '../lib/activation'
@@ -70,9 +77,26 @@ function setupReads(opts: {
   }))
 }
 
-function setupUpdateChain() {
+/**
+ * Default chain: .update().set().where(...).returning(...) returns one row
+ * (the conditional UPDATE in ensureActivation succeeded). Tests can override
+ * this for the lost-the-race case.
+ */
+function setupUpdateChain(opts: { wonRace?: boolean } = {}) {
+  const wonRace = opts.wonRace ?? true
   mockUpdate.mockImplementation(() => ({
-    set: () => ({ where: () => Promise.resolve(undefined) }),
+    set: () => {
+      const whereResult: Promise<undefined> & {
+        returning: () => Promise<Array<{ activatedAt: Date }>>
+      } = Promise.resolve(undefined) as Promise<undefined> & {
+        returning: () => Promise<Array<{ activatedAt: Date }>>
+      }
+      whereResult.returning = async () =>
+        wonRace ? [{ activatedAt: new Date('2026-04-27T00:00:00Z') }] : []
+      return {
+        where: () => whereResult,
+      }
+    },
   }))
 }
 
@@ -197,6 +221,100 @@ describe('ensureActivation', () => {
       expect(result.subscriptionCreated).toBe(false)
       expect(result.chargedRecoveryIds).toEqual(['rec_new'])
     }
+  })
+
+  // Phase D — self-heal visibility test.
+  it('self-heal: emits activation_self_heal event when an already-active customer drains queued fees', async () => {
+    const alreadyActive: CustRow = {
+      ...baseCustomer,
+      activatedAt: new Date('2026-04-01'),
+      stripeSubscriptionId: 'sub_existing',
+    }
+    setupReads({ customer: alreadyActive, hasDelivery: true })
+    mockGetCurrentDefaultPaymentMethodId.mockResolvedValue('pm_card')
+    mockEnsurePlatformSubscription.mockResolvedValue({
+      subscriptionId: 'sub_existing',
+      created: false,
+    })
+    mockChargePendingPerformanceFees.mockResolvedValue({
+      chargedRecoveryIds: ['rec_stuck_1', 'rec_stuck_2'],
+    })
+
+    await ensureActivation('cust_1')
+
+    expect(mockLogEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'activation_self_heal',
+        customerId: 'cust_1',
+        properties: expect.objectContaining({
+          drainedCount: 2,
+          recoveryIds: ['rec_stuck_1', 'rec_stuck_2'],
+        }),
+      }),
+    )
+  })
+
+  // Phase D — first activation should NOT emit the self-heal event (the
+  // initial drain is part of the normal first-cycle flow, not a recovery
+  // from a stuck state).
+  it('first activation does not emit activation_self_heal', async () => {
+    setupReads({ customer: baseCustomer, hasDelivery: true })
+    mockGetCurrentDefaultPaymentMethodId.mockResolvedValue('pm_card')
+    mockEnsurePlatformSubscription.mockResolvedValue({
+      subscriptionId: 'sub_new',
+      created: true,
+    })
+    mockChargePendingPerformanceFees.mockResolvedValue({
+      chargedRecoveryIds: ['rec_first'],
+    })
+
+    await ensureActivation('cust_1')
+
+    const selfHealCalls = mockLogEvent.mock.calls.filter(
+      ([arg]) => arg?.name === 'activation_self_heal',
+    )
+    expect(selfHealCalls).toHaveLength(0)
+  })
+
+  // Phase D — race condition: two ensureActivation calls land at once. The
+  // second call's conditional UPDATE returns no rows; we re-read the
+  // customer row to pick up the timestamp the first call wrote.
+  it('lost the activatedAt race → re-reads customer row to get the winning timestamp', async () => {
+    const racedTimestamp = new Date('2026-04-27T10:00:00Z')
+    let customerReadCount = 0
+    mockSelect.mockImplementation(() => ({
+      from: (table: string) => {
+        if (table === 'wb_customers') {
+          return {
+            where: () => ({
+              limit: () => {
+                customerReadCount++
+                // First read: activatedAt is null (we haven't claimed yet).
+                // Second read (after losing the race): the winning call's
+                // timestamp is now visible.
+                return customerReadCount === 1
+                  ? [baseCustomer]
+                  : [{ ...baseCustomer, activatedAt: racedTimestamp }]
+              },
+            }),
+          }
+        }
+        if (table === 'wb_recoveries') {
+          return { where: () => ({ limit: () => [{ id: 'rec_x' }] }) }
+        }
+        return { where: () => ({ limit: () => [] }) }
+      },
+    }))
+    setupUpdateChain({ wonRace: false }) // .returning() yields []
+    mockGetCurrentDefaultPaymentMethodId.mockResolvedValue(null)
+
+    const result = await ensureActivation('cust_1')
+
+    expect(result.state).toBe('awaiting_card')
+    if (result.state === 'awaiting_card') {
+      expect(result.activatedAt).toEqual(racedTimestamp)
+    }
+    expect(customerReadCount).toBe(2) // initial + post-race re-read
   })
 
   it('throws when wb_customer not found', async () => {

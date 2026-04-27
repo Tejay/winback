@@ -4,6 +4,7 @@ import { customers, churnedSubscribers, recoveries } from '@/lib/schema'
 import { eq, and, isNull } from 'drizzle-orm'
 import { getPlatformStripe } from './platform-stripe'
 import { PLATFORM_FEE_CURRENCY } from './subscription'
+import { logEvent } from './events'
 
 /**
  * Phase A — Performance-fee charging and refunding.
@@ -168,7 +169,7 @@ export async function chargePerformanceFee(recoveryId: string): Promise<{
  * Idempotency: no-op if `perfFeeRefundedAt` is already set.
  */
 export async function refundPerformanceFee(recoveryId: string): Promise<{
-  method: 'delete_item' | 'credit_note' | 'noop'
+  method: 'delete_item' | 'credit_note' | 'line_not_found' | 'noop'
 }> {
   const rec = await loadRecovery(recoveryId)
   if (!rec) throw new Error(`recovery ${recoveryId} not found`)
@@ -187,7 +188,7 @@ export async function refundPerformanceFee(recoveryId: string): Promise<{
   const item = await stripe.invoiceItems.retrieve(rec.perfFeeStripeItemId)
   const invoiceId = typeof item.invoice === 'string' ? item.invoice : item.invoice?.id ?? null
 
-  let method: 'delete_item' | 'credit_note'
+  let method: 'delete_item' | 'credit_note' | 'line_not_found'
 
   if (!invoiceId) {
     // Pending — never attached to an invoice. Clean removal.
@@ -204,17 +205,32 @@ export async function refundPerformanceFee(recoveryId: string): Promise<{
           rec.perfFeeStripeItemId,
       )
       if (!line) {
-        throw new Error(
-          `cannot find invoice line for item ${rec.perfFeeStripeItemId} on invoice ${invoiceId}`,
-        )
+        // Phase D — graceful no-line path. Most likely causes: invoice line
+        // expansion was paginated and we got an incomplete window, the
+        // invoice was modified manually in the dashboard, or Stripe's
+        // line-attachment lagged behind the item. Don't permanently 500
+        // the webhook (Stripe would retry forever); mark refunded locally
+        // and emit an admin event for manual reconciliation.
+        logEvent({
+          name: 'win_back_refund_line_missing',
+          customerId: rec.customerId,
+          properties: {
+            recoveryId,
+            invoiceId,
+            invoiceItemId: rec.perfFeeStripeItemId,
+            invoiceStatus: invoice.status,
+          },
+        })
+        method = 'line_not_found'
+      } else {
+        await stripe.creditNotes.create({
+          invoice: invoiceId,
+          lines: [
+            { type: 'invoice_line_item', invoice_line_item: line.id, quantity: 1 },
+          ],
+        })
+        method = 'credit_note'
       }
-      await stripe.creditNotes.create({
-        invoice: invoiceId,
-        lines: [
-          { type: 'invoice_line_item', invoice_line_item: line.id, quantity: 1 },
-        ],
-      })
-      method = 'credit_note'
     }
   }
 
