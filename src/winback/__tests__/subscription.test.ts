@@ -44,6 +44,8 @@ import {
   ensurePlatformSubscription,
   cancelPlatformSubscription,
   getSubscriptionStatus,
+  getSubscriptionDetails,
+  reactivatePlatformSubscription,
   PLATFORM_FEE_CENTS,
 } from '../lib/subscription'
 
@@ -301,5 +303,89 @@ describe('getSubscriptionStatus', () => {
 
     const status = await getSubscriptionStatus('wb_cust_1')
     expect(status).toBeNull()
+  })
+})
+
+describe('getSubscriptionDetails', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('returns full details including cancel_at_period_end and current_period_end', async () => {
+    setupCustomerRow({
+      stripePlatformCustomerId: 'cus_existing',
+      stripeSubscriptionId: 'sub_x',
+    })
+    const periodEndUnix = 1735689600 // 2025-01-01 00:00:00 UTC
+    mockStripe.subscriptions.retrieve.mockResolvedValue({
+      id: 'sub_x',
+      status: 'active',
+      cancel_at_period_end: true,
+      current_period_end: periodEndUnix,
+    })
+
+    const details = await getSubscriptionDetails('wb_cust_1')
+
+    expect(details).toEqual({
+      subscriptionId: 'sub_x',
+      status: 'active',
+      cancelAtPeriodEnd: true,
+      currentPeriodEnd: new Date(periodEndUnix * 1000),
+    })
+  })
+
+  it('returns null when no subscription is on file', async () => {
+    setupCustomerRow({
+      stripePlatformCustomerId: 'cus_existing',
+      stripeSubscriptionId: null,
+    })
+
+    const details = await getSubscriptionDetails('wb_cust_1')
+    expect(details).toBeNull()
+  })
+
+  it('defaults cancelAtPeriodEnd to false when Stripe omits it', async () => {
+    setupCustomerRow({
+      stripePlatformCustomerId: 'cus_existing',
+      stripeSubscriptionId: 'sub_x',
+    })
+    mockStripe.subscriptions.retrieve.mockResolvedValue({
+      id: 'sub_x',
+      status: 'active',
+      current_period_end: 1735689600,
+    })
+
+    const details = await getSubscriptionDetails('wb_cust_1')
+    expect(details?.cancelAtPeriodEnd).toBe(false)
+  })
+})
+
+describe('reactivatePlatformSubscription', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('clears cancel_at_period_end on the subscription', async () => {
+    setupCustomerRow({
+      stripePlatformCustomerId: 'cus_existing',
+      stripeSubscriptionId: 'sub_x',
+    })
+    mockStripe.subscriptions.update.mockResolvedValue({})
+
+    await reactivatePlatformSubscription('wb_cust_1')
+
+    expect(mockStripe.subscriptions.update).toHaveBeenCalledWith('sub_x', {
+      cancel_at_period_end: false,
+    })
+  })
+
+  it('is a no-op when no subscription exists', async () => {
+    setupCustomerRow({
+      stripePlatformCustomerId: 'cus_existing',
+      stripeSubscriptionId: null,
+    })
+
+    await reactivatePlatformSubscription('wb_cust_1')
+    expect(mockStripe.subscriptions.update).not.toHaveBeenCalled()
   })
 })

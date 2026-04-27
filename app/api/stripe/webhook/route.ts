@@ -14,6 +14,7 @@ import {
 } from '@/src/winback/lib/platform-billing'
 import { ensureActivation } from '@/src/winback/lib/activation'
 import { refundPerformanceFee, PERF_FEE_REFUND_WINDOW_DAYS } from '@/src/winback/lib/performance-fee'
+import { sendPlatformPaymentFailedEmail } from '@/src/winback/lib/billing-notifications'
 
 function getStripe() {
   return new Stripe(process.env.STRIPE_SECRET_KEY!)
@@ -855,5 +856,15 @@ async function processPlatformInvoiceEvent(event: Stripe.Event) {
       },
     })
     console.log(`[webhook] Platform invoice failed: ${invoiceId}`)
+
+    // Notify the founder so they can update their card before Stripe's
+    // retries are exhausted. Best-effort — never fails the webhook.
+    if (wbCustomerId) {
+      await sendPlatformPaymentFailedEmail({
+        customerId: wbCustomerId,
+        invoiceAmountCents: invoice.amount_due ?? 0,
+        hostedInvoiceUrl: invoice.hosted_invoice_url ?? null,
+      })
+    }
   }
 }

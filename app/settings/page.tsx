@@ -12,6 +12,8 @@ import { InvoiceList } from './invoice-list'
 import { CreditCard } from 'lucide-react'
 import { PoweredByStripe } from '@/components/powered-by-stripe'
 import { fetchPlatformPaymentMethod, fetchPlatformInvoices } from '@/src/winback/lib/platform-billing'
+import { getSubscriptionDetails } from '@/src/winback/lib/subscription'
+import { SubscriptionActions } from './subscription-actions'
 
 export default async function SettingsPage({
   searchParams,
@@ -42,6 +44,15 @@ export default async function SettingsPage({
     customer?.stripePlatformCustomerId ?? null,
     12,
   )
+
+  // Subscription detail (status + cancel-at-period-end + cycle end) — drives
+  // the Cancel/Resume controls and the payment-failed banner.
+  const subscriptionDetails = customer?.stripeSubscriptionId
+    ? await getSubscriptionDetails(customer.id)
+    : null
+  const paymentFailing =
+    subscriptionDetails?.status === 'past_due' ||
+    subscriptionDetails?.status === 'unpaid'
   // Serialize Date → ISO string for passing to client component
   const invoicesSerialized = invoices.map(inv => ({
     ...inv,
@@ -153,6 +164,23 @@ export default async function SettingsPage({
                 : 'No charge until we deliver your first save or win-back.'}
             </p>
 
+            {/* Payment-failed banner — shown when Stripe Subscription is
+                past_due or unpaid. Stripe Smart Retries will keep trying;
+                meanwhile the customer can update their card via the
+                Payment method section below. */}
+            {paymentFailing && (
+              <div className="mb-5 border border-rose-200 bg-rose-50 rounded-xl p-4">
+                <div className="text-sm font-semibold text-rose-900">
+                  Your last payment failed.
+                </div>
+                <p className="text-sm text-rose-800 mt-1 leading-relaxed">
+                  Stripe will retry over the next few days. To avoid
+                  interruption, update your payment method below before the
+                  retries are exhausted.
+                </p>
+              </div>
+            )}
+
             {/* Plan card — Phase B: $99/mo platform + 1× MRR per win-back.
                 Badge derived from a small ladder of signals so the cancelled
                 state (sub gone, but invoice history) is distinguishable from
@@ -213,6 +241,18 @@ export default async function SettingsPage({
                 <p className="text-xs text-slate-400 mt-3">
                   Recovery delivered · Add a payment method below to start billing
                 </p>
+              )}
+
+              {/* Cancel / Resume controls — visible only when a Stripe
+                  Subscription is on file and in an active state. */}
+              {subscriptionDetails && (
+                <SubscriptionActions
+                  status={subscriptionDetails.status ?? 'unknown'}
+                  cancelAtPeriodEnd={subscriptionDetails.cancelAtPeriodEnd}
+                  currentPeriodEndIso={
+                    subscriptionDetails.currentPeriodEnd?.toISOString() ?? null
+                  }
+                />
               )}
             </div>
 
