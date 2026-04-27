@@ -172,6 +172,25 @@ export async function cancelPlatformSubscription(
 export async function getSubscriptionStatus(
   wbCustomerId: string,
 ): Promise<SubscriptionStatus> {
+  const details = await getSubscriptionDetails(wbCustomerId)
+  return details?.status ?? null
+}
+
+export interface SubscriptionDetails {
+  subscriptionId: string
+  status: SubscriptionStatus
+  cancelAtPeriodEnd: boolean
+  currentPeriodEnd: Date | null
+}
+
+/**
+ * Fetches subscription status plus the cancel-at-period-end flag and the
+ * current period's end date — needed by the UI to render the Cancel / Resume
+ * buttons and the "Subscription ends Aug 27" notice when a cancel is queued.
+ */
+export async function getSubscriptionDetails(
+  wbCustomerId: string,
+): Promise<SubscriptionDetails | null> {
   const [row] = await db
     .select({ stripeSubscriptionId: customers.stripeSubscriptionId })
     .from(customers)
@@ -183,8 +202,41 @@ export async function getSubscriptionStatus(
   try {
     const stripe = getPlatformStripe()
     const sub = await stripe.subscriptions.retrieve(row.stripeSubscriptionId)
-    return sub.status as SubscriptionStatus
+    // Stripe API moved `current_period_end` onto items in newer versions
+    // but older API versions still return it at the top level. Read both
+    // and prefer whichever is present so the helper works either way.
+    const subAny = sub as Stripe.Subscription & { current_period_end?: number }
+    const itemPeriodEnd = sub.items?.data[0] as
+      | (Stripe.SubscriptionItem & { current_period_end?: number })
+      | undefined
+    const periodEndUnix = subAny.current_period_end ?? itemPeriodEnd?.current_period_end ?? null
+    return {
+      subscriptionId: sub.id,
+      status: sub.status as SubscriptionStatus,
+      cancelAtPeriodEnd: sub.cancel_at_period_end ?? false,
+      currentPeriodEnd: periodEndUnix ? new Date(periodEndUnix * 1000) : null,
+    }
   } catch {
     return null
   }
+}
+
+/**
+ * Reverses a `cancel_at_period_end` request — used by the "Resume" button
+ * when a customer changes their mind before the cycle ends. No-op if there
+ * is no subscription on file.
+ */
+export async function reactivatePlatformSubscription(wbCustomerId: string): Promise<void> {
+  const [row] = await db
+    .select({ stripeSubscriptionId: customers.stripeSubscriptionId })
+    .from(customers)
+    .where(eq(customers.id, wbCustomerId))
+    .limit(1)
+
+  if (!row?.stripeSubscriptionId) return
+
+  const stripe = getPlatformStripe()
+  await stripe.subscriptions.update(row.stripeSubscriptionId, {
+    cancel_at_period_end: false,
+  })
 }
