@@ -144,20 +144,31 @@ export default async function SettingsPage({
               Subscription
             </h2>
             <p className="text-sm text-slate-500 mt-1 mb-6">
-              {customer?.activatedAt
+              {customer?.stripeSubscriptionId
                 ? 'Your billing is active.'
+                : invoices.length > 0
+                ? 'Subscription canceled. Reactivate any time by adding a payment method on a future recovery.'
+                : customer?.activatedAt
+                ? 'Add a payment method to start billing for your delivered recovery.'
                 : 'No charge until we deliver your first save or win-back.'}
             </p>
 
-            {/* Plan card — Phase B: $99/mo platform + 1× MRR per win-back */}
+            {/* Plan card — Phase B: $99/mo platform + 1× MRR per win-back.
+                Badge derived from a small ladder of signals so the cancelled
+                state (sub gone, but invoice history) is distinguishable from
+                the never-activated state and the awaiting-card state. */}
             <div className="border border-slate-200 rounded-2xl p-5">
               <div className="flex items-center">
                 <span className="text-xs font-semibold uppercase tracking-widest text-slate-400">
                   Current plan
                 </span>
-                {customer?.activatedAt && customer?.stripeSubscriptionId ? (
+                {customer?.stripeSubscriptionId ? (
                   <span className="bg-green-50 text-green-700 border border-green-200 rounded-full px-3 py-1 text-xs font-semibold ml-2">
                     Active
+                  </span>
+                ) : invoices.length > 0 ? (
+                  <span className="bg-slate-100 text-slate-600 border border-slate-200 rounded-full px-3 py-1 text-xs font-semibold ml-2">
+                    Canceled
                   </span>
                 ) : customer?.activatedAt ? (
                   <span className="bg-amber-50 text-amber-700 border border-amber-200 rounded-full px-3 py-1 text-xs font-semibold ml-2">
@@ -177,7 +188,7 @@ export default async function SettingsPage({
               <p className="text-sm text-slate-500 mt-2">
                 Includes unlimited card saves. Plus a one-time fee of <strong className="text-slate-900">1× MRR</strong> per voluntary-cancellation win-back, refundable if they re-cancel within 14 days.
               </p>
-              {customer?.activatedAt && (
+              {customer?.stripeSubscriptionId && customer?.activatedAt && (
                 <p className="text-xs text-slate-400 mt-3">
                   Active since{' '}
                   {customer.activatedAt.toLocaleDateString('en-GB', {
@@ -188,9 +199,19 @@ export default async function SettingsPage({
                   {' · Cancel anytime'}
                 </p>
               )}
-              {!customer?.activatedAt && (
+              {!customer?.stripeSubscriptionId && invoices.length > 0 && (
+                <p className="text-xs text-slate-400 mt-3">
+                  Subscription canceled · Past invoices remain visible below
+                </p>
+              )}
+              {!customer?.stripeSubscriptionId && !customer?.activatedAt && invoices.length === 0 && (
                 <p className="text-xs text-slate-400 mt-3">
                   No card at signup · Billing starts after your first save or win-back · Cancel anytime
+                </p>
+              )}
+              {!customer?.stripeSubscriptionId && customer?.activatedAt && invoices.length === 0 && (
+                <p className="text-xs text-slate-400 mt-3">
+                  Recovery delivered · Add a payment method below to start billing
                 </p>
               )}
             </div>
