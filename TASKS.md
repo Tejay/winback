@@ -244,50 +244,31 @@ Tell me when .env.local has DATABASE_URL set.
 
 ---
 
-## Phase 9 — Billing (NOT IMPLEMENTED — blocker for charging customers)
+## Phase 9 — Billing ✅ SHIPPED via the Phase A/B/C billing rewrite
 
-**Status (2026-04-15):** Pricing is 15% of recovered revenue × 12 months per subscriber.
-`src/winback/lib/billing.ts::calculateMonthlyFee` returns the right number and is tested.
-`/api/billing/preview` exposes it. **Nothing else exists.** No card capture, no invoice
-creation, no cron, no dunning. Landing/settings/onboarding copy promises all of this —
-must be built before taking paid customers.
+**Status (2026-04-27):** Pricing model changed and engine fully rewritten. Old plan
+below is preserved as historical context. The current model is:
 
-### Task 9.1 — Deferred card capture (Stripe SetupIntent)
-- [ ] On first successful recovery event: trigger a Stripe SetupIntent for the Winback
-      customer, store the resulting PaymentMethod against `users` (or a new
-      `billing_customers` row). Webhook-driven, idempotent.
-- [ ] New page `/settings/billing/add-card` — Stripe Elements flow that completes the
-      SetupIntent client-side and returns to dashboard.
-- [ ] Dashboard banner state when `recoveries > 0 && !paymentMethodId` — block further
-      recoveries or flag prominently (decide before build).
+- **Platform fee:** flat **$99/mo** Stripe Subscription on Winback's own account
+- **Performance fee:** **1× MRR** per voluntary-cancellation win-back, charged once,
+  refundable in full if the subscriber re-cancels within 14 days
+- **Card saves** (failed-payment recoveries): unbounded, covered by the platform fee
+- **Trigger:** billing starts on first delivered save *or* win-back, whichever first
+- **No cron, no settlement, no 12-month tail** — Stripe Subscriptions drive cycles,
+  dunning, and retries
 
-### Task 9.2 — Monthly invoice run (Vercel cron)
-- [ ] Vercel cron: 1st of each month, iterates all customers with `paymentMethodId`.
-- [ ] For each: `calculateMonthlyFee(customerId)` → create a Stripe invoice on the
-      Winback platform account (not the connected customer's Stripe) with a single line
-      item "Winback — {month} recovered revenue fee" at `totalFeeCents`.
-- [ ] Auto-advance + auto-charge the saved payment method.
-- [ ] Idempotency: store `billing_runs(customerId, yearMonth)` unique key so a retried
-      cron never double-charges.
+**Key code:** `src/winback/lib/subscription.ts`, `performance-fee.ts`, `activation.ts`,
+`billing-notifications.ts`. Webhook wiring in `app/api/stripe/webhook/route.ts`.
+Customer-facing UI in `app/settings/page.tsx` (with `subscription-actions.tsx` for
+the in-product Cancel/Resume buttons). Legal copy in `/terms` §3 and `/refunds`.
 
-### Task 9.3 — Dunning for Winback's own fees
-- [ ] Listen to `invoice.payment_failed` on the **platform** account webhook (distinct
-      from the existing connected-account webhook).
-- [ ] Retry schedule + email sequence (reuse `scripts/test-dunning.ts` shape).
-- [ ] After N failures: suspend the Winback account (no new recoveries sent until
-      paid).
+**PRs:** #35 (schema + primitives), #36 (cutover), #37 (cleanup), #38 (cancel button +
+payment-failed banner/email). All merged.
 
-### Task 9.4 — Billing visibility in-app
-- [ ] Settings → Billing: wire to `/api/billing/preview` so the customer sees their
-      current month's running fee, attributed subscribers, and £/month each.
-- [ ] Invoice history list (pulls from Stripe).
-
-### Task 9.5 — Stripe platform approval
-- [ ] Before launching this — Stripe must approve the platform account to charge its
-      own customers. Track in the Stripe dashboard application.
-- [ ] Terms + privacy + DPA pages already live (shipped in Tier 1 GDPR).
-
-⛔ **STOP — final human review before declaring done**
+**Original Phase 9 plan (superseded):** card capture via SetupIntent ✅ done in #36; monthly
+invoice cron ❌ replaced by Stripe Subscription; dunning ❌ replaced by Stripe Smart Retries
++ #38's payment-failed email; in-app billing visibility ✅ done; Stripe platform approval
+— still in flight, see `specs/stripe-platform-approval/`.
 
 ---
 
@@ -326,26 +307,18 @@ must be built before taking paid customers.
 - [ ] Disables one-click reactivation (requires write) — surface this trade-off in UI.
 - [ ] Promised in FAQ as "email us for early access" — no code yet.
 
-### Task 10.5 — Open-obligation guard on delete (must-ship before first paid customer)
-**Spec: specs/11-danger-zone.md — Addendum**
-- [ ] `src/winback/lib/obligations.ts` — `computeOpenObligationCents()` over live,
-      in-window recoveries with the 12-month clamp.
-- [ ] Gate-0 on `/settings/delete`: render Settlement-required block when
-      obligations > 0; lock Gates 1–3.
-- [ ] `POST /api/settings/request-settlement` + `wb_settlement_requests` table
-      (migration `007_settlement_requests.sql`) + email to `ops@`.
-- [ ] Re-check obligations server-side in `POST /api/settings/delete`, return
-      HTTP 409 when owed — don't trust the client.
-- [ ] Copy updates on `/privacy` (billing records retained under legal
-      obligation) and `/terms` §3 (deletion does not waive attribution).
-- [ ] Unit tests for `computeOpenObligationCents` + integration test for 409.
+### Task 10.5 — Open-obligation guard on delete ⛔ OBSOLETE
+**Superseded by the billing rewrite (#36).** The new model has no long-tail
+obligations: all win-back fees are charged once at recovery time, refundable
+within 14 days. Workspace deletion now cancels the active Stripe Subscription
+immediately and lets Stripe issue a prorated final invoice — no settlement
+quote, no `wb_settlement_requests`. The `obligations.ts` and
+`settlement-required.tsx` files have both been deleted.
 
-### Task 10.6 — Soft-close target (blocked on Phase 9.1)
-- [ ] Once platform-side SetupIntent capture (9.1) lands, replace the hard
-      "Delete workspace" with "Close workspace": tokens + operational data
-      wiped, billing ledger + customer row retained with `closed_at`, cron
-      (9.2) continues charging the saved PaymentMethod until every
-      `attribution_ends_at` passes. Supersedes 10.5 settlement-request flow.
+### Task 10.6 — Soft-close target ⛔ OBSOLETE
+**Superseded by the billing rewrite.** No more 12-month attribution tail to
+preserve a billing ledger for, so the soft-close design no longer applies.
+Workspace deletion is straightforward: cancel subscription → delete data.
 
 ### Task 10.7 — Stripe-side deauthorize on delete (roadmap)
 - [ ] Call Stripe OAuth `/oauth/deauthorize` during workspace deletion so the

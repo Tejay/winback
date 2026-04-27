@@ -1,5 +1,14 @@
 # Spec 11 — Danger Zone (Settings)
 
+> **⚠️ Settlement-gate addendum superseded (2026-04-27)** — the danger-zone
+> card itself is shipped, but the "open obligations gate" addendum (Task 10.5)
+> was removed by the billing rewrite. Under the new model there are no
+> long-tail obligations: workspace deletion cancels the active Stripe
+> Subscription immediately and Stripe issues a prorated final invoice.
+> `obligations.ts`, `wb_settlement_requests`, and `settlement-required.tsx`
+> have all been deleted (PRs #36–#37). The pause + delete flows themselves
+> are still accurate.
+
 A single card at the bottom of `/settings` that groups two high-blast-radius
 actions: **Pause sending** (reversible) and **Delete workspace** (irreversible).
 Visually distinct (pink/rose palette) so the eye knows this is a different

@@ -1,5 +1,13 @@
 # 05 — Refunds & cancellations — give reviewers a single link
 
+> **Status (2026-04-27):** Recommendation shipped — `/refunds` page is live.
+> The example body in this spec describes the **original** 15% × 12-month
+> pricing model. The pricing model has since been replaced by **\$99/mo
+> platform fee + 1× MRR per win-back, refundable for 14 days** (see PRs
+> [#33-#38] and [`app/refunds/page.tsx`](../../app/refunds/page.tsx) for the
+> current copy that reviewers actually see). The Stripe-form refund-policy
+> URL is unchanged.
+
 Today the refund/cancellation story is scattered:
 
 - `/terms` Section 3 implies it ("fees only apply to active recovered subscribers")
