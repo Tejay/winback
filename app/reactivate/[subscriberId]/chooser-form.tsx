@@ -13,7 +13,9 @@ interface PriceOption {
 
 function formatPrice(unitAmount: number | null, currency: string, interval: string | null): string {
   if (unitAmount === null) return 'Custom'
-  const amount = (unitAmount / 100).toLocaleString(undefined, {
+  // Pin locale to avoid SSR/CSR hydration mismatch (en-US 'US$99.00' vs
+  // browser default '$99.00').
+  const amount = (unitAmount / 100).toLocaleString('en-US', {
     style: 'currency',
     currency: currency.toUpperCase(),
   })
