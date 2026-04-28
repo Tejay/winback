@@ -5,17 +5,24 @@ import { signIn } from 'next-auth/react'
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { Logo } from '@/components/logo'
+import { loginAction } from './actions'
 
 function LoginForm() {
   const searchParams = useSearchParams()
   const justReset = searchParams.get('reset') === '1'
+  const initialError = searchParams.get('error') === '1'
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [error, setError] = useState('')
+  const [error, setError] = useState(initialError ? 'Invalid email or password.' : '')
   const [loading, setLoading] = useState(false)
 
-  async function handleSubmit(e: React.FormEvent) {
+  // The form's `action={loginAction}` works even before React hydrates —
+  // Next.js's server-action transport handles native form POSTs to a
+  // generated endpoint. When JS IS hydrated, this onSubmit intercepts and
+  // uses next-auth/react's signIn() for a no-full-nav UX.
+  async function onFormSubmit(e: React.FormEvent) {
     e.preventDefault()
+    if (loading) return
     setError('')
     setLoading(true)
 
@@ -54,13 +61,14 @@ function LoginForm() {
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form action={loginAction} onSubmit={onFormSubmit} className="space-y-4">
           <div>
             <label className="block text-xs font-semibold uppercase tracking-widest text-slate-500 mb-1.5">
               Email
             </label>
             <input
               type="email"
+              name="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="you@company.com"
@@ -83,6 +91,7 @@ function LoginForm() {
             </div>
             <input
               type="password"
+              name="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="••••••••"
