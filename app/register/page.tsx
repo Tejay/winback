@@ -1,19 +1,28 @@
 'use client'
 
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { Suspense, useState } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { Logo } from '@/components/logo'
 
-export default function RegisterPage() {
+function RegisterForm() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const pilotToken = searchParams.get('pilotToken') ?? ''
+  const initialError = searchParams.get('error') ?? ''
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [accepted, setAccepted] = useState(false)
-  const [error, setError] = useState('')
+  const [error, setError] = useState(initialError)
   const [loading, setLoading] = useState(false)
 
+  // The form has a real `action`/`method` and inputs have `name=` so
+  // a native HTML POST works without JS at all (Spec 29 lesson). The
+  // API detects form-encoded bodies and 303-redirects to /login on
+  // success or back to /register?error=… on failure. When JS hydrates,
+  // this onSubmit intercepts and uses fetch for inline validation +
+  // smoother UX.
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError('')
@@ -33,7 +42,13 @@ export default function RegisterPage() {
     const res = await fetch('/api/auth/register', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, email, password, acceptedLegal: accepted }),
+      body: JSON.stringify({
+        name,
+        email,
+        password,
+        acceptedLegal: accepted,
+        ...(pilotToken ? { pilotToken } : {}),
+      }),
     })
 
     const data = await res.json()
@@ -65,13 +80,30 @@ export default function RegisterPage() {
           Connect Stripe and start recovering churn in under 5 minutes.
         </p>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        {pilotToken && (
+          <div className="mb-6 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg px-4 py-3 text-sm">
+            🚀 <strong>Pilot invite</strong> — the next 30 days are on us.
+            No platform fee, no recovery fees.
+          </div>
+        )}
+
+        <form
+          action="/api/auth/register"
+          method="POST"
+          onSubmit={handleSubmit}
+          className="space-y-4"
+        >
+          {pilotToken && (
+            <input type="hidden" name="pilotToken" value={pilotToken} />
+          )}
+
           <div>
             <label className="block text-xs font-semibold uppercase tracking-widest text-slate-500 mb-1.5">
               Your name
             </label>
             <input
               type="text"
+              name="name"
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="Alex Founder"
@@ -86,6 +118,7 @@ export default function RegisterPage() {
             </label>
             <input
               type="email"
+              name="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="you@company.com"
@@ -100,10 +133,12 @@ export default function RegisterPage() {
             </label>
             <input
               type="password"
+              name="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="At least 8 characters"
               required
+              minLength={8}
               className="border border-slate-200 rounded-full px-4 py-2.5 text-sm w-full focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
@@ -111,6 +146,7 @@ export default function RegisterPage() {
           <label className="flex items-start gap-2 text-xs text-slate-600">
             <input
               type="checkbox"
+              name="acceptedLegal"
               checked={accepted}
               onChange={(e) => setAccepted(e.target.checked)}
               className="mt-0.5"
@@ -124,11 +160,18 @@ export default function RegisterPage() {
             </span>
           </label>
 
+          {/*
+            Button is NOT disabled on `!accepted` — that was the Spec 29
+            hydration trap (React state never updated → button never
+            enabled). The checkbox's `required` attribute + the API's zod
+            check on `acceptedLegal: literal(true)` enforce consent
+            without depending on React state.
+          */}
           <button
             type="submit"
-            disabled={loading || !accepted}
+            disabled={loading}
             className={`w-full rounded-full px-5 py-2.5 text-sm font-medium ${
-              loading || !accepted
+              loading
                 ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
                 : 'bg-[#0f172a] text-white hover:bg-[#1e293b]'
             }`}
@@ -153,5 +196,13 @@ export default function RegisterPage() {
         </p>
       </div>
     </div>
+  )
+}
+
+export default function RegisterPage() {
+  return (
+    <Suspense fallback={null}>
+      <RegisterForm />
+    </Suspense>
   )
 }

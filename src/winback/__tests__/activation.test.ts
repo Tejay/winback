@@ -43,6 +43,14 @@ vi.mock('../lib/events', () => ({
   logEvent: mockLogEvent,
 }))
 
+// Spec 31 — pilot bypass module added to activation.ts. Tests in this
+// file pre-date Spec 31 and assume normal billing, so we stub
+// isCustomerOnPilot to false and let ensureActivation flow through.
+vi.mock('../lib/pilot', () => ({
+  isCustomerOnPilot: vi.fn().mockResolvedValue(false),
+  getPilotUntil:     vi.fn().mockResolvedValue(null),
+}))
+
 import { ensureActivation } from '../lib/activation'
 
 interface CustRow {

@@ -62,9 +62,18 @@ interface DashboardClientProps {
   changelog: string
   isTrial: boolean
   firstRecovery: { name: string | null; mrrCents: number } | null
+  /** Spec 31 — ISO string of pilot_until if the customer is currently on
+   *  pilot, null otherwise. Drives the pilot banner that replaces the
+   *  generic "billing inactive" prompt. */
+  pilotUntilIso?: string | null
 }
 
-export function DashboardClient({ changelog, isTrial, firstRecovery }: DashboardClientProps) {
+export function DashboardClient({
+  changelog,
+  isTrial,
+  firstRecovery,
+  pilotUntilIso = null,
+}: DashboardClientProps) {
   const [stats, setStats] = useState<Stats>({ recoveryRate: 0, recovered: 0, mrrRecoveredCents: 0, pending: 0 })
   const [subscribers, setSubscribers] = useState<Subscriber[]>([])
   const [filter, setFilter] = useState('all')
@@ -185,7 +194,15 @@ export function DashboardClient({ changelog, isTrial, firstRecovery }: Dashboard
     { key: 'recovered', label: 'Recovered' },
     { key: 'done',      label: 'Done' },
   ]
-  const showBanner = isTrial && firstRecovery && !bannerDismissed
+  // Spec 31 — pilot banner replaces the "add billing" banner while the
+  // founder is on a free pilot. We don't ask them for a card during the
+  // pilot window, and the bypass gates won't bill them anyway.
+  const onPilot = !!pilotUntilIso
+  const pilotEndsOn = pilotUntilIso ? new Date(pilotUntilIso) : null
+  const pilotDaysLeft = pilotEndsOn
+    ? Math.max(0, Math.ceil((pilotEndsOn.getTime() - Date.now()) / (1000 * 60 * 60 * 24)))
+    : 0
+  const showBanner = !onPilot && isTrial && firstRecovery && !bannerDismissed
 
   return (
     <>
@@ -203,6 +220,28 @@ export function DashboardClient({ changelog, isTrial, firstRecovery }: Dashboard
           Update changelog
         </button>
       </div>
+
+      {/* Spec 31 — pilot banner */}
+      {onPilot && pilotEndsOn && (
+        <div className="bg-blue-50 border border-blue-200 rounded-2xl p-5 mb-6 flex items-start gap-4">
+          <div className="bg-white rounded-full p-2 flex-shrink-0 text-xl leading-none">
+            🚀
+          </div>
+          <div>
+            <p className="text-sm font-medium text-slate-900">
+              Pilot — until {pilotEndsOn.toLocaleDateString('en-GB', {
+                day: 'numeric', month: 'long', year: 'numeric',
+              })}
+              {' '}({pilotDaysLeft} {pilotDaysLeft === 1 ? 'day' : 'days'} remaining)
+            </p>
+            <p className="text-sm text-slate-600 mt-1">
+              No charges during the pilot — no platform fee, no recovery
+              fees. We&apos;ll email you a heads-up 7 days before normal
+              billing kicks in.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Billing alert */}
       {showBanner && (

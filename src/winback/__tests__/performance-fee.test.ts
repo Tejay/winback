@@ -41,6 +41,13 @@ vi.mock('../lib/events', () => ({
   logEvent: mockLogEvent,
 }))
 
+// Spec 31 — pilot bypass module added to performance-fee.ts. Stub to
+// false so the existing tests flow through to the real Stripe path
+// they're verifying.
+vi.mock('../lib/pilot', () => ({
+  isCustomerOnPilot: vi.fn().mockResolvedValue(false),
+}))
+
 import {
   chargePerformanceFee,
   refundPerformanceFee,

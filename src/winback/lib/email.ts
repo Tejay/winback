@@ -816,3 +816,53 @@ If you'd rather we delete it, ignore this — no further messages. Questions? Hi
     throw new Error(`Resend error: ${res.error.message}`)
   }
 }
+
+/**
+ * Spec 31 — Day-23 pilot heads-up. Sent ~7 days before `pilot_until`
+ * passes so the founder isn't surprised when normal billing kicks in.
+ * Plain text, sent from monitored support@ inbox (replies welcome —
+ * extension / pricing chats come back here).
+ */
+export async function sendPilotEndingSoonEmail(opts: {
+  to: string
+  founderName: string | null
+  endsOn: Date
+}): Promise<void> {
+  const { to, founderName, endsOn } = opts
+  const resend = getResendClient()
+
+  const greeting = founderName ? `Hi ${founderName},` : 'Hi there,'
+  const dateStr = endsOn.toLocaleDateString('en-GB', {
+    day: 'numeric', month: 'long', year: 'numeric',
+  })
+
+  const subject = `Your Winback pilot ends on ${dateStr}`
+  const body = `${greeting}
+
+Quick heads-up: your Winback pilot ends on ${dateStr}. After that, normal
+billing kicks in — $99/mo platform fee plus 1× MRR per win-back recovery
+(refundable for 14 days).
+
+Nothing for you to do right now. We'll email a usage summary at the end
+of the pilot. If you want to discuss pricing or extend the pilot, just
+hit reply.
+
+Thanks for kicking the tires.
+
+— Winback`
+
+  const res = await callWithRetry(
+    () =>
+      resend.emails.send({
+        from: 'Winback <support@winbackflow.co>',
+        to,
+        subject,
+        text: body,
+      }),
+    { ctx: 'sendPilotEndingSoonEmail' },
+  )
+
+  if (res.error) {
+    throw new Error(`Resend error: ${res.error.message}`)
+  }
+}

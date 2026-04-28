@@ -38,6 +38,16 @@ export default async function DashboardPage() {
     }
   }
 
+  // Spec 31 — pilot status. If pilot_until is in the future, the dashboard
+  // shows a "🚀 Pilot — until {date}" banner instead of the "your $99/mo
+  // subscription will start when…" prompt (which would be wrong copy for
+  // pilots). The bypass gates in activation + perf-fee already make sure
+  // no charges fire while pilot_until > now.
+  const pilotUntil =
+    customer?.pilotUntil && customer.pilotUntil.getTime() > Date.now()
+      ? customer.pilotUntil
+      : null
+
   return (
     <>
       <TopNav userName={session.user.name} />
@@ -47,6 +57,7 @@ export default async function DashboardPage() {
             changelog={customer?.changelogText ?? ''}
             isTrial={!billingActive}
             firstRecovery={firstRecovery}
+            pilotUntilIso={pilotUntil ? pilotUntil.toISOString() : null}
           />
         </div>
       </main>
