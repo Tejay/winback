@@ -32,20 +32,18 @@ This spec ships the minimum-viable treatment for that cohort.
 | # | Goal | Mechanism |
 |---|------|-----------|
 | 1 | Recover the founders who got distracted, with one polite nudge | Day-3 transactional email via Resend, fired by daily cron |
-| 2 | Give the operator visibility for high-value manual outreach | New `/admin/customers?filter=stuck_on_signup` filter + "Days since signup" column |
-| 3 | Make the funnel analytically complete | Emit `register_completed` event in the registration handler |
-| 4 | Prune accounts that never connect within 90 days | Cascade-delete `wb_users` row on day 90; data minimisation aligns with future Spec 11 |
+| 2 | Warn dormant accounts before deletion (courtesy + GDPR posture) | Day-83 deletion-warning email — last chance to keep the account alive |
+| 3 | Give the operator visibility for high-value manual outreach | New `/admin/customers?filter=stuck_on_signup` filter + "Days since signup" column |
+| 4 | Make the funnel analytically complete | Emit `register_completed` event in the registration handler |
+| 5 | Prune accounts that never connect within 90 days | Cascade-delete `wb_users` row on day 90; data minimisation aligns with future Spec 11 |
 
 ---
 
 ## Non-goals
 
-- Multi-touch drip campaigns. **One** nudge total. If they ignore it, the
-  in-app `/onboarding/stripe` redirect on next login is the second nudge,
-  and the 90-day deletion is the cap.
-- Email-based deletion warnings (e.g. "your account will be deleted in 7
-  days"). The 90-day grace period is generous enough that a Day-83 second
-  email isn't worth the spam-flag risk or the operational complexity.
+- Multi-touch drip campaigns. The nudge at Day 3 and warning at Day 83
+  are the only two emails. The Day-83 message is functional/transactional
+  ("we're going to delete your account in 7 days") not promotional.
 - Tracking `last_login_at`. We deliberately don't add this column. The
   90-day clock is from `wb_customers.created_at`, period. If the founder
   is logging in but never connecting Stripe, the in-app redirect is
@@ -78,16 +76,20 @@ WHERE  c.stripe_account_id IS NULL
 
 ```sql
 ALTER TABLE wb_customers
-  ADD COLUMN onboarding_nudge_sent_at TIMESTAMP;
+  ADD COLUMN onboarding_nudge_sent_at         TIMESTAMP,
+  ADD COLUMN deletion_warning_sent_at         TIMESTAMP;
 
--- Partial index — only the eligible cohort, keeps the cron's WHERE clause cheap.
+-- Partial index — only the eligible nudge cohort.
 CREATE INDEX wb_customers_onboarding_nudge_idx
   ON wb_customers (created_at)
   WHERE stripe_account_id IS NULL AND onboarding_nudge_sent_at IS NULL;
 ```
 
-Drizzle: add `onboardingNudgeSentAt: timestamp('onboarding_nudge_sent_at')`
-to the `customers` pgTable in [lib/schema.ts](../lib/schema.ts).
+Drizzle: add to the `customers` pgTable in [lib/schema.ts](../lib/schema.ts):
+```ts
+onboardingNudgeSentAt:    timestamp('onboarding_nudge_sent_at'),
+deletionWarningSentAt:    timestamp('deletion_warning_sent_at'),
+```
 
 **Why a column instead of querying `wb_events` for the audit?** `logEvent`
 swallows insert errors (it's telemetry, not transactional). A dedicated
@@ -115,19 +117,21 @@ Mixing them muddies the single-responsibility line drawn in Spec 28.
 Schedule (`vercel.json`): `30 9 * * *` — offset by 30 min from the existing
 09:00 UTC reengagement cron so logs interleave cleanly.
 
-The route delegates to two helpers in
+The route delegates to three helpers in
 `src/winback/lib/onboarding-followup.ts` so the passes are unit-testable
 in isolation:
 
 - `runOnboardingNudges({ dryRun }): Promise<{ processed, sent, errors }>`
+- `runDeletionWarnings({ dryRun }): Promise<{ processed, sent, errors }>`
 - `runStaleAccountPrune({ dryRun }): Promise<{ processed, deleted, errors }>`
 
 Response:
 ```json
 {
-  "nudges":  { "processed": N, "sent": M, "errors": E },
-  "deletes": { "processed": N, "deleted": M, "errors": E },
-  "dryRun":  false
+  "nudges":   { "processed": N, "sent": M, "errors": E },
+  "warnings": { "processed": N, "sent": M, "errors": E },
+  "deletes":  { "processed": N, "deleted": M, "errors": E },
+  "dryRun":   false
 }
 ```
 
@@ -157,7 +161,27 @@ Per-row sequence:
 
 Errors caught per-row, counter incremented, loop continues.
 
-### Pass B — cascade prune (Day ≥ 90)
+### Pass B — deletion warning (Day ≥ 83, < 90)
+
+Eligibility:
+
+```ts
+where(and(
+  isNull(customers.stripeAccountId),
+  isNull(customers.deletionWarningSentAt),
+  eq(users.isAdmin, false),
+  sql`${customers.createdAt} <= now() - interval '83 days'`,
+  sql`${customers.createdAt} >  now() - interval '90 days'`,
+)).limit(100)
+```
+
+Per-row sequence: same shape as Pass A.
+1. Re-check `stripeAccountId IS NULL`
+2. `sendDormantAccountDeletionWarningEmail({ to, founderName })`
+3. `UPDATE wb_customers SET deletion_warning_sent_at = now() WHERE id = ?`
+4. `logEvent({ name: 'onboarding_deletion_warning_sent', customerId, userId })`
+
+### Pass C — cascade prune (Day ≥ 90)
 
 Eligibility:
 
@@ -237,6 +261,39 @@ If something blocked you (Stripe permissions, a question, anything), just hit re
 From: `Winback <noreply@winbackflow.co>`. Wrap in `callWithRetry` for 429
 handling (matches `sendPasswordResetEmail`).
 
+### Day-83 deletion-warning email
+
+```ts
+export async function sendDormantAccountDeletionWarningEmail(opts: {
+  to: string
+  founderName: string | null
+}): Promise<void>
+```
+
+Subject: `Your unused Winback account will be deleted in 7 days`
+
+Body:
+```
+Hi {founderName ?? 'there'},
+
+You signed up for Winback about 12 weeks ago but never connected your Stripe.
+To keep our database clean, we'll delete your account in 7 days unless you
+finish setting up.
+
+If you still want to use Winback, connect Stripe here (takes ~90 seconds):
+{NEXT_PUBLIC_APP_URL}/onboarding/stripe
+
+If you don't want the account, you can ignore this email — we'll handle the
+cleanup automatically. No further messages.
+
+Questions? Just hit reply.
+
+— The Winback team
+```
+
+Same `from`, same retry wrapper. No unsubscribe link — it's a transactional
+account-lifecycle notice, not promotion.
+
 ---
 
 ## Admin filter
@@ -292,20 +349,27 @@ Pattern: heavy `vi.hoisted` mocks of `@/lib/db`, `@/lib/schema`,
 [billing-notifications.test.ts](../src/winback/__tests__/billing-notifications.test.ts)
 and the password-reset route tests from Spec 29.
 
-`src/winback/__tests__/onboarding-nudge-email.test.ts` (5 tests):
-- Sends with subject containing "set up Winback"
-- Body includes `${NEXT_PUBLIC_APP_URL}/onboarding/stripe`
-- Null `founderName` → "Hi there"
-- Resend error throws (caller handles)
-- Skips silently when `RESEND_API_KEY` unset
+`src/winback/__tests__/onboarding-followup-emails.test.ts` (8 tests covering both):
+- Nudge: subject contains "set up Winback"
+- Nudge: body includes `${NEXT_PUBLIC_APP_URL}/onboarding/stripe`
+- Nudge: null `founderName` → "Hi there"
+- Nudge: Resend error throws
+- Warning: subject contains "deleted in 7 days"
+- Warning: body includes `${NEXT_PUBLIC_APP_URL}/onboarding/stripe`
+- Warning: null `founderName` → "Hi there"
+- Both: skip silently when `RESEND_API_KEY` unset
 
-`src/winback/__tests__/onboarding-followup-cron.test.ts` (10 tests):
+`src/winback/__tests__/onboarding-followup-cron.test.ts` (~15 tests):
 - Nudge: skips when `stripeAccountId` set
 - Nudge: skips when already nudged (`onboardingNudgeSentAt` not null)
 - Nudge: skips users < 3 days old
 - Nudge: skips `users.isAdmin = true`
 - Nudge: writes `onboarding_nudge_sent_at` after successful send
 - Nudge: continues when one row's send throws
+- Warning: skips when < 83 days old
+- Warning: skips when already warned (`deletionWarningSentAt` not null)
+- Warning: skips when ≥ 90 days (prune handles those)
+- Warning: writes `deletion_warning_sent_at` after send
 - Prune: skips < 90 days
 - Prune: skips when `stripeAccountId` set
 - Prune: respects `dryRun`
@@ -318,7 +382,8 @@ and the password-reset route tests from Spec 29.
 - Unknown filter is ignored
 
 Update `src/winback/__tests__/events.test.ts` if it whitelists names — add
-`register_completed`, `onboarding_nudge_sent`, `onboarding_account_pruned`.
+`register_completed`, `onboarding_nudge_sent`,
+`onboarding_deletion_warning_sent`, `onboarding_account_pruned`.
 
 ---
 
@@ -342,8 +407,11 @@ Per CLAUDE.md:
 - [ ] Manual UI walk-through:
   - Register fresh test account → `wb_events` has `register_completed`
   - Backdate customer to 4 days ago → run cron → Resend dashboard shows
-    the email + `onboarding_nudge_sent_at` is set + `wb_events` has
+    the nudge email + `onboarding_nudge_sent_at` is set + `wb_events` has
     `onboarding_nudge_sent`
+  - Backdate to 84 days → run cron → warning email arrives +
+    `deletion_warning_sent_at` set + `wb_events` has
+    `onboarding_deletion_warning_sent`
   - Visit `/admin/customers?filter=stuck_on_signup` → only the test row
   - Backdate to 91 days, real run → cascade delete confirmed
     (`SELECT * FROM wb_users WHERE id = '<test-id>'` returns 0 rows;
