@@ -134,6 +134,17 @@ export const wbEvents = pgTable('wb_events', {
   customerCreatedIdx: index('wb_events_customer_created_idx').on(t.customerId, t.createdAt),
 }))
 
+// Spec 29 — Password reset tokens. Single-use, 60-min expiry. Stored hashed.
+export const passwordResetTokens = pgTable('wb_password_reset_tokens', {
+  id:         uuid('id').primaryKey().defaultRandom(),
+  userId:     uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  tokenHash:  text('token_hash').notNull().unique(),
+  expiresAt:  timestamp('expires_at').notNull(),
+  usedAt:     timestamp('used_at'),
+  createdAt:  timestamp('created_at').notNull().defaultNow(),
+  ipAddress:  text('ip_address'),
+})
+
 export const recoveries = pgTable('wb_recoveries', {
   id:                uuid('id').primaryKey().defaultRandom(),
   subscriberId:      uuid('subscriber_id').notNull().references(() => churnedSubscribers.id),

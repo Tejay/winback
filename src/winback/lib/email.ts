@@ -681,3 +681,41 @@ If you'd rather not hear from us, unsubscribe: ${unsubLink}`
     properties: { subscriberId, emailType: 'dunning', subject, messageId: res.data?.id ?? '' },
   })
 }
+
+/**
+ * Spec 29 — Password reset email. Plain-text transactional auth email.
+ * No unsubscribe footer, no DNC check, no AI-pause check — this is an
+ * account-recovery email, not a marketing/win-back email.
+ */
+export async function sendPasswordResetEmail(opts: {
+  to: string
+  resetUrl: string
+}): Promise<void> {
+  const { to, resetUrl } = opts
+  const resend = getResendClient()
+
+  const subject = 'Reset your Winback password'
+  const body = `Someone requested a password reset for this Winback account.
+
+If it was you, click here to set a new password:
+${resetUrl}
+
+This link expires in 60 minutes and can only be used once.
+
+If you didn't request this, you can ignore this email — your password won't change.`
+
+  const res = await callWithRetry(
+    () =>
+      resend.emails.send({
+        from: 'Winback <noreply@winbackflow.co>',
+        to,
+        subject,
+        text: body,
+      }),
+    { ctx: 'sendPasswordResetEmail' },
+  )
+
+  if (res.error) {
+    throw new Error(`Resend error: ${res.error.message}`)
+  }
+}

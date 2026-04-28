@@ -1,11 +1,14 @@
 'use client'
 
-import { useState } from 'react'
+import { Suspense, useState } from 'react'
 import { signIn } from 'next-auth/react'
+import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { Logo } from '@/components/logo'
 
-export default function LoginPage() {
+function LoginForm() {
+  const searchParams = useSearchParams()
+  const justReset = searchParams.get('reset') === '1'
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
@@ -45,6 +48,12 @@ export default function LoginPage() {
           Let&apos;s recover some revenue.
         </p>
 
+        {justReset && (
+          <div className="mb-6 bg-green-50 text-green-700 border border-green-200 rounded-lg px-4 py-2.5 text-sm">
+            Password updated. Sign in with your new password.
+          </div>
+        )}
+
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-xs font-semibold uppercase tracking-widest text-slate-500 mb-1.5">
@@ -61,9 +70,17 @@ export default function LoginPage() {
           </div>
 
           <div>
-            <label className="block text-xs font-semibold uppercase tracking-widest text-slate-500 mb-1.5">
-              Password
-            </label>
+            <div className="flex items-baseline justify-between mb-1.5">
+              <label className="block text-xs font-semibold uppercase tracking-widest text-slate-500">
+                Password
+              </label>
+              <Link
+                href="/forgot-password"
+                className="text-xs text-blue-600 hover:underline"
+              >
+                Forgot password?
+              </Link>
+            </div>
             <input
               type="password"
               value={password}
@@ -107,5 +124,13 @@ export default function LoginPage() {
         <Link href="/dpa" className="hover:text-slate-700">DPA</Link>
       </nav>
     </div>
+  )
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <LoginForm />
+    </Suspense>
   )
 }
