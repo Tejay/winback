@@ -190,6 +190,47 @@ vercel.json
 
 ## Non-negotiable rules
 
+### 📋 Plan → spec → execute — absolute rule, every non-trivial task
+**Every plan MUST be followed by a spec doc in `specs/NN-<short-name>.md`,
+human-approved, BEFORE a single line of implementation code is written.
+The spec is the source of truth — if anything changes during execution,
+the spec is updated FIRST. No exceptions.**
+
+The flow for any feature, bugfix, schema change, or non-trivial refactor:
+
+1. **Plan** — Claude proposes the approach (Plan mode, AskUserQuestion,
+   etc.). This is for shaping intent and resolving open questions, not
+   for shipping code.
+2. **Write the spec** — once the plan is settled, write
+   `specs/NN-<short-name>.md` (next available number) on `main` as a
+   docs-only commit. The spec MUST cover:
+   - Context (the problem, why it matters, what prompted it)
+   - Goals + non-goals (explicit out-of-scope)
+   - Schema / migration if any
+   - Code paths touched (file list + key functions)
+   - Edge cases handled
+   - Verification checklist (tsc, vitest, manual click-through, prod-safety
+     items like `?dryRun=1` for destructive crons)
+3. **Wait for human "ok"** on the spec. No branch, no code until then.
+4. **Branch + execute against the spec** — `feat/spec-NN-<name>`. The
+   implementation must match the spec.
+5. **If anything changes mid-execution** — copy tweak, schema rename,
+   added edge case, removed feature — **update the spec in the SAME
+   commit** (or sooner) as the code change. The spec must always reflect
+   what's actually shipped. A divergent spec is a bug; commit messages
+   that say "tweaked X" without a matching spec edit are not allowed.
+6. **PR description references the spec** (e.g. "Spec NN: ...") and the
+   final spec lives on `main` after squash-merge.
+
+**Why this rule exists:** every time we've skipped this and gone
+plan→code, we've shipped something the human had to immediately ask us
+to redo because intent was unclear. The spec is cheap to write, cheap to
+edit, and forces the conversation about scope to happen before code.
+
+**Exception** — only for tasks that genuinely fit "Docs-only edits" or
+"Comment-only tweaks" in the branch-discipline exception list below.
+For everything else: spec first.
+
 ### 🌿 Branch & merge discipline — every feature
 **Every feature MUST be built on its own branch and fully tested before merge.
 No direct commits to `main`. No exceptions.**
