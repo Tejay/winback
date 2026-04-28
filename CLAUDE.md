@@ -273,7 +273,19 @@ If it touches runtime code, a schema, an API, or UI: **branch**.
    URL-based vars (NEXTAUTH_URL, NEXT_PUBLIC_APP_URL) differ per environment:
    - Production: `https://winbackflow.co`
    - Preview: `https://winback-git-{branch}-....vercel.app`
-   - Local: `http://localhost:3000`
+   - Local dev:
+     - **`NEXTAUTH_URL=http://localhost:3000`** — leave as localhost. With
+       `trustHost: true` in `lib/auth.ts`, NextAuth respects the request's
+       host header automatically. Setting `NEXTAUTH_URL` to the ngrok host
+       caused `auth()` to return null inside route handlers (page-level
+       `auth()` still worked), which silently broke the dashboard's
+       `/api/stats` and `/api/subscribers` calls.
+     - **`NEXT_PUBLIC_APP_URL=https://tejay.ngrok.app`** — must be the
+       publicly-reachable ngrok URL (stable hobby-tier domain, started
+       with `ngrok http --url=tejay.ngrok.app 3000`). Used for password
+       reset-email links, Stripe OAuth redirects, and webhook endpoints.
+     - Restart `npm run dev` after changing either — Next.js doesn't pick
+       up `.env.local` edits via Fast Refresh.
 
 ### Auth pattern — use in every protected route and page
 
