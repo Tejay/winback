@@ -700,7 +700,8 @@ export async function sendPasswordResetEmail(opts: {
 If it was you, click here to set a new password:
 ${resetUrl}
 
-This link expires in 60 minutes and can only be used once.
+This link expires in 24 hours and can only be used once. If you've requested
+multiple reset emails, only the most recent link will work.
 
 If you didn't request this, you can ignore this email — your password won't change.`
 

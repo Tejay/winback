@@ -10,7 +10,9 @@ import { db } from '@/lib/db'
 import { passwordResetTokens, users } from '@/lib/schema'
 import { and, eq, gt, isNull } from 'drizzle-orm'
 
-export const TOKEN_TTL_MINUTES = 60
+// 24 hours — long enough that a slow inbox triage doesn't expire the link,
+// short enough that a stolen email link isn't useful indefinitely.
+export const TOKEN_TTL_MINUTES = 60 * 24
 
 export function generateRawToken(): string {
   return crypto.randomBytes(32).toString('base64url')

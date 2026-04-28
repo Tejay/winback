@@ -8,8 +8,8 @@ export function ResetPasswordForm({ token }: { token: string }) {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
+  async function submit() {
+    if (loading) return
     setError('')
 
     if (password.length < 8) {
@@ -46,8 +46,19 @@ export function ResetPasswordForm({ token }: { token: string }) {
     window.location.replace('/login?reset=1')
   }
 
+  function onFormSubmit(e: React.FormEvent) {
+    // Belt-and-braces: this only fires once React has hydrated, but in the
+    // pre-hydration window the button below is type="button" so a native
+    // submit can't happen at all. Both paths converge on submit().
+    e.preventDefault()
+    submit()
+  }
+
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
+    // No `action` attribute — and the button is type="button" — so even
+    // before React hydrates, clicking "Update password" can never trigger
+    // a native form GET that would strip ?token=… from the URL.
+    <form onSubmit={onFormSubmit} className="space-y-4" noValidate>
       <div>
         <label className="block text-xs font-semibold uppercase tracking-widest text-slate-500 mb-1.5">
           New password
@@ -79,7 +90,8 @@ export function ResetPasswordForm({ token }: { token: string }) {
       </div>
 
       <button
-        type="submit"
+        type="button"
+        onClick={submit}
         disabled={loading}
         className={`w-full rounded-full px-5 py-2.5 text-sm font-medium ${
           loading

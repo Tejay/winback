@@ -42,7 +42,7 @@ export default function ForgotPasswordPage() {
           <div className="space-y-4">
             <p className="text-sm text-slate-600">
               If an account exists for that email, we&apos;ve sent a reset link.
-              Check your inbox (and spam folder). The link expires in 60 minutes.
+              Check your inbox (and spam folder). The link expires in 24 hours.
             </p>
             <button
               type="button"
