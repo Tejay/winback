@@ -37,6 +37,9 @@ export const customers = pgTable('wb_customers', {
   backfillProcessed:    integer('backfill_processed').default(0),
   backfillStartedAt:    timestamp('backfill_started_at'),
   backfillCompletedAt:  timestamp('backfill_completed_at'),
+  // Spec 30 — onboarding-followup cron idempotency timestamps.
+  onboardingNudgeSentAt:    timestamp('onboarding_nudge_sent_at'),
+  deletionWarningSentAt:    timestamp('deletion_warning_sent_at'),
   createdAt:            timestamp('created_at').defaultNow(),
   updatedAt:            timestamp('updated_at').defaultNow(),
 })

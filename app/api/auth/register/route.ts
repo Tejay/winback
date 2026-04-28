@@ -4,6 +4,7 @@ import bcrypt from 'bcryptjs'
 import { db } from '@/lib/db'
 import { users, customers, legalAcceptances } from '@/lib/schema'
 import { eq } from 'drizzle-orm'
+import { logEvent } from '@/src/winback/lib/events'
 
 const LEGAL_VERSION = '2026-04-14'
 
@@ -55,6 +56,15 @@ export async function POST(req: Request) {
     userId: newUser.id,
     version: LEGAL_VERSION,
     ipAddress,
+  })
+
+  // Spec 30 — close the funnel-analytics loop. Pair with
+  // `onboarding_stripe_viewed` and `oauth_completed` to reconstruct
+  // register → view-onboarding → connect drop-off.
+  await logEvent({
+    name: 'register_completed',
+    userId: newUser.id,
+    properties: { hasName: !!name },
   })
 
   return NextResponse.json({ success: true }, { status: 201 })

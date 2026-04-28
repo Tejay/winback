@@ -720,3 +720,93 @@ If you didn't request this, you can ignore this email — your password won't ch
     throw new Error(`Resend error: ${res.error.message}`)
   }
 }
+
+/**
+ * Spec 30 — Day-3 onboarding nudge. One-shot transactional email to a
+ * founder who registered but hasn't connected Stripe. No unsubscribe link
+ * (relationship message; precedent: sendPasswordResetEmail above). The
+ * cron tracks idempotency via `wb_customers.onboarding_nudge_sent_at`.
+ */
+export async function sendOnboardingNudgeEmail(opts: {
+  to: string
+  founderName: string | null
+}): Promise<void> {
+  const { to, founderName } = opts
+  const resend = getResendClient()
+
+  const base = process.env.NEXT_PUBLIC_APP_URL ?? 'https://winbackflow.co'
+  const greeting = founderName ? `Hi ${founderName},` : 'Hi there,'
+
+  const subject = 'Still want to set up Winback?'
+  const body = `${greeting}
+
+You signed up a few days ago but haven't connected Stripe yet — that's the
+only step left:
+
+${base}/onboarding/stripe
+
+Takes about 90 seconds. If something's blocking you, hit reply. If it's not
+the right fit, you can ignore this — we'll clean up the unused account in 90 days.
+
+— Winback`
+
+  const res = await callWithRetry(
+    () =>
+      resend.emails.send({
+        from: 'Winback <support@winbackflow.co>',
+        to,
+        subject,
+        text: body,
+      }),
+    { ctx: 'sendOnboardingNudgeEmail' },
+  )
+
+  if (res.error) {
+    throw new Error(`Resend error: ${res.error.message}`)
+  }
+}
+
+/**
+ * Spec 30 — Day-83 deletion-warning email. Courtesy notice 7 days before
+ * the cron auto-prunes the dormant account. Transactional / functional
+ * (not promotional) — no unsubscribe link, same precedent as the nudge.
+ * Idempotent via `wb_customers.deletion_warning_sent_at`.
+ */
+export async function sendDormantAccountDeletionWarningEmail(opts: {
+  to: string
+  founderName: string | null
+}): Promise<void> {
+  const { to, founderName } = opts
+  const resend = getResendClient()
+
+  const base = process.env.NEXT_PUBLIC_APP_URL ?? 'https://winbackflow.co'
+  const greeting = founderName ? `Hi ${founderName},` : 'Hi there,'
+
+  const subject = 'Your Winback account will be deleted in 7 days'
+  const body = `${greeting}
+
+You signed up ~12 weeks ago but never connected Stripe. We'll delete the
+unused account in 7 days.
+
+To keep it, connect Stripe (~90 seconds):
+${base}/onboarding/stripe
+
+If you'd rather we delete it, ignore this — no further messages. Questions? Hit reply.
+
+— Winback`
+
+  const res = await callWithRetry(
+    () =>
+      resend.emails.send({
+        from: 'Winback <support@winbackflow.co>',
+        to,
+        subject,
+        text: body,
+      }),
+    { ctx: 'sendDormantAccountDeletionWarningEmail' },
+  )
+
+  if (res.error) {
+    throw new Error(`Resend error: ${res.error.message}`)
+  }
+}

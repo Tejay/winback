@@ -2,14 +2,16 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAdmin } from '@/lib/auth'
 import { getDbReadOnly } from '@/lib/db'
 import { customers, users, churnedSubscribers, recoveries, wbEvents } from '@/lib/schema'
-import { eq, ilike, or, sql, desc } from 'drizzle-orm'
+import { and, eq, ilike, isNull, or, sql, desc } from 'drizzle-orm'
 
 /**
- * GET /api/admin/customers?q=...&limit=50
+ * GET /api/admin/customers?q=...&filter=...&limit=50
  *
  * Cross-customer list for /admin/customers. Search matches founder email,
- * founder name, product name, or Stripe account id (ILIKE). Returns counts
- * and last-activity timestamp per row.
+ * founder name, product name, or Stripe account id (ILIKE). Filter values:
+ *   - `stuck_on_signup` (Spec 30): customers who registered but never
+ *     connected Stripe — `stripe_account_id IS NULL`.
+ * Returns counts and last-activity timestamp per row.
  */
 export async function GET(req: NextRequest) {
   const auth = await requireAdmin()
@@ -19,6 +21,7 @@ export async function GET(req: NextRequest) {
 
   const { searchParams } = req.nextUrl
   const q = (searchParams.get('q') ?? '').trim()
+  const filter = searchParams.get('filter') ?? ''
   const limit = Math.min(Number(searchParams.get('limit')) || 50, 200)
 
   const filters = []
@@ -31,6 +34,10 @@ export async function GET(req: NextRequest) {
       ilike(customers.stripeAccountId, pat),
     )
     if (cond) filters.push(cond)
+  }
+  // Spec 30 — "Stuck on signup" filter (registered but never connected Stripe).
+  if (filter === 'stuck_on_signup') {
+    filters.push(isNull(customers.stripeAccountId))
   }
 
   const rows = await getDbReadOnly()
@@ -59,7 +66,7 @@ export async function GET(req: NextRequest) {
     })
     .from(customers)
     .innerJoin(users, eq(customers.userId, users.id))
-    .where(filters.length > 0 ? filters[0] : undefined)
+    .where(filters.length > 0 ? and(...filters) : undefined)
     .orderBy(desc(customers.createdAt))
     .limit(limit)
 
