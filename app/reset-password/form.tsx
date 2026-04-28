@@ -2,13 +2,26 @@
 
 import { useState } from 'react'
 
-export function ResetPasswordForm({ token }: { token: string }) {
+export function ResetPasswordForm({
+  token,
+  initialError,
+}: {
+  token: string
+  initialError?: string | null
+}) {
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
-  const [error, setError] = useState('')
+  const [error, setError] = useState(initialError ?? '')
   const [loading, setLoading] = useState(false)
 
-  async function submit() {
+  // The form has a real `action` and `method`, with `name` attributes on
+  // every input. So a native HTML POST works without JS at all — the API
+  // accepts form-encoded bodies and 303-redirects to /login?reset=1 on
+  // success (or back here with ?pwError=… on failure). When JS hydrates,
+  // this onSubmit intercepts and uses fetch for a smoother UX (no full
+  // page navigation).
+  async function onFormSubmit(e: React.FormEvent) {
+    e.preventDefault()
     if (loading) return
     setError('')
 
@@ -35,36 +48,28 @@ export function ResetPasswordForm({ token }: { token: string }) {
       return
     }
 
-    // Full navigation rather than router.push — soft navigation re-renders
-    // the /reset-password server component during transition, which would
-    // re-run validateResetToken on the now-consumed token and flash the
-    // "Link no longer valid" view before /login paints.
-    //
-    // .replace() instead of .href so the now-invalid /reset-password URL
-    // doesn't sit in history — pressing back from /login would otherwise
-    // re-render the consumed-token page and look like the reset failed.
+    // .replace() so the now-invalid /reset-password URL doesn't sit in
+    // history — pressing back from /login would otherwise re-render the
+    // consumed-token page and look like the reset failed.
     window.location.replace('/login?reset=1')
   }
 
-  function onFormSubmit(e: React.FormEvent) {
-    // Belt-and-braces: this only fires once React has hydrated, but in the
-    // pre-hydration window the button below is type="button" so a native
-    // submit can't happen at all. Both paths converge on submit().
-    e.preventDefault()
-    submit()
-  }
-
   return (
-    // No `action` attribute — and the button is type="button" — so even
-    // before React hydrates, clicking "Update password" can never trigger
-    // a native form GET that would strip ?token=… from the URL.
-    <form onSubmit={onFormSubmit} className="space-y-4" noValidate>
+    <form
+      action="/api/auth/reset-password"
+      method="POST"
+      onSubmit={onFormSubmit}
+      className="space-y-4"
+    >
+      <input type="hidden" name="token" value={token} />
+
       <div>
         <label className="block text-xs font-semibold uppercase tracking-widest text-slate-500 mb-1.5">
           New password
         </label>
         <input
           type="password"
+          name="password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           placeholder="••••••••"
@@ -80,6 +85,7 @@ export function ResetPasswordForm({ token }: { token: string }) {
         </label>
         <input
           type="password"
+          name="confirm"
           value={confirm}
           onChange={(e) => setConfirm(e.target.value)}
           placeholder="••••••••"
@@ -90,8 +96,7 @@ export function ResetPasswordForm({ token }: { token: string }) {
       </div>
 
       <button
-        type="button"
-        onClick={submit}
+        type="submit"
         disabled={loading}
         className={`w-full rounded-full px-5 py-2.5 text-sm font-medium ${
           loading

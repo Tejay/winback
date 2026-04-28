@@ -9,10 +9,16 @@ export const dynamic = 'force-dynamic'
 export default async function ResetPasswordPage({
   searchParams,
 }: {
-  searchParams: Promise<{ token?: string }>
+  searchParams: Promise<{ token?: string; pwError?: string }>
 }) {
-  const { token } = await searchParams
+  const { token, pwError } = await searchParams
   const validation = await validateResetToken(token ?? '')
+
+  const initialError =
+    pwError === 'mismatch' ? 'Passwords do not match.' :
+    pwError === 'invalid'  ? 'Password must be at least 8 characters.' :
+    pwError === 'expired'  ? 'This reset link has expired or has already been used.' :
+    null
 
   return (
     <div className="min-h-screen bg-[#f5f5f5] flex flex-col items-center">
@@ -29,7 +35,7 @@ export default async function ResetPasswordPage({
             <p className="text-sm text-slate-500 mb-8">
               Choose something at least 8 characters.
             </p>
-            <ResetPasswordForm token={token!} />
+            <ResetPasswordForm token={token!} initialError={initialError} />
           </>
         ) : (
           <>
