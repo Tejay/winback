@@ -273,7 +273,13 @@ If it touches runtime code, a schema, an API, or UI: **branch**.
    URL-based vars (NEXTAUTH_URL, NEXT_PUBLIC_APP_URL) differ per environment:
    - Production: `https://winbackflow.co`
    - Preview: `https://winback-git-{branch}-....vercel.app`
-   - Local: `http://localhost:3000`
+   - Local dev: `https://tejay.ngrok.app` — the stable hobby-tier ngrok URL
+     fronting `localhost:3000`. Started with
+     `ngrok http --url=tejay.ngrok.app 3000`. Use this (NOT `localhost:3000`)
+     for both env vars in `.env.local` so reset-email links, Stripe OAuth
+     redirects, and webhook callbacks all resolve to a publicly reachable
+     host. Restart `npm run dev` after changing either var — Next.js won't
+     pick up `.env.local` edits via Fast Refresh.
 
 ### Auth pattern — use in every protected route and page
 
