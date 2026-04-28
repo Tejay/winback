@@ -63,7 +63,8 @@ function RegisterForm() {
       return
     }
 
-    router.push('/login')
+    // Spec 32 — surface the "check your inbox" banner on /login.
+    router.push('/login?verifySent=1')
   }
 
   return (

@@ -30,6 +30,14 @@ export async function loginAction(formData: FormData) {
     // through. Only AuthError is "bad credentials / config" and we should
     // bounce the user back to /login with an error flag.
     if (error instanceof AuthError) {
+      // Spec 32 — preserve the UNVERIFIED_EMAIL distinction for the
+      // no-JS path. Our UnverifiedEmailError extends CredentialsSignin
+      // and sets `code = 'UNVERIFIED_EMAIL'`; NextAuth surfaces that on
+      // the wrapped error so the redirect can carry it through.
+      const code = (error as { code?: string }).code
+      if (code === 'UNVERIFIED_EMAIL') {
+        redirect('/login?error=UNVERIFIED_EMAIL')
+      }
       redirect('/login?error=1')
     }
     throw error

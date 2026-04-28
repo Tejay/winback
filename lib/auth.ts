@@ -1,9 +1,19 @@
-import NextAuth from 'next-auth'
+import NextAuth, { CredentialsSignin } from 'next-auth'
 import Credentials from 'next-auth/providers/credentials'
 import bcrypt from 'bcryptjs'
 import { db, getDbReadOnly } from '@/lib/db'
 import { users } from '@/lib/schema'
 import { eq } from 'drizzle-orm'
+
+/**
+ * Spec 32 — surfaced to the login form so it can render a "please verify
+ * your email" message + Resend button instead of the generic "Invalid
+ * email or password". NextAuth catches CredentialsSignin subclasses and
+ * exposes `code` on the signIn result.
+ */
+class UnverifiedEmailError extends CredentialsSignin {
+  code = 'UNVERIFIED_EMAIL'
+}
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   trustHost: true,
@@ -30,6 +40,15 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
         const valid = await bcrypt.compare(password, user.passwordHash)
         if (!valid) return null
+
+        // Spec 32 — refuse unverified accounts. Throwing a typed error
+        // (rather than returning null) lets the login form distinguish
+        // bad-credentials from needs-verification and render a "Resend"
+        // button. The column is the single source of truth — no env-var
+        // bypass anywhere on the login path.
+        if (!user.emailVerifiedAt) {
+          throw new UnverifiedEmailError()
+        }
 
         return { id: user.id, email: user.email, name: user.name }
       },

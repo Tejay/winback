@@ -21,6 +21,10 @@ const mockGetDbReadOnly = vi.hoisted(() =>
 
 vi.mock('next-auth', () => ({
   default: () => ({ handlers: {}, auth: mockAuth, signIn: vi.fn(), signOut: vi.fn() }),
+  // Spec 32 — lib/auth.ts subclasses CredentialsSignin to surface the
+  // unverified-email error code to the login form. The shape of the
+  // class isn't relevant for these admin tests, but the export must exist.
+  CredentialsSignin: class {},
 }))
 
 vi.mock('next-auth/providers/credentials', () => ({
