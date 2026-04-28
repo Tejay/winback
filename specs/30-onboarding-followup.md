@@ -248,8 +248,14 @@ only step left:
 
 {NEXT_PUBLIC_APP_URL}/onboarding/stripe
 
-Takes about 90 seconds. If something's blocking you, hit reply. If it's not
-the right fit, you can ignore this — we'll clean up the unused account in 90 days.
+Takes about 90 seconds.
+
+If something's blocking you — Stripe permissions, a question about how it
+works, anything else — just hit reply and tell us. We'd genuinely like to
+know what's in the way.
+
+If it's not the right fit, ignore this — we'll clean up the unused account
+in 90 days.
 
 — Winback
 ```
