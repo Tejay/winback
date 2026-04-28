@@ -26,8 +26,19 @@ export async function POST(req: Request) {
 
   // Always-OK contract: this endpoint must not leak whether an email is
   // registered, so every branch returns the same response.
+  //
+  // For redirect Location, prefer the public origin so a request that
+  // arrived via ngrok / Vercel's proxy doesn't bounce to localhost.
+  // Order: NEXT_PUBLIC_APP_URL env > forwarded host header > req.url.
+  function publicOrigin(): string {
+    if (process.env.NEXT_PUBLIC_APP_URL) return process.env.NEXT_PUBLIC_APP_URL
+    const host = req.headers.get('x-forwarded-host') ?? req.headers.get('host')
+    const proto = req.headers.get('x-forwarded-proto') ?? 'https'
+    if (host) return `${proto}://${host}`
+    return new URL(req.url).origin
+  }
   const okResponse = isFormPost
-    ? NextResponse.redirect(new URL('/forgot-password?submitted=1', req.url), 303)
+    ? NextResponse.redirect(`${publicOrigin()}/forgot-password?submitted=1`, 303)
     : NextResponse.json({ ok: true })
 
   let body: unknown
