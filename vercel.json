@@ -3,6 +3,10 @@
     {
       "path": "/api/cron/reengagement",
       "schedule": "0 9 * * *"
+    },
+    {
+      "path": "/api/cron/onboarding-followup",
+      "schedule": "30 9 * * *"
     }
   ]
 }

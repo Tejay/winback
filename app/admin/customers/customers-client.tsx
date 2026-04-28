@@ -18,23 +18,30 @@ interface CustomerRow {
   createdAt: string
 }
 
+type Filter = 'all' | 'stuck_on_signup'
+
 export function CustomersClient() {
   const [q, setQ] = useState('')
+  const [filter, setFilter] = useState<Filter>('all')
   const [rows, setRows] = useState<CustomerRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     const t = setTimeout(() => {
-      load(q)
+      load(q, filter)
     }, q ? 200 : 0)  // debounce typing slightly
     return () => clearTimeout(t)
-  }, [q])
+  }, [q, filter])
 
-  async function load(query: string) {
+  async function load(query: string, filter: Filter) {
     setLoading(true)
     try {
-      const url = query ? `/api/admin/customers?q=${encodeURIComponent(query)}` : '/api/admin/customers'
+      const params = new URLSearchParams()
+      if (query) params.set('q', query)
+      if (filter !== 'all') params.set('filter', filter)
+      const qs = params.toString()
+      const url = qs ? `/api/admin/customers?${qs}` : '/api/admin/customers'
       const res = await fetch(url, { cache: 'no-store' })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error ?? 'Failed to load customers')
@@ -55,6 +62,31 @@ export function CustomersClient() {
         </div>
         <h1 className="text-3xl font-bold text-slate-900">Customers.</h1>
       </header>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={() => setFilter('all')}
+          className={`text-xs font-medium px-3 py-1.5 rounded-full border ${
+            filter === 'all'
+              ? 'bg-[#0f172a] text-white border-[#0f172a]'
+              : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+          }`}
+        >
+          All
+        </button>
+        <button
+          type="button"
+          onClick={() => setFilter('stuck_on_signup')}
+          className={`text-xs font-medium px-3 py-1.5 rounded-full border ${
+            filter === 'stuck_on_signup'
+              ? 'bg-[#0f172a] text-white border-[#0f172a]'
+              : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+          }`}
+        >
+          Stuck on signup
+        </button>
+      </div>
 
       <div className="bg-white rounded-2xl border border-slate-200 p-2">
         <input
@@ -80,15 +112,16 @@ export function CustomersClient() {
               <th className="text-left px-4 py-3">Stripe</th>
               <th className="text-right px-4 py-3">#Subs</th>
               <th className="text-right px-4 py-3">#Rec</th>
+              <th className="text-left px-4 py-3">Signed up</th>
               <th className="text-left px-4 py-3">Last activity</th>
               <th />
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {loading && rows.length === 0 ? (
-              <tr><td colSpan={7} className="px-4 py-6 text-slate-400">Loading…</td></tr>
+              <tr><td colSpan={8} className="px-4 py-6 text-slate-400">Loading…</td></tr>
             ) : rows.length === 0 ? (
-              <tr><td colSpan={7} className="px-4 py-6 text-slate-400">
+              <tr><td colSpan={8} className="px-4 py-6 text-slate-400">
                 {q ? `No customers matching "${q}"` : 'No customers yet'}
               </td></tr>
             ) : rows.map((r) => (
@@ -115,6 +148,7 @@ export function CustomersClient() {
                 </td>
                 <td className="px-4 py-3 text-right tabular-nums">{r.subsCount}</td>
                 <td className="px-4 py-3 text-right tabular-nums">{r.recoveriesCount}</td>
+                <td className="px-4 py-3 text-xs text-slate-500">{daysSince(r.createdAt)}</td>
                 <td className="px-4 py-3 text-xs text-slate-500">{formatRelative(r.lastEventAt)}</td>
                 <td className="px-4 py-3 text-right">
                   <Link
@@ -131,6 +165,11 @@ export function CustomersClient() {
       </div>
     </div>
   )
+}
+
+function daysSince(iso: string): string {
+  const days = Math.floor((Date.now() - new Date(iso).getTime()) / (1000 * 60 * 60 * 24))
+  return days === 0 ? 'today' : days === 1 ? '1d' : `${days}d`
 }
 
 function formatRelative(iso: string | null): string {

@@ -237,29 +237,31 @@ export async function sendOnboardingNudgeEmail(opts: {
 }): Promise<void>
 ```
 
-Subject: `Quick question — still want to set up Winback?`
+Subject: `Still want to set up Winback?`
 
 Body:
 ```
 Hi {founderName ?? 'there'},
 
-You signed up for Winback a few days ago but haven't connected your Stripe yet.
-Connecting takes about 90 seconds and is the only step between you and recovering
-your first failed payment.
+You signed up a few days ago but haven't connected Stripe yet — that's the
+only step left:
 
-Pick up where you left off:
 {NEXT_PUBLIC_APP_URL}/onboarding/stripe
 
-If Winback isn't the right fit, no worries — you can ignore this email and we
-won't send another. We'll clean up the unused account in 90 days.
+Takes about 90 seconds.
 
-If something blocked you (Stripe permissions, a question, anything), just hit reply.
+If something's blocking you — Stripe permissions, a question about how it
+works, anything else — just hit reply and tell us. We'd genuinely like to
+know what's in the way.
 
-— The Winback team
+If it's not the right fit, ignore this — we'll clean up the unused account
+in 90 days.
+
+— Winback
 ```
 
-From: `Winback <noreply@winbackflow.co>`. Wrap in `callWithRetry` for 429
-handling (matches `sendPasswordResetEmail`).
+From: `Winback <support@winbackflow.co>` (monitored inbox — the body invites
+replies). Wrap in `callWithRetry` for 429 handling.
 
 ### Day-83 deletion-warning email
 
@@ -270,29 +272,25 @@ export async function sendDormantAccountDeletionWarningEmail(opts: {
 }): Promise<void>
 ```
 
-Subject: `Your unused Winback account will be deleted in 7 days`
+Subject: `Your Winback account will be deleted in 7 days`
 
 Body:
 ```
 Hi {founderName ?? 'there'},
 
-You signed up for Winback about 12 weeks ago but never connected your Stripe.
-To keep our database clean, we'll delete your account in 7 days unless you
-finish setting up.
+You signed up ~12 weeks ago but never connected Stripe. We'll delete the
+unused account in 7 days.
 
-If you still want to use Winback, connect Stripe here (takes ~90 seconds):
+To keep it, connect Stripe (~90 seconds):
 {NEXT_PUBLIC_APP_URL}/onboarding/stripe
 
-If you don't want the account, you can ignore this email — we'll handle the
-cleanup automatically. No further messages.
+If you'd rather we delete it, ignore this — no further messages. Questions? Hit reply.
 
-Questions? Just hit reply.
-
-— The Winback team
+— Winback
 ```
 
-Same `from`, same retry wrapper. No unsubscribe link — it's a transactional
-account-lifecycle notice, not promotion.
+Same `from: Winback <support@winbackflow.co>`, same retry wrapper. No
+unsubscribe link — it's a transactional account-lifecycle notice.
 
 ---
 
