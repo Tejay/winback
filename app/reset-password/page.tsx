@@ -3,6 +3,9 @@ import { Logo } from '@/components/logo'
 import { validateResetToken } from '@/src/winback/lib/password-reset'
 import { ResetPasswordForm } from './form'
 
+// Token state changes on every consume — never serve a cached render.
+export const dynamic = 'force-dynamic'
+
 export default async function ResetPasswordPage({
   searchParams,
 }: {

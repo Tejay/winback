@@ -39,7 +39,11 @@ export function ResetPasswordForm({ token }: { token: string }) {
     // the /reset-password server component during transition, which would
     // re-run validateResetToken on the now-consumed token and flash the
     // "Link no longer valid" view before /login paints.
-    window.location.href = '/login?reset=1'
+    //
+    // .replace() instead of .href so the now-invalid /reset-password URL
+    // doesn't sit in history — pressing back from /login would otherwise
+    // re-render the consumed-token page and look like the reset failed.
+    window.location.replace('/login?reset=1')
   }
 
   return (
