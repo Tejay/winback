@@ -40,6 +40,11 @@ export const customers = pgTable('wb_customers', {
   // Spec 30 — onboarding-followup cron idempotency timestamps.
   onboardingNudgeSentAt:    timestamp('onboarding_nudge_sent_at'),
   deletionWarningSentAt:    timestamp('deletion_warning_sent_at'),
+  // Spec 31 — pilot program. Set on register-with-pilotToken to
+  // now() + 30 days. While > now(), platform billing + perf fees are
+  // bypassed. After expiry, normal billing flows resume on next event.
+  pilotUntil:               timestamp('pilot_until'),
+  pilotEndingWarnedAt:      timestamp('pilot_ending_warned_at'),
   createdAt:            timestamp('created_at').defaultNow(),
   updatedAt:            timestamp('updated_at').defaultNow(),
 })
@@ -146,6 +151,19 @@ export const passwordResetTokens = pgTable('wb_password_reset_tokens', {
   usedAt:     timestamp('used_at'),
   createdAt:  timestamp('created_at').notNull().defaultNow(),
   ipAddress:  text('ip_address'),
+})
+
+// Spec 31 — Pilot program tokens. Single-use, 14-day expiry, sha256-hashed.
+// Mirrors password-reset model. Admin issues, founder redeems at /register.
+export const pilotTokens = pgTable('wb_pilot_tokens', {
+  id:               uuid('id').primaryKey().defaultRandom(),
+  tokenHash:        text('token_hash').notNull().unique(),
+  expiresAt:        timestamp('expires_at').notNull(),
+  usedAt:           timestamp('used_at'),
+  usedByUserId:     uuid('used_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+  note:             text('note'),
+  createdAt:        timestamp('created_at').notNull().defaultNow(),
+  createdByUserId:  uuid('created_by_user_id').references(() => users.id, { onDelete: 'set null' }),
 })
 
 export const recoveries = pgTable('wb_recoveries', {

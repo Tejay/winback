@@ -161,17 +161,27 @@ billing functions.
 
 ### Platform subscription (`src/winback/lib/activation.ts`)
 
-At the top of `ensurePlatformSubscription(wbCustomerId)`:
+The bypass lives in `ensureActivation` (the orchestration layer), not
+inside `ensurePlatformSubscription` (the leaf Stripe call). This keeps
+`ensurePlatformSubscription`'s return type clean (`{ subscriptionId: string }`)
+and adds a new `ActivationState` variant rather than retrofitting a
+`skipped` flag onto the `'active'` state.
+
+After the `deliveriesExist` check, before charging pending perf fees:
+
 ```ts
 if (await isCustomerOnPilot(wbCustomerId)) {
+  const pilotUntil = await getPilotUntil(wbCustomerId)
   await logEvent({
     name: 'platform_billing_skipped_pilot',
     customerId: wbCustomerId,
-    properties: {},
+    properties: { pilotUntil: pilotUntil?.toISOString() ?? null },
   })
-  return { skipped: true, reason: 'pilot' }
+  return { state: 'pilot', pilotUntil }
 }
 ```
+
+New `ActivationState` variant: `{ state: 'pilot'; pilotUntil: Date | null }`.
 
 ### Performance fee (`src/winback/lib/performance-fee.ts`)
 
@@ -210,16 +220,22 @@ open are skipped.
 
 [app/api/auth/register/route.ts](../app/api/auth/register/route.ts):
 - Add optional `pilotToken: z.string().optional()` to the zod schema.
-- After creating the user + customer + legalAcceptances rows, **if**
-  `pilotToken` was provided AND `consumePilotToken(token)` returns a
-  `tokenId`:
-  - `UPDATE wb_customers SET pilot_until = now() + interval '30 days' WHERE user_id = <new id>`
-  - `UPDATE wb_pilot_tokens SET used_by_user_id = <new id> WHERE id = <token id>`
-  - `logEvent({ name: 'pilot_redeemed', userId, customerId, properties: { tokenId } })`
-- If `consumePilotToken` returns null (invalid/used/expired), the
-  registration **still succeeds** — just no pilot flag. Failing the signup
-  over a stale link is bad UX; ops can manually flag in psql if needed.
-  Log `pilot_redemption_failed` for visibility.
+- **If `pilotToken` is provided, validate FIRST (read-only) before creating
+  any user / customer rows.** A stale or used invite must fail the signup
+  with a clear error rather than quietly creating a non-pilot account —
+  silently degrading "pilot" to "regular customer" risks billing someone
+  who thought the link gave them free use. (Original v1 spec said
+  "registration still succeeds with no pilot flag"; corrected after the
+  first round of pilot testing surfaced exactly this confusion.)
+- Failure response:
+  - JSON: 400 `{ error: 'This pilot invite has already been used or has expired. Ask the team for a fresh link.' }`
+  - Form-encoded: 303 redirect to `/register?error=<msg>&pilotToken=<orig>`
+    so the page re-renders with the badge + error inline.
+  - `logEvent({ name: 'pilot_redemption_failed', userId: null, customerId: null, properties: { reason } })` — userId/customerId both null because we deliberately did NOT create the account.
+- If validation passes, proceed with the existing user + customer +
+  legalAcceptances inserts, then call `consumePilotToken` (atomic UPDATE).
+  - On success: `UPDATE wb_customers SET pilot_until = now() + interval '30 days'`, `UPDATE wb_pilot_tokens SET used_by_user_id = <new id>`, `logEvent({ name: 'pilot_redeemed', userId, customerId, properties: { tokenId } })`.
+  - **Race case** (rare): another concurrent register consumed the token between our validate and our consume. The user row already exists at this point, so we keep the registration succeeded but emit `pilot_redemption_failed_race` with userId/customerId. Operationally identical to the spec-30 admin escape hatch (psql UPDATE) — and so rare in practice that it's not worth a transaction.
 
 ---
 
@@ -246,10 +262,15 @@ open are skipped.
   {
     slotsUsed: number,
     capacity: 10,
-    activePilots: [{ email, founderName, pilotUntil, daysRemaining, redeemedAt }],
+    activePilots: [{ email, founderName, pilotUntil, daysRemaining,
+                    headsUpSent, stripeConnected, redeemedAt }],
     pendingTokens: [{ tokenId, note, expiresAt, createdAt, createdByEmail }],
   }
   ```
+  `stripeConnected` derives from `wb_customers.stripe_access_token IS NOT NULL` —
+  same expression the `/api/admin/customers` route uses. Operationally
+  important: a pilot who hasn't connected Stripe has produced zero value
+  yet; the admin page should make that obvious at a glance.
 
 ### `/admin/pilots` page
 

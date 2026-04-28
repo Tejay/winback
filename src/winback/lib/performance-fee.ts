@@ -4,6 +4,7 @@ import { customers, churnedSubscribers, recoveries } from '@/lib/schema'
 import { eq, and, isNull } from 'drizzle-orm'
 import { getPlatformStripe } from './platform-stripe'
 import { PLATFORM_FEE_CURRENCY } from './subscription'
+import { isCustomerOnPilot } from './pilot'
 import { logEvent } from './events'
 
 /**
@@ -97,9 +98,10 @@ async function loadSubscriberEmail(subscriberId: string): Promise<string> {
  *   • If `perfFeeStripeItemId` is already set on the recovery, this is a no-op.
  */
 export async function chargePerformanceFee(recoveryId: string): Promise<{
-  invoiceItemId: string
+  invoiceItemId: string | null
   amountCents: number
   alreadyCharged: boolean
+  skipped?: 'pilot'
 }> {
   const rec = await loadRecovery(recoveryId)
   if (!rec) throw new Error(`recovery ${recoveryId} not found`)
@@ -113,6 +115,28 @@ export async function chargePerformanceFee(recoveryId: string): Promise<{
       invoiceItemId: rec.perfFeeStripeItemId,
       amountCents: rec.planMrrCents,
       alreadyCharged: true,
+    }
+  }
+
+  // Spec 31 — pilot bypass. While pilot_until > now() we don't create the
+  // Stripe invoice item; we log the would-have-charged amount in
+  // skippedAmountCents so the comp value of the pilot is auditable.
+  // Note: we DON'T set perfFeeStripeItemId here, so if the pilot graduates
+  // and the same recovery is retried, the fee will charge normally.
+  if (await isCustomerOnPilot(rec.customerId)) {
+    await logEvent({
+      name: 'performance_fee_skipped_pilot',
+      customerId: rec.customerId,
+      properties: {
+        recoveryId,
+        skippedAmountCents: rec.planMrrCents,
+      },
+    })
+    return {
+      invoiceItemId: null,
+      amountCents: rec.planMrrCents,
+      alreadyCharged: false,
+      skipped: 'pilot',
     }
   }
 

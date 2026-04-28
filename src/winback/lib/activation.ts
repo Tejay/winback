@@ -7,6 +7,7 @@ import {
 } from './platform-billing'
 import { ensurePlatformSubscription } from './subscription'
 import { chargePendingPerformanceFees } from './performance-fee'
+import { isCustomerOnPilot, getPilotUntil } from './pilot'
 import { logEvent } from './events'
 
 /**
@@ -35,6 +36,7 @@ import { logEvent } from './events'
 export type ActivationState =
   | { state: 'no_op' }
   | { state: 'awaiting_card'; activatedAt: Date }
+  | { state: 'pilot'; pilotUntil: Date | null }   // Spec 31 — platform billing bypass while pilot active
   | {
       state: 'active'
       subscriptionId: string
@@ -58,6 +60,22 @@ export async function ensureActivation(wbCustomerId: string): Promise<Activation
 
   const deliveriesExist = await hasAnyDelivery(wbCustomerId)
   if (!deliveriesExist) return { state: 'no_op' }
+
+  // Spec 31 — pilot bypass. While pilot_until > now() we don't create the
+  // platform Stripe subscription and we don't charge any pending perf fees.
+  // Recoveries still record normally; the chargePerformanceFee gate also
+  // skips per-recovery fees during the same window. After pilot_until the
+  // very next ensureActivation call falls through this check and resumes
+  // normal billing — no manual graduation step.
+  if (await isCustomerOnPilot(wbCustomerId)) {
+    const pilotUntil = await getPilotUntil(wbCustomerId)
+    await logEvent({
+      name: 'platform_billing_skipped_pilot',
+      customerId: wbCustomerId,
+      properties: { pilotUntil: pilotUntil?.toISOString() ?? null },
+    })
+    return { state: 'pilot', pilotUntil }
+  }
 
   // Ensure a platform Stripe customer container exists so we can later
   // attach a card to it. Idempotent — no-op if already created.
