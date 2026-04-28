@@ -9,12 +9,27 @@ import { loginAction } from './actions'
 
 function LoginForm() {
   const searchParams = useSearchParams()
-  const justReset = searchParams.get('reset') === '1'
-  const initialError = searchParams.get('error') === '1'
+  const justReset    = searchParams.get('reset')      === '1'
+  const justVerified = searchParams.get('verified')   === '1'
+  const verifySent   = searchParams.get('verifySent') === '1'
+  const errorParam   = searchParams.get('error') ?? ''
+  // Spec 32 — server-action path surfaces the unverified case via
+  // ?error=UNVERIFIED_EMAIL on the redirect; map it to the resend-flow
+  // UI state. Otherwise it's a generic bad-credentials error.
+  const initialIsUnverified = errorParam === 'UNVERIFIED_EMAIL'
+  const initialErrorText =
+    errorParam === '1' || errorParam === 'CredentialsSignin'
+      ? 'Invalid email or password.'
+      : initialIsUnverified
+      ? 'Please verify your email — we sent you a link.'
+      : ''
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [error, setError] = useState(initialError ? 'Invalid email or password.' : '')
+  const [error, setError] = useState(initialErrorText)
+  const [unverified, setUnverified] = useState(initialIsUnverified)
   const [loading, setLoading] = useState(false)
+  const [resendBusy, setResendBusy] = useState(false)
+  const [resendDone, setResendDone] = useState(false)
 
   // The form's `action={loginAction}` works even before React hydrates —
   // Next.js's server-action transport handles native form POSTs to a
@@ -24,6 +39,8 @@ function LoginForm() {
     e.preventDefault()
     if (loading) return
     setError('')
+    setUnverified(false)
+    setResendDone(false)
     setLoading(true)
 
     const res = await signIn('credentials', {
@@ -35,9 +52,31 @@ function LoginForm() {
     setLoading(false)
 
     if (res?.error) {
-      setError('Invalid email or password.')
+      // NextAuth v5 surfaces our custom CredentialsSignin subclass via
+      // result.code === 'UNVERIFIED_EMAIL'.
+      if (res.code === 'UNVERIFIED_EMAIL') {
+        setUnverified(true)
+        setError(`Please verify your email — we sent a link to ${email}.`)
+      } else {
+        setError('Invalid email or password.')
+      }
     } else {
       window.location.href = '/dashboard'
+    }
+  }
+
+  async function resendVerification() {
+    if (resendBusy || !email) return
+    setResendBusy(true)
+    try {
+      await fetch('/api/auth/resend-verification', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      })
+    } finally {
+      setResendBusy(false)
+      setResendDone(true)
     }
   }
 
@@ -58,6 +97,18 @@ function LoginForm() {
         {justReset && (
           <div className="mb-6 bg-green-50 text-green-700 border border-green-200 rounded-lg px-4 py-2.5 text-sm">
             Password updated. Sign in with your new password.
+          </div>
+        )}
+
+        {justVerified && (
+          <div className="mb-6 bg-green-50 text-green-700 border border-green-200 rounded-lg px-4 py-2.5 text-sm">
+            Email verified. Sign in to continue.
+          </div>
+        )}
+
+        {verifySent && (
+          <div className="mb-6 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg px-4 py-2.5 text-sm">
+            Check your inbox — we sent you a verification link.
           </div>
         )}
 
@@ -112,8 +163,32 @@ function LoginForm() {
             {loading ? 'Logging in...' : 'Log in →'}
           </button>
 
-          {error && (
+          {error && !unverified && (
             <p className="text-sm text-red-600 text-center mt-2">{error}</p>
+          )}
+
+          {unverified && (
+            <div className="mt-2 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-sm text-amber-800">
+              <p>{error}</p>
+              <div className="mt-2 flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={resendVerification}
+                  disabled={resendBusy || resendDone}
+                  className={`text-xs font-medium px-3 py-1.5 rounded-full ${
+                    resendBusy || resendDone
+                      ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                      : 'bg-[#0f172a] text-white hover:bg-[#1e293b]'
+                  }`}
+                >
+                  {resendBusy
+                    ? 'Sending…'
+                    : resendDone
+                    ? 'Sent — check your inbox'
+                    : 'Resend verification email'}
+                </button>
+              </div>
+            </div>
           )}
         </form>
 

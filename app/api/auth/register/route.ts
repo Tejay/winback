@@ -10,6 +10,8 @@ import {
   validatePilotToken,
   PILOT_DURATION_DAYS,
 } from '@/src/winback/lib/pilot'
+import { issueVerificationToken } from '@/src/winback/lib/email-verification'
+import { sendVerificationEmail } from '@/src/winback/lib/email'
 
 const LEGAL_VERSION = '2026-04-14'
 
@@ -161,6 +163,33 @@ export async function POST(req: Request) {
     }
   }
 
+  // Spec 32 — issue a verification token + send the email. Same code
+  // path in dev + prod (no env-driven branching) so dev exercises the
+  // real Resend send. The user row was created with email_verified_at
+  // = NULL; login will refuse them until they click the link.
+  // Send failure does NOT roll back the registration — user can hit
+  // /api/auth/resend-verification from the login page if it never arrives.
+  try {
+    const ip = req.headers.get('x-forwarded-for')?.split(',')[0].trim() ?? null
+    const rawToken = await issueVerificationToken({
+      userId:    newUser.id,
+      ipAddress: ip,
+    })
+    const verifyUrl = `${publicOrigin()}/verify-email?token=${encodeURIComponent(rawToken)}`
+    await sendVerificationEmail({
+      to:          email,
+      founderName: name,
+      verifyUrl,
+    })
+  } catch (err) {
+    console.error('[register] verification email send failed:', err)
+    await logEvent({
+      name: 'verification_email_send_failed',
+      userId: newUser.id,
+      properties: { stage: 'register' },
+    })
+  }
+
   // Spec 30 — close the funnel-analytics loop. Pair with
   // `onboarding_stripe_viewed` and `oauth_completed` to reconstruct
   // register → view-onboarding → connect drop-off.
@@ -171,7 +200,7 @@ export async function POST(req: Request) {
   })
 
   if (isFormPost) {
-    return NextResponse.redirect(`${publicOrigin()}/login`, 303)
+    return NextResponse.redirect(`${publicOrigin()}/login?verifySent=1`, 303)
   }
   return NextResponse.json({ success: true }, { status: 201 })
 }

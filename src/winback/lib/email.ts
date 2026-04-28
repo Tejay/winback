@@ -866,3 +866,49 @@ Thanks for kicking the tires.
     throw new Error(`Resend error: ${res.error.message}`)
   }
 }
+
+/**
+ * Spec 32 — Email verification. Sent on register, and re-sent on demand
+ * via /api/auth/resend-verification. Plain text, no unsubscribe footer
+ * (transactional account-lifecycle email; same precedent as
+ * sendPasswordResetEmail). From the monitored support@ inbox so a
+ * confused founder can hit reply.
+ */
+export async function sendVerificationEmail(opts: {
+  to: string
+  founderName: string | null
+  verifyUrl: string
+}): Promise<void> {
+  const { to, founderName, verifyUrl } = opts
+  const resend = getResendClient()
+
+  const greeting = founderName ? `Hi ${founderName},` : 'Hi there,'
+
+  const subject = 'Confirm your email to finish setting up Winback'
+  const body = `${greeting}
+
+Welcome to Winback. Click the link below to confirm your email and
+finish creating your account:
+
+${verifyUrl}
+
+This link expires in 7 days. If you didn't sign up for Winback, you can
+safely ignore this email.
+
+— Winback`
+
+  const res = await callWithRetry(
+    () =>
+      resend.emails.send({
+        from: 'Winback <support@winbackflow.co>',
+        to,
+        subject,
+        text: body,
+      }),
+    { ctx: 'sendVerificationEmail' },
+  )
+
+  if (res.error) {
+    throw new Error(`Resend error: ${res.error.message}`)
+  }
+}

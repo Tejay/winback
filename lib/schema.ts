@@ -8,6 +8,10 @@ export const users = pgTable('wb_users', {
   // Spec 25 — gates /admin and /api/admin/*. Adding admins is a SQL UPDATE
   // until we build a manage-admins UI in Phase 3. Migration 018.
   isAdmin:      boolean('is_admin').notNull().default(false),
+  // Spec 32 — null until the founder clicks the verification link in
+  // their email. Login refuses unverified accounts (NextAuth authorize
+  // throws UnverifiedEmailError). Migration 027.
+  emailVerifiedAt: timestamp('email_verified_at'),
   createdAt:    timestamp('created_at').defaultNow(),
 })
 
@@ -144,6 +148,19 @@ export const wbEvents = pgTable('wb_events', {
 
 // Spec 29 — Password reset tokens. Single-use, 60-min expiry. Stored hashed.
 export const passwordResetTokens = pgTable('wb_password_reset_tokens', {
+  id:         uuid('id').primaryKey().defaultRandom(),
+  userId:     uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  tokenHash:  text('token_hash').notNull().unique(),
+  expiresAt:  timestamp('expires_at').notNull(),
+  usedAt:     timestamp('used_at'),
+  createdAt:  timestamp('created_at').notNull().defaultNow(),
+  ipAddress:  text('ip_address'),
+})
+
+// Spec 32 — Email verification tokens. Single-use, 7-day expiry, sha256-hashed.
+// Mirrors password-reset model. Issued at /api/auth/register, redeemed at
+// /verify-email, also re-issued via /api/auth/resend-verification.
+export const emailVerificationTokens = pgTable('wb_email_verification_tokens', {
   id:         uuid('id').primaryKey().defaultRandom(),
   userId:     uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   tokenHash:  text('token_hash').notNull().unique(),
