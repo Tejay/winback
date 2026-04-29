@@ -117,7 +117,9 @@ describe('GET /api/update-payment/[subscriberId]', () => {
 
     const res = await GET(makeReq() as never, { params: Promise.resolve({ subscriberId: 'sub_1' }) })
 
-    expect(res.headers.get('location')).toBe('https://app.example.com/welcome-back?recovered=false')
+    // Spec 36 — customer id is included even on the failure path so the
+    // welcome-back page can render the merchant brand.
+    expect(res.headers.get('location')).toBe('https://app.example.com/welcome-back?recovered=false&customer=wb_cust_1')
     expect(mockCheckoutSessionsCreate).not.toHaveBeenCalled()
   })
 
@@ -167,6 +169,9 @@ describe('GET /api/update-payment/[subscriberId]', () => {
     expect(arg.customer).toBe('cus_stripe_1')
     expect(arg.success_url).toContain('/welcome-back?recovered=true')
     expect(arg.cancel_url).toContain('/welcome-back?recovered=false')
+    // Spec 36 — customer id passed for merchant branding on the landing page
+    expect(arg.success_url).toContain('&customer=wb_cust_1')
+    expect(arg.cancel_url).toContain('&customer=wb_cust_1')
     expect(arg.metadata).toEqual({
       winback_subscriber_id: 'sub_1',
       winback_customer_id:   'wb_cust_1',
@@ -222,7 +227,8 @@ describe('GET /api/update-payment/[subscriberId]', () => {
 
     const res = await GET(makeReq() as never, { params: Promise.resolve({ subscriberId: 'sub_1' }) })
 
-    expect(res.headers.get('location')).toBe('https://app.example.com/welcome-back?recovered=false')
+    // Spec 36 — customer id included on failure path
+    expect(res.headers.get('location')).toBe('https://app.example.com/welcome-back?recovered=false&customer=wb_cust_1')
   })
 
   it('redirects to /welcome-back?recovered=false when Stripe returns no url', async () => {
@@ -234,6 +240,7 @@ describe('GET /api/update-payment/[subscriberId]', () => {
 
     const res = await GET(makeReq() as never, { params: Promise.resolve({ subscriberId: 'sub_1' }) })
 
-    expect(res.headers.get('location')).toBe('https://app.example.com/welcome-back?recovered=false')
+    // Spec 36 — customer id included on failure path
+    expect(res.headers.get('location')).toBe('https://app.example.com/welcome-back?recovered=false&customer=wb_cust_1')
   })
 })

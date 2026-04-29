@@ -72,8 +72,10 @@ export async function POST(
       mode: 'subscription',
       customer: subscriber.stripeCustomerId,
       line_items: [{ price: priceId, quantity: 1 }],
-      success_url: `${baseUrl}/welcome-back?recovered=true`,
-      cancel_url: `${baseUrl}/welcome-back?recovered=false`,
+      // Spec 36 — pass winback customer id so /welcome-back can render
+      // the merchant's brand (not Winback's).
+      success_url: `${baseUrl}/welcome-back?recovered=true&customer=${customer.id}`,
+      cancel_url: `${baseUrl}/welcome-back?recovered=false&customer=${customer.id}`,
       metadata: {
         winback_subscriber_id: subscriberId,
         winback_customer_id: customer.id,

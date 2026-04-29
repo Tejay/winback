@@ -6,7 +6,6 @@ import { eq } from 'drizzle-orm'
 import { decrypt } from '@/src/winback/lib/encryption'
 import { verifySubscriberToken } from '@/src/winback/lib/unsubscribe-token'
 import { ChooserForm } from './chooser-form'
-import { Logo } from '@/components/logo'
 
 /**
  * Spec 20c — tier chooser page.
@@ -47,9 +46,13 @@ export default async function ReactivateChooserPage({
 
   if (!subscriber) notFound()
 
+  // Spec 36 — pass winback customer id on /welcome-back redirects so
+  // the page renders the merchant's brand (not Winback's).
+  const customerParam = `&customer=${subscriber.customerId}`
+
   // Already recovered — bounce to welcome
   if (subscriber.status === 'recovered') {
-    redirect('/welcome-back?recovered=true')
+    redirect(`/welcome-back?recovered=true${customerParam}`)
   }
 
   const [customer] = await db
@@ -59,7 +62,7 @@ export default async function ReactivateChooserPage({
     .limit(1)
 
   if (!customer?.stripeAccessToken) {
-    redirect('/welcome-back?recovered=false&reason=account_disconnected')
+    redirect(`/welcome-back?recovered=false&reason=account_disconnected${customerParam}`)
   }
 
   // Load active prices + their products (for display names)
@@ -72,7 +75,7 @@ export default async function ReactivateChooserPage({
   })
 
   if (pricesList.data.length === 0) {
-    redirect('/welcome-back?recovered=false&reason=price_unavailable')
+    redirect(`/welcome-back?recovered=false&reason=price_unavailable${customerParam}`)
   }
 
   const options: PriceOption[] = pricesList.data.map(p => {
@@ -95,11 +98,26 @@ export default async function ReactivateChooserPage({
 
   const firstName = subscriber.name?.split(' ')[0] ?? 'there'
 
+  // Spec 36 — render the merchant's brand (NOT Winback's). Same pattern
+  // as /welcome-back: customer is already loaded above; pull a wordmark
+  // from product_name → founder_name. If both are missing, render
+  // nothing (blank space) — never the Winback logo.
+  const rawMerchantName = customer.productName ?? customer.founderName ?? ''
+  const merchantWordmark = rawMerchantName.trim().length > 0
+    ? (rawMerchantName.length > 40
+        ? rawMerchantName.slice(0, 39).trimEnd() + '…'
+        : rawMerchantName)
+    : null
+
   return (
     <div className="min-h-screen bg-[#f5f5f5] flex flex-col items-center py-12 px-4">
-      <div className="mb-8">
-        <Logo />
-      </div>
+      {merchantWordmark ? (
+        <div className="mb-8 text-2xl font-semibold text-slate-900 tracking-tight">
+          {merchantWordmark}
+        </div>
+      ) : (
+        <div className="mb-8" aria-hidden />
+      )}
 
       <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-8 max-w-md w-full">
         <h1 className="text-2xl font-bold text-slate-900 mb-2">
@@ -113,7 +131,7 @@ export default async function ReactivateChooserPage({
 
         <div className="mt-6 text-center">
           <a
-            href="/welcome-back?recovered=false"
+            href={`/welcome-back?recovered=false${customerParam}`}
             className="text-xs text-slate-400 hover:text-slate-600"
           >
             Not now, take me back
