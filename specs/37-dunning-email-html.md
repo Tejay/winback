@@ -155,9 +155,17 @@ export interface DunningHtmlInputs {
 export function renderDunningEmailHtml(i: DunningHtmlInputs): string {
   const greeting = `Hi ${escapeHtml(i.customerName ?? 'there')},`
   const planLine = `${escapeHtml(i.planName)} (${escapeHtml(i.amount)} ${escapeHtml(i.currency.toUpperCase())})`
-  const retryLine = i.retryDateStr
-    ? `We'll try your card again on <strong>${escapeHtml(i.retryDateStr)}</strong> — updating before then means no interruption to your service.`
-    : `This was our last automatic attempt. To keep your subscription active, please update your payment method below.`
+
+  // Three retry-line variants, independent of tone:
+  //   1. retryDateStr null              → Stripe gave up. "Last automatic attempt"
+  //   2. isFinalRetry + date set        → T3: "one final time" urgency
+  //   3. otherwise                      → T1/T2: "we'll try again on X"
+  const retryLine = !i.retryDateStr
+    ? `This was our last automatic attempt. To keep your subscription active, please update your payment method below.`
+    : i.isFinalRetry
+    ? `We'll try your card one final time on <strong>${escapeHtml(i.retryDateStr)}</strong>. If it fails, your subscription will be cancelled.`
+    : `We'll try your card again on <strong>${escapeHtml(i.retryDateStr)}</strong> — updating before then means no interruption to your service.`
+
   const tone = i.isFinalRetry ? 'Final reminder' : 'Heads up'
 
   return `
@@ -282,8 +290,10 @@ for reproduction. No schema change.
 - Customer name is HTML-escaped — `<script>alert("x")</script>` in
   `customerName` does NOT appear as raw HTML
 - T1 (with retry date) body contains "We'll try your card again on…"
-- T3 / final-retry body (`isFinalRetry: true` AND `retryDateStr: null`)
-  uses the "last automatic attempt" copy
+- T3 / final-retry body (`isFinalRetry: true` + `retryDateStr` set) uses
+  "one final time" + "subscription will be cancelled" copy
+- Stripe-gave-up path (`retryDateStr: null`) uses the "last automatic
+  attempt" copy regardless of `isFinalRetry`
 
 `src/winback/__tests__/email.test.ts` (extend, ~2):
 

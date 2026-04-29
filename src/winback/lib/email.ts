@@ -6,6 +6,7 @@ import { ClassificationResult } from './types'
 import { generateUnsubscribeToken } from './unsubscribe-token'
 import { logEvent } from './events'
 import { callWithRetry } from './retry'
+import { renderDunningEmailHtml } from './email-html'
 
 /**
  * Spec 28 — Postgres unique-violation error code. The partial unique index
@@ -607,9 +608,10 @@ export async function sendDunningEmail(params: {
 
   let subject: string
   let body: string
+  let retryDateStr: string | null = null
 
   if (nextRetryDate) {
-    const retryDateStr = nextRetryDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'long' })
+    retryDateStr = nextRetryDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'long' })
     subject = 'Your payment didn\'t go through'
     body = `Hi ${name},
 
@@ -640,6 +642,21 @@ ${updateLink}
 If you'd rather not hear from us, unsubscribe: ${unsubLink}`
   }
 
+  // Spec 37 — HTML body sent alongside text. Resend wraps both into a
+  // multipart/alternative envelope; the recipient's client picks
+  // whichever it prefers. The text body above is the canonical fallback.
+  const html = renderDunningEmailHtml({
+    customerName,
+    planName,
+    amount,
+    currency,
+    retryDateStr,
+    updateLink,
+    unsubLink,
+    fromName,
+    isFinalRetry: !nextRetryDate,
+  })
+
   // Spec 28 — wrap the Resend call in callWithRetry.
   const res = await callWithRetry(
     () =>
@@ -648,6 +665,7 @@ If you'd rather not hear from us, unsubscribe: ${unsubLink}`
         to: email,
         subject,
         text: body,
+        html,
         headers: listUnsubscribeHeaders(subscriberId),
       }),
     { ctx: 'sendDunning' },
@@ -790,6 +808,20 @@ retry will go through automatically.
 — — —
 If you'd rather not hear from us, unsubscribe: ${unsubLink}`
 
+  // Spec 37 — HTML body sent alongside text. Same renderer as T1; the
+  // isFinalRetry flag toggles tone + retry-line copy.
+  const html = renderDunningEmailHtml({
+    customerName,
+    planName,
+    amount,
+    currency,
+    retryDateStr,
+    updateLink,
+    unsubLink,
+    fromName,
+    isFinalRetry,
+  })
+
   const res = await callWithRetry(
     () =>
       resend.emails.send({
@@ -797,6 +829,7 @@ If you'd rather not hear from us, unsubscribe: ${unsubLink}`
         to: email,
         subject,
         text: body,
+        html,
         headers: listUnsubscribeHeaders(subscriberId),
       }),
     { ctx: `sendDunningFollowup_${type}` },
