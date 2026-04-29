@@ -579,6 +579,16 @@ async function processPaymentFailed(event: Stripe.Event) {
       ? 'final_retry_pending'              // next retry is the last (default 4-attempt schedule)
       : 'awaiting_retry'                   // more retries coming
 
+  // Spec 34 — capture the latest decline code so dunning email copy
+  // can be specific to the failure reason. `decline_code` is the
+  // bank-issued reason ('insufficient_funds', 'expired_card', etc.);
+  // `code` is the higher-level Stripe bucket ('card_declined'). Prefer
+  // the more specific one when available. Always overwritten on every
+  // retry — banks may return different reasons across attempts.
+  const lastPaymentError = invoice.last_payment_error ?? null
+  const lastDeclineCode: string | null =
+    lastPaymentError?.decline_code ?? lastPaymentError?.code ?? null
+
   const [customer] = await db
     .select()
     .from(customers)
@@ -606,6 +616,8 @@ async function processPaymentFailed(event: Stripe.Event) {
 
   // Spec 33 — on retry events (attempt_count > 1) we don't send another
   // T1 email. We just refresh state so the cron can pick up T2/T3 later.
+  // Spec 34 — also refresh lastDeclineCode (banks may give a different
+  // reason across attempts; T2/T3 should reflect the latest known one).
   if (!isFirstAttempt) {
     if (existingSub) {
       await db
@@ -613,6 +625,7 @@ async function processPaymentFailed(event: Stripe.Event) {
         .set({
           nextPaymentAttemptAt: nextRetryDate,
           dunningState,
+          lastDeclineCode,
           updatedAt: new Date(),
         })
         .where(eq(churnedSubscribers.id, existingSub.id))
@@ -648,12 +661,13 @@ async function processPaymentFailed(event: Stripe.Event) {
 
     if (existingEmail) {
       // Already sent T1; just refresh state in case the retry timestamp
-      // has shifted since the original event.
+      // (or decline reason — Spec 34) has shifted since the original event.
       await db
         .update(churnedSubscribers)
         .set({
           nextPaymentAttemptAt: nextRetryDate,
           dunningState,
+          lastDeclineCode,
           updatedAt: new Date(),
         })
         .where(eq(churnedSubscribers.id, existingSub.id))
@@ -687,6 +701,7 @@ async function processPaymentFailed(event: Stripe.Event) {
       .set({
         nextPaymentAttemptAt: nextRetryDate,
         dunningState,
+        lastDeclineCode,
         updatedAt: new Date(),
       })
       .where(eq(churnedSubscribers.id, existingSub.id))
@@ -716,6 +731,8 @@ async function processPaymentFailed(event: Stripe.Event) {
         dunningTouchCount: 1,
         dunningLastTouchAt: new Date(),
         dunningState,
+        // Spec 34 — captured for the first T1.
+        lastDeclineCode,
       })
       .returning({ id: churnedSubscribers.id })
 

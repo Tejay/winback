@@ -27,6 +27,17 @@ export function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, c => ESCAPE_MAP[c])
 }
 
+/**
+ * Subset of DeclineCopy we need to render. Imported as a structural
+ * shape rather than the full type to keep email-html.ts decoupled from
+ * the decline-codes module — callers pass it in.
+ */
+export interface DunningDeclineCopy {
+  reason:               string
+  action:               string
+  suppressUpdateCta?:   boolean
+}
+
 export interface DunningHtmlInputs {
   customerName:  string | null
   planName:      string
@@ -37,6 +48,7 @@ export interface DunningHtmlInputs {
   unsubLink:     string
   fromName:      string
   isFinalRetry?: boolean         // T3 path, OR no-retry T1 path
+  declineCopy?:  DunningDeclineCopy  // Spec 34 — bespoke reason/action lines
 }
 
 export function renderDunningEmailHtml(i: DunningHtmlInputs): string {
@@ -55,6 +67,34 @@ export function renderDunningEmailHtml(i: DunningHtmlInputs): string {
 
   const tone = i.isFinalRetry ? 'Final reminder' : 'Heads up'
 
+  // Spec 34 — bespoke decline copy. When provided, swap the generic
+  // "We tried to charge…" intro for focused "Why this happened" +
+  // "Best next step" lines. suppressUpdateCta hides the dark CTA
+  // button (used for `temporary` / Stripe-side declines).
+  const introBlock = i.declineCopy
+    ? `<p style="margin:0 0 16px 0;font-size:14px;line-height:1.6;color:#475569;">
+              We tried to charge your card for ${planLine} but it didn&#39;t go through.
+            </p>
+            <p style="margin:0 0 8px 0;font-size:13px;font-weight:600;color:#0f172a;">Why this happened</p>
+            <p style="margin:0 0 16px 0;font-size:14px;line-height:1.6;color:#475569;">
+              ${escapeHtml(i.declineCopy.reason)}
+            </p>
+            <p style="margin:0 0 8px 0;font-size:13px;font-weight:600;color:#0f172a;">Best next step</p>
+            <p style="margin:0 0 16px 0;font-size:14px;line-height:1.6;color:#475569;">
+              ${escapeHtml(i.declineCopy.action)}
+            </p>`
+    : `<p style="margin:0 0 16px 0;font-size:14px;line-height:1.6;color:#475569;">
+              We tried to charge your card for ${planLine} but it didn&#39;t go through.
+            </p>`
+
+  const buttonBlock = i.declineCopy?.suppressUpdateCta
+    ? ''
+    : `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 24px 0;">
+              <tr><td style="background:#0f172a;border-radius:9999px;">
+                <a href="${escapeHtml(i.updateLink)}" style="display:inline-block;padding:12px 28px;font-size:14px;font-weight:500;color:#ffffff;text-decoration:none;">Update payment</a>
+              </td></tr>
+            </table>`
+
   return `
 <!doctype html>
 <html>
@@ -65,17 +105,11 @@ export function renderDunningEmailHtml(i: DunningHtmlInputs): string {
           <tr><td style="padding:32px 40px;">
             <p style="margin:0 0 8px 0;font-size:12px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:#3b82f6;">${escapeHtml(tone)}</p>
             <p style="margin:0 0 24px 0;font-size:16px;line-height:1.5;color:#0f172a;">${greeting}</p>
-            <p style="margin:0 0 16px 0;font-size:14px;line-height:1.6;color:#475569;">
-              We tried to charge your card for ${planLine} but it didn&#39;t go through.
-            </p>
+            ${introBlock}
             <p style="margin:0 0 24px 0;font-size:14px;line-height:1.6;color:#475569;">
               ${retryLine}
             </p>
-            <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 24px 0;">
-              <tr><td style="background:#0f172a;border-radius:9999px;">
-                <a href="${escapeHtml(i.updateLink)}" style="display:inline-block;padding:12px 28px;font-size:14px;font-weight:500;color:#ffffff;text-decoration:none;">Update payment</a>
-              </td></tr>
-            </table>
+            ${buttonBlock}
             <p style="margin:0 0 8px 0;font-size:14px;line-height:1.6;color:#475569;">
               If you have any questions, just reply to this email.
             </p>

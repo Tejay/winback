@@ -133,6 +133,97 @@ describe('sendDunningFollowupEmail — fallbacks', () => {
   })
 })
 
+// Spec 34 — bespoke decline-code-aware copy in T2/T3 bodies.
+// The dunning email function reads `lastDeclineCode` from the subscriber
+// row (the 4th select() call after DNC, pause, ai-pause). We override
+// the mock to return a specific code for that call.
+function setLastDeclineCode(code: string | null) {
+  let selectCallCount = 0
+  mockSelect.mockImplementation(() => {
+    const isDeclineLookup = selectCallCount === 3 // 0=DNC, 1=pause, 2=ai-pause, 3=decline
+    selectCallCount++
+    return {
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockReturnValue({
+          limit: vi.fn().mockResolvedValue(
+            isDeclineLookup
+              ? [{ lastDeclineCode: code }]
+              : [{ dnc: false, aiPausedUntil: null }],
+          ),
+        }),
+        innerJoin: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            limit: vi.fn().mockResolvedValue([{ pausedAt: null }]),
+          }),
+        }),
+      }),
+    }
+  })
+}
+
+describe('sendDunningFollowupEmail — Spec 34 decline-aware copy', () => {
+  it('expired_card weaves "expired" reason + "update" action into both text and html', async () => {
+    setLastDeclineCode('expired_card')
+    await sendDunningFollowupEmail({ ...baseParams, isFinalRetry: false })
+    const arg = mockSend.mock.calls[0][0]
+
+    expect(arg.text).toMatch(/Why this happened:.*expired/i)
+    expect(arg.text).toMatch(/Best next step:.*update/i)
+    expect(arg.html).toContain('Why this happened')
+    expect(arg.html).toContain('expired since the last successful charge')
+    expect(arg.html).toContain('Best next step')
+  })
+
+  it('do_not_honor weaves "bank declined" reason + "call the number" advice', async () => {
+    setLastDeclineCode('do_not_honor')
+    await sendDunningFollowupEmail({ ...baseParams, isFinalRetry: false })
+    const arg = mockSend.mock.calls[0][0]
+
+    expect(arg.text.toLowerCase()).toContain('bank declined')
+    expect(arg.text.toLowerCase()).toContain('call the number')
+    expect(arg.html).toContain('bank declined the charge')
+  })
+
+  it('processing_error suppresses the update CTA in both text and html bodies', async () => {
+    setLastDeclineCode('processing_error')
+    await sendDunningFollowupEmail({ ...baseParams, isFinalRetry: false })
+    const arg = mockSend.mock.calls[0][0]
+
+    // Reason + action still appear
+    expect(arg.text.toLowerCase()).toContain('temporary issue')
+    expect(arg.text.toLowerCase()).toContain('no action needed')
+    // But the body's update-payment URL block is gone
+    expect(arg.text).not.toContain('Update your payment method here:\nhttps://app.example.com/api/update-payment/sub_1')
+    // HTML button is hidden
+    expect(arg.html).not.toContain('>Update payment</a>')
+    // Unsubscribe footer still present (not affected)
+    expect(arg.html).toContain('>Unsubscribe</a>')
+  })
+
+  it('null lastDeclineCode falls back to generic copy (no "Why this happened" header)', async () => {
+    setLastDeclineCode(null)
+    await sendDunningFollowupEmail({ ...baseParams, isFinalRetry: false })
+    const arg = mockSend.mock.calls[0][0]
+
+    // Fallback bucket DOES still include the "Why this happened" header
+    // because the body always shows reason + action — but the reason
+    // is the generic one, not a bespoke decline.
+    expect(arg.text).toMatch(/Why this happened:.*didn't go through/)
+  })
+
+  it('T3 (isFinalRetry) inherits the same decline copy', async () => {
+    setLastDeclineCode('insufficient_funds')
+    await sendDunningFollowupEmail({ ...baseParams, isFinalRetry: true })
+    const arg = mockSend.mock.calls[0][0]
+
+    expect(arg.text.toLowerCase()).toContain('insufficient funds')
+    expect(arg.text.toLowerCase()).toContain('different card')
+    // T3-specific copy still appears
+    expect(arg.text).toContain('one final time')
+    expect(arg.html).toContain('Final reminder')
+  })
+})
+
 // Spec 37 — both `text` and `html` are sent on the same Resend call,
 // so plain-text clients still get the existing body.
 describe('sendDunningFollowupEmail — Spec 37 HTML body', () => {

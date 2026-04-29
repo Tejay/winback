@@ -115,6 +115,9 @@ export const churnedSubscribers = pgTable('wb_churned_subscribers', {
   dunningState:               text('dunning_state'),
   // Values: 'awaiting_retry' | 'final_retry_pending'
   //       | 'recovered_during_dunning' | 'churned_during_dunning'
+  // Spec 34 — last decline_code from invoice.last_payment_error.
+  // Drives bespoke "why this happened" copy in T1/T2/T3.
+  lastDeclineCode:            text('last_decline_code'),
   createdAt:            timestamp('created_at').defaultNow(),
   updatedAt:            timestamp('updated_at').defaultNow(),
 })

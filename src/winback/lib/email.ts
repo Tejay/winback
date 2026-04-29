@@ -7,6 +7,7 @@ import { generateUnsubscribeToken } from './unsubscribe-token'
 import { logEvent } from './events'
 import { callWithRetry } from './retry'
 import { renderDunningEmailHtml } from './email-html'
+import { declineCodeToCopy, DeclineCopy } from './decline-codes'
 
 /**
  * Spec 28 — Postgres unique-violation error code. The partial unique index
@@ -606,20 +607,36 @@ export async function sendDunningEmail(params: {
   const unsubLink = unsubscribeUrl(subscriberId)
   const from = `${fromName} <noreply@winbackflow.co>`
 
+  // Spec 34 — pull the latest decline code from the subscriber row and
+  // resolve bespoke reason + action copy. NULL maps to the fallback
+  // bucket which preserves today's generic wording.
+  const [declineRow] = await db
+    .select({ lastDeclineCode: churnedSubscribers.lastDeclineCode })
+    .from(churnedSubscribers)
+    .where(eq(churnedSubscribers.id, subscriberId))
+    .limit(1)
+  const declineCopy: DeclineCopy = declineCodeToCopy(declineRow?.lastDeclineCode)
+
   let subject: string
   let body: string
   let retryDateStr: string | null = null
+  // Spec 34 — temporary/Stripe-side declines suppress the update CTA;
+  // we don't want to push the customer to act when Stripe is at fault.
+  const updateBlockText = declineCopy.suppressUpdateCta
+    ? ''
+    : `\nUpdate your payment method here:\n${updateLink}\n`
 
   if (nextRetryDate) {
     retryDateStr = nextRetryDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'long' })
     subject = 'Your payment didn\'t go through'
     body = `Hi ${name},
 
-We tried to charge your card for ${planName} (${amount} ${currency.toUpperCase()}) but it didn't go through. This usually happens when a card expires or the bank declines it.
+We tried to charge your card for ${planName} (${amount} ${currency.toUpperCase()}) but it didn't go through.
 
-You can update your payment method here:
-${updateLink}
+Why this happened: ${declineCopy.reason}
 
+Best next step: ${declineCopy.action}
+${updateBlockText}
 We'll try again on ${retryDateStr} — updating before then means no interruption to your service.
 
 If you have any questions, just reply to this email.
@@ -645,6 +662,8 @@ If you'd rather not hear from us, unsubscribe: ${unsubLink}`
   // Spec 37 — HTML body sent alongside text. Resend wraps both into a
   // multipart/alternative envelope; the recipient's client picks
   // whichever it prefers. The text body above is the canonical fallback.
+  // Spec 34 — pass the resolved decline copy so HTML renders the same
+  // bespoke reason / action lines (and respects suppressUpdateCta).
   const html = renderDunningEmailHtml({
     customerName,
     planName,
@@ -655,6 +674,7 @@ If you'd rather not hear from us, unsubscribe: ${unsubLink}`
     unsubLink,
     fromName,
     isFinalRetry: !nextRetryDate,
+    declineCopy,
   })
 
   // Spec 28 — wrap the Resend call in callWithRetry.
@@ -757,6 +777,17 @@ export async function sendDunningFollowupEmail(params: {
   const unsubLink = unsubscribeUrl(subscriberId)
   const from = `${fromName} <noreply@winbackflow.co>`
 
+  // Spec 34 — read the latest decline code captured by the webhook
+  // and resolve bespoke copy. T2/T3 inherit whatever the most recent
+  // payment_failed event told us; if the bank's reason changed across
+  // retries we always use the latest.
+  const [declineRow] = await db
+    .select({ lastDeclineCode: churnedSubscribers.lastDeclineCode })
+    .from(churnedSubscribers)
+    .where(eq(churnedSubscribers.id, subscriberId))
+    .limit(1)
+  const declineCopy: DeclineCopy = declineCodeToCopy(declineRow?.lastDeclineCode)
+
   // Format retry date + time. We mirror the existing dunning email's
   // dd-LL formatting plus a UTC time so the customer can convert.
   const retryDateStr = retryDate.toLocaleDateString('en-GB', {
@@ -772,19 +803,26 @@ export async function sendDunningFollowupEmail(params: {
     ? `Last automatic retry — your subscription ends ${retryDateStr}`
     : `Heads up — we'll retry your card on ${retryDateStr}`
 
+  // Spec 34 — bespoke "why this happened" + "best next step" lines.
+  // suppressUpdateCta hides the update link in the body too (text + html).
+  const updateBlockText = declineCopy.suppressUpdateCta
+    ? ''
+    : `\nUpdate your payment method here:\n${updateLink}\n`
+
   const body = isFinalRetry
     ? `Hi ${name},
 
 This is your last chance to update your payment before your subscription
 with ${fromName} ends.
 
+Why this happened: ${declineCopy.reason}
+
+Best next step: ${declineCopy.action}
+
 We'll try your card one final time on ${retryDateStr} at ${retryTimeStr}.
 If it fails, your subscription will be cancelled and you'll lose access
 to ${planName}.
-
-Update payment now:
-${updateLink}
-
+${updateBlockText}
 If you've decided to leave, no need to reply — your subscription will
 cancel on its own.
 
@@ -796,10 +834,10 @@ If you'd rather not hear from us, unsubscribe: ${unsubLink}`
 
 Quick reminder: your last payment to ${fromName} for ${planName} (${amount} ${currency.toUpperCase()}) didn't go through, and we'll automatically try your card again on ${retryDateStr} at ${retryTimeStr}.
 
-If you'd like to update your card or use a different payment method
-before then:
-${updateLink}
+Why this happened: ${declineCopy.reason}
 
+Best next step: ${declineCopy.action}
+${updateBlockText}
 If everything's already sorted, you can ignore this email — the next
 retry will go through automatically.
 
@@ -810,6 +848,7 @@ If you'd rather not hear from us, unsubscribe: ${unsubLink}`
 
   // Spec 37 — HTML body sent alongside text. Same renderer as T1; the
   // isFinalRetry flag toggles tone + retry-line copy.
+  // Spec 34 — pass declineCopy so HTML mirrors the bespoke wording.
   const html = renderDunningEmailHtml({
     customerName,
     planName,
@@ -820,6 +859,7 @@ If you'd rather not hear from us, unsubscribe: ${unsubLink}`
     unsubLink,
     fromName,
     isFinalRetry,
+    declineCopy,
   })
 
   const res = await callWithRetry(
