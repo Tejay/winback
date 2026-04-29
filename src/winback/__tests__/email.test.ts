@@ -286,4 +286,44 @@ describe('recordEmailSentIdempotent', () => {
       ),
     ).resolves.toBeUndefined()
   })
+
+  // Newer drizzle-orm wraps the raw NeonDbError inside a DrizzleQueryError
+  // for richer logging — the pg code moves from `.code` to `.cause.code`.
+  // Repro-driven: scripts/test-spec35-link.ts hit this on a real
+  // (subscriber_id, type) duplicate and the catch block re-threw because
+  // the outer wrapper had no `.code`. Now we unwrap.
+  it('treats wrapped DrizzleQueryError (cause.code = 23505) as already-sent success', async () => {
+    const wrapped = Object.assign(new Error('Failed query: insert into "wb_emails_sent" ...'), {
+      cause: Object.assign(new Error('duplicate key value violates unique constraint'), {
+        code: '23505',
+        constraint: 'idx_emails_sent_unique',
+      }),
+    })
+    mockInsert.mockReturnValue({
+      values: vi.fn().mockRejectedValue(wrapped),
+    })
+
+    await expect(
+      recordEmailSentIdempotent(
+        { subscriberId: 'sub_x', type: 'exit', subject: 'hi' },
+        'test',
+      ),
+    ).resolves.toBeUndefined()
+  })
+
+  it('rethrows wrapped errors whose cause is NOT a unique violation', async () => {
+    const wrapped = Object.assign(new Error('Failed query'), {
+      cause: Object.assign(new Error('serialization failure'), { code: '40001' }),
+    })
+    mockInsert.mockReturnValue({
+      values: vi.fn().mockRejectedValue(wrapped),
+    })
+
+    await expect(
+      recordEmailSentIdempotent(
+        { subscriberId: 'sub_x', type: 'exit', subject: 'hi' },
+        'test',
+      ),
+    ).rejects.toBe(wrapped)
+  })
 })

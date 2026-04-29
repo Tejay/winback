@@ -12,11 +12,18 @@ import { callWithRetry } from './retry'
  * on `wb_emails_sent (subscriber_id, type)` raises this when a webhook
  * redelivery races past the find-or-resend check. We treat it as success
  * (the previous send committed first; the email DID go out).
+ *
+ * Newer drizzle-orm wraps the raw pg error inside a `DrizzleQueryError`
+ * for richer logging — the `'23505'` code lives on `.cause.code` rather
+ * than `.code` directly. We check both shapes so an idempotency catch
+ * works regardless of which version is in node_modules.
  */
 const PG_UNIQUE_VIOLATION = '23505'
 
 function isUniqueViolation(err: unknown): boolean {
-  return (err as { code?: string } | null)?.code === PG_UNIQUE_VIOLATION
+  type WithCode = { code?: string; cause?: WithCode }
+  const e = err as WithCode | null
+  return e?.code === PG_UNIQUE_VIOLATION || e?.cause?.code === PG_UNIQUE_VIOLATION
 }
 
 export async function recordEmailSentIdempotent(
