@@ -132,3 +132,35 @@ describe('sendDunningFollowupEmail — fallbacks', () => {
     expect(arg.text).toContain('Hi there')
   })
 })
+
+// Spec 37 — both `text` and `html` are sent on the same Resend call,
+// so plain-text clients still get the existing body.
+describe('sendDunningFollowupEmail — Spec 37 HTML body', () => {
+  it('T2 passes both text and html to Resend, with the styled "Update payment" button anchor', async () => {
+    await sendDunningFollowupEmail({ ...baseParams, isFinalRetry: false })
+    const arg = mockSend.mock.calls[0][0]
+
+    // Plain-text body still passed
+    expect(arg.text).toContain('https://app.example.com/api/update-payment/sub_1')
+    // HTML body present
+    expect(arg.html).toBeTruthy()
+    expect(arg.html).toContain('href="https://app.example.com/api/update-payment/sub_1"')
+    expect(arg.html).toContain('>Update payment</a>')
+    // Heads-up tone (T2)
+    expect(arg.html).toContain('Heads up')
+    expect(arg.html).not.toContain('Final reminder')
+  })
+
+  it('T3 html switches to "Final reminder" tone + one-final-time copy', async () => {
+    await sendDunningFollowupEmail({ ...baseParams, isFinalRetry: true })
+    const arg = mockSend.mock.calls[0][0]
+
+    expect(arg.html).toBeTruthy()
+    expect(arg.html).toContain('Final reminder')
+    expect(arg.html).toContain('one final time')
+    expect(arg.html).toContain('subscription will be cancelled')
+    // Unsubscribe link still in the de-emphasized footer
+    expect(arg.html).toContain('font-size:11px')
+    expect(arg.html).toContain('/api/unsubscribe/sub_1')
+  })
+})
