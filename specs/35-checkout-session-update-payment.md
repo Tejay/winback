@@ -121,10 +121,10 @@ anything. Methods that don't fit are dropped from the form.
 
 | Method | Surfaces in setup-mode Checkout? | Works for subs? | Notes |
 |---|---|---|---|
-| Card | ✅ | ✅ | Canonical recurring path |
-| Apple Pay | ✅ | ✅ | Tokenises a real card; resulting PM is `type: 'card'` |
-| Google Pay | ✅ | ✅ | Same as Apple Pay |
-| Link | ✅ | ✅ | Stripe's wallet; stores card or bank account |
+| Card | ✅ Always | ✅ | Canonical recurring path |
+| Apple Pay | ✅ Safari + Chrome on macOS/iOS only | ✅ | Tokenises a real card; resulting PM is `type: 'card'`. UA-gated by Stripe — Safari sees it, Chrome on Android does not. |
+| Google Pay | ✅ Chrome on Android/ChromeOS/Windows/desktop only | ✅ | Same as Apple Pay. UA-gated — Safari users will NOT see this button (Apple Pay shows instead). |
+| Link | ✅ Always | ✅ | Stripe's own wallet (not OS-tied), stores card or bank. Always renders. |
 | ACH / SEPA / BACS | ✅ if PMC enables | ✅ | Bank-debit, off-session standard |
 | **PayPal** | ⚠️ Conditional | ⚠️ Conditional | Needs merchant to authorise PayPal *billing agreements* — Stripe handles this in the setup flow when both are configured. For our merchant's current PMC, PayPal is off, so moot. |
 | **Klarna / Afterpay (BNPL)** | ❌ Hidden | ❌ | BNPL is one-off-purchase by design — Stripe filters them out of setup-mode automatically |
