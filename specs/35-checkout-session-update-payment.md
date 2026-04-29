@@ -360,7 +360,8 @@ npx vitest run
 ## Out of scope (future)
 
 - **Spec 34** — decline-code-aware action coaching in the email bodies
-  (T1/T2/T3). Independent of the page-after-the-click. Already specced.
+  (T1/T2/T3). Independent of the page-after-the-click — see
+  [specs/34-decline-code-copy.md](34-decline-code-copy.md).
 - Custom Payment Element page on `winbackflow.co` (explicitly rejected
   in favour of Checkout — see context).
 - Replacing Billing Portal usage in *other* flows (cancel, view invoices,
