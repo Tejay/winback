@@ -7,6 +7,10 @@
     {
       "path": "/api/cron/onboarding-followup",
       "schedule": "30 9 * * *"
+    },
+    {
+      "path": "/api/cron/dunning-followup",
+      "schedule": "0 8 * * *"
     }
   ]
 }

@@ -1,7 +1,7 @@
 import Stripe from 'stripe'
 import { db } from '@/lib/db'
 import { users, customers, churnedSubscribers, recoveries, emailsSent } from '@/lib/schema'
-import { eq, and, ne, inArray, desc, gt, isNull } from 'drizzle-orm'
+import { eq, and, ne, inArray, desc, gt, isNull, isNotNull } from 'drizzle-orm'
 import { decrypt } from '@/src/winback/lib/encryption'
 import { extractSignals } from '@/src/winback/lib/stripe'
 import { classifySubscriber } from '@/src/winback/lib/classifier'
@@ -204,6 +204,22 @@ async function processChurn(event: Stripe.Event) {
     .limit(1)
 
   if (existing) {
+    // Spec 33 — if this subscriber was in the dunning sequence, clear
+    // the state so the cron stops sending T2/T3. The subscription is
+    // dead now; win-back path takes over.
+    await db
+      .update(churnedSubscribers)
+      .set({
+        dunningState: 'churned_during_dunning',
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(churnedSubscribers.id, existing.id),
+          isNotNull(churnedSubscribers.dunningState),
+        ),
+      )
+
     // Re-cancel within the win-back refund window? Refund the perf fee.
     await maybeRefundRecentWinBack(existing.id)
 
@@ -541,11 +557,22 @@ async function processPaymentFailed(event: Stripe.Event) {
   if (!accountId) return
   if (!invoice.subscription) return // One-time payment, not our scope
 
-  // Only email on first attempt
-  if (invoice.attempt_count && invoice.attempt_count > 1) {
-    console.log('Payment retry failure (attempt', invoice.attempt_count, ') — skipping email')
-    return
-  }
+  const attemptCount: number = invoice.attempt_count ?? 1
+  const isFirstAttempt = attemptCount === 1
+
+  // Spec 33 — derive dunning state from the invoice. Persisted on every
+  // retry event so the daily dunning-followup cron can find rows whose
+  // next retry is ~24h away.
+  const nextRetryDate: Date | null = invoice.next_payment_attempt
+    ? new Date(invoice.next_payment_attempt * 1000)
+    : null
+
+  const dunningState: 'awaiting_retry' | 'final_retry_pending' | 'churned_during_dunning' =
+    !nextRetryDate
+      ? 'churned_during_dunning'           // Stripe gave up after this attempt
+      : attemptCount >= 3
+      ? 'final_retry_pending'              // next retry is the last (default 4-attempt schedule)
+      : 'awaiting_retry'                   // more retries coming
 
   const [customer] = await db
     .select()
@@ -559,7 +586,7 @@ async function processPaymentFailed(event: Stripe.Event) {
     ? invoice.customer
     : (invoice.customer as Stripe.Customer)?.id ?? ''
 
-  // Idempotency: check if we already sent a dunning email for this subscriber
+  // Locate the subscriber row created on the first failure (if any).
   const [existingSub] = await db
     .select()
     .from(churnedSubscribers)
@@ -572,6 +599,36 @@ async function processPaymentFailed(event: Stripe.Event) {
     )
     .limit(1)
 
+  // Spec 33 — on retry events (attempt_count > 1) we don't send another
+  // T1 email. We just refresh state so the cron can pick up T2/T3 later.
+  if (!isFirstAttempt) {
+    if (existingSub) {
+      await db
+        .update(churnedSubscribers)
+        .set({
+          nextPaymentAttemptAt: nextRetryDate,
+          dunningState,
+          updatedAt: new Date(),
+        })
+        .where(eq(churnedSubscribers.id, existingSub.id))
+      console.log(
+        '[dunning] state refresh attempt=', attemptCount,
+        'state=', dunningState,
+        'subscriberId=', existingSub.id,
+      )
+    } else {
+      // Edge: we somehow missed attempt #1's webhook. Skip rather than
+      // create a late row — sending T1 days late is worse than skipping.
+      console.warn(
+        '[dunning] retry event with no existing subscriber row — skipping',
+        'stripeCustomer=', stripeCustomerId,
+      )
+    }
+    return
+  }
+
+  // First-attempt idempotency: if we've already sent the T1 dunning email
+  // (e.g. webhook re-delivery), skip.
   if (existingSub) {
     const [existingEmail] = await db
       .select({ id: emailsSent.id })
@@ -585,6 +642,16 @@ async function processPaymentFailed(event: Stripe.Event) {
       .limit(1)
 
     if (existingEmail) {
+      // Already sent T1; just refresh state in case the retry timestamp
+      // has shifted since the original event.
+      await db
+        .update(churnedSubscribers)
+        .set({
+          nextPaymentAttemptAt: nextRetryDate,
+          dunningState,
+          updatedAt: new Date(),
+        })
+        .where(eq(churnedSubscribers.id, existingSub.id))
       console.log('Dunning email already sent for', stripeCustomerId)
       return
     }
@@ -608,6 +675,16 @@ async function processPaymentFailed(event: Stripe.Event) {
   let subscriberId: string
   if (existingSub) {
     subscriberId = existingSub.id
+    // Refresh state on the existing row even if T1 hasn't sent yet
+    // (e.g. webhook re-delivery before T1 fired).
+    await db
+      .update(churnedSubscribers)
+      .set({
+        nextPaymentAttemptAt: nextRetryDate,
+        dunningState,
+        updatedAt: new Date(),
+      })
+      .where(eq(churnedSubscribers.id, existingSub.id))
   } else {
     const subscriptionId = typeof invoice.subscription === 'string'
       ? invoice.subscription
@@ -629,6 +706,11 @@ async function processPaymentFailed(event: Stripe.Event) {
         confidence: DUNNING_CONFIDENCE,
         status: 'pending',
         paymentMethodAtFailure: paymentMethodId,
+        // Spec 33 — initial dunning state machine.
+        nextPaymentAttemptAt: nextRetryDate,
+        dunningTouchCount: 1,
+        dunningLastTouchAt: new Date(),
+        dunningState,
       })
       .returning({ id: churnedSubscribers.id })
 
@@ -642,11 +724,6 @@ async function processPaymentFailed(event: Stripe.Event) {
     .where(eq(users.id, customer.userId))
     .limit(1)
   const fromName = customer.founderName ?? user?.name ?? 'The team'
-
-  // Determine next retry date
-  const nextRetryDate = invoice.next_payment_attempt
-    ? new Date(invoice.next_payment_attempt * 1000)
-    : null
 
   await sendDunningEmail({
     subscriberId,
@@ -756,6 +833,7 @@ async function processPaymentSucceeded(event: Stripe.Event) {
   })
 
   // Spec 21b — also resolve any pending handoff
+  // Spec 33 — clear dunning state so the cron skips this row going forward
   await db
     .update(churnedSubscribers)
     .set({
@@ -763,6 +841,7 @@ async function processPaymentSucceeded(event: Stripe.Event) {
       founderHandoffResolvedAt: subscriber.founderHandoffAt && !subscriber.founderHandoffResolvedAt
         ? new Date()
         : subscriber.founderHandoffResolvedAt,
+      dunningState: subscriber.dunningState ? 'recovered_during_dunning' : null,
       updatedAt: new Date(),
     })
     .where(eq(churnedSubscribers.id, subscriber.id))

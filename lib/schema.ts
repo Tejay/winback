@@ -105,6 +105,16 @@ export const churnedSubscribers = pgTable('wb_churned_subscribers', {
   // AI made its call. Migration 017.
   handoffReasoning:           text('handoff_reasoning'),
   recoveryLikelihood:         text('recovery_likelihood'),   // 'high'|'medium'|'low'
+  // Spec 33 — multi-touch dunning state machine. The webhook captures
+  // Stripe's invoice.next_payment_attempt on every payment_failed event;
+  // the daily cron picks up rows whose retry is in the next 12-36h window
+  // and sends T2/T3. Migration 028.
+  nextPaymentAttemptAt:       timestamp('next_payment_attempt_at'),
+  dunningTouchCount:          integer('dunning_touch_count').notNull().default(0),
+  dunningLastTouchAt:         timestamp('dunning_last_touch_at'),
+  dunningState:               text('dunning_state'),
+  // Values: 'awaiting_retry' | 'final_retry_pending'
+  //       | 'recovered_during_dunning' | 'churned_during_dunning'
   createdAt:            timestamp('created_at').defaultNow(),
   updatedAt:            timestamp('updated_at').defaultNow(),
 })
