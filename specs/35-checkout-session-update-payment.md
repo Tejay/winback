@@ -107,6 +107,62 @@ ORDER  BY r.recovered_at DESC LIMIT 5;
 
 ---
 
+## Subscription compatibility (important)
+
+The dunning use case requires a payment method that can be **saved and
+re-charged off-session** — the customer's failed invoice will retry
+automatically once the new PM is attached.
+
+`mode: 'setup'` creates a SetupIntent with `usage: 'off_session'` by
+default, and **Stripe automatically filters the payment-method picker
+to only show methods that support off-session recurring billing**. This
+filtering is structural, not configurable — we don't need to allowlist
+anything. Methods that don't fit are dropped from the form.
+
+| Method | Surfaces in setup-mode Checkout? | Works for subs? | Notes |
+|---|---|---|---|
+| Card | ✅ | ✅ | Canonical recurring path |
+| Apple Pay | ✅ | ✅ | Tokenises a real card; resulting PM is `type: 'card'` |
+| Google Pay | ✅ | ✅ | Same as Apple Pay |
+| Link | ✅ | ✅ | Stripe's wallet; stores card or bank account |
+| ACH / SEPA / BACS | ✅ if PMC enables | ✅ | Bank-debit, off-session standard |
+| **PayPal** | ⚠️ Conditional | ⚠️ Conditional | Needs merchant to authorise PayPal *billing agreements* — Stripe handles this in the setup flow when both are configured. For our merchant's current PMC, PayPal is off, so moot. |
+| **Klarna / Afterpay (BNPL)** | ❌ Hidden | ❌ | BNPL is one-off-purchase by design — Stripe filters them out of setup-mode automatically |
+| Cash App Pay | ⚠️ Conditional | ⚠️ | Off-session support is limited; Stripe surfaces only when both Stripe + the merchant have it set up correctly |
+
+**Operational implication:** for Spec 35 v1 we don't have to do anything
+special. Whatever Stripe surfaces in the Checkout page will be
+subscription-compatible. The card-tokenised wallets (Apple Pay /
+Google Pay / Link) work identically to a saved card for subsequent
+charges — the customer doesn't see "Apple Pay" again on their next
+invoice, they see "Card ·· 4242", because the underlying PM is just a
+card.
+
+**Merchant onboarding implication: zero.** Every Stripe Connect account
+gets a default Payment Method Configuration that already enables Card +
+Link + Apple Pay + Google Pay out of the box. Apple Pay domain
+verification is handled by Stripe (the page lives on
+`checkout.stripe.com`, not our domain), and Google Pay needs no setup at
+all. So a founder who completes Stripe OAuth onboarding gets the full
+wallet set surfaced in the customer's Checkout page automatically —
+nothing for them to flip on, no extra screen in our onboarding flow.
+
+The methods that *would* require explicit merchant action (PayPal,
+Klarna, ACH/SEPA, Cash App Pay) don't apply to our v1: BNPL is hidden
+in setup-mode anyway, and our pilot merchants haven't enabled the
+others. If a merchant later turns one on in their dashboard, it'll
+surface in our Checkout page automatically — no Winback code change
+required.
+
+**Failure-mode caveat:** Apple Pay backed by *the same expired card*
+that just failed = same decline. Stripe Apple Pay tokenises the user's
+actual card. Most users have multiple cards in their Wallet so this is
+rare, but our existing `payment_method_at_failure` attribution check
+handles it (we only credit weak/strong recovery if the PM actually
+changed).
+
+---
+
 ## Code changes
 
 ### 1. `/api/update-payment/[subscriberId]/route.ts`
