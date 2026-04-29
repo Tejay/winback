@@ -16,6 +16,7 @@ import {
 import { ensureActivation } from '@/src/winback/lib/activation'
 import { refundPerformanceFee, PERF_FEE_REFUND_WINDOW_DAYS } from '@/src/winback/lib/performance-fee'
 import { sendPlatformPaymentFailedEmail } from '@/src/winback/lib/billing-notifications'
+import { processDunningPaymentUpdate } from '@/src/winback/lib/dunning-checkout'
 
 function getStripe() {
   return new Stripe(process.env.STRIPE_SECRET_KEY!)
@@ -120,10 +121,14 @@ export async function POST(req: Request) {
       await processRecovery(event)
     }
     if (event.type === 'checkout.session.completed') {
-      // Spec 23 — route by metadata: platform card capture vs reactivation checkout.
+      // Spec 23 — platform card capture (no event.account)
+      // Spec 23 — reactivation checkout (event.account, winback_subscriber_id, no winback_flow)
+      // Spec 35 — dunning update-payment (event.account, winback_flow='dunning_update_payment')
       const session = event.data.object as Stripe.Checkout.Session
       if (session.metadata?.flow === 'platform_card_capture') {
         await processPlatformCardCapture(event)
+      } else if (session.metadata?.winback_flow === 'dunning_update_payment') {
+        await processDunningPaymentUpdate(event)
       } else if (session.metadata?.winback_subscriber_id) {
         await processCheckoutRecovery(event)
       }
