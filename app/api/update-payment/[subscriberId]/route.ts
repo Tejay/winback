@@ -30,7 +30,7 @@ export async function GET(
     .limit(1)
 
   if (!customer?.stripeAccessToken) {
-    return NextResponse.redirect(`${baseUrl}/welcome-back?recovered=false`)
+    return NextResponse.redirect(`${baseUrl}/welcome-back?recovered=false&customer=${subscriber.customerId}`)
   }
 
   // Record click for attribution + engagement (spec 21a). Column name kept
@@ -80,12 +80,15 @@ export async function GET(
       }
     }
 
+    // Spec 36 — pass winback customer id so /welcome-back can render
+    // the merchant's brand (not Winback's).
+    const customerParam = `&customer=${subscriber.customerId}`
     const session = await stripe.checkout.sessions.create({
       mode:        'setup',
       currency,
       customer:    subscriber.stripeCustomerId,
-      success_url: `${baseUrl}/welcome-back?recovered=true&session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url:  `${baseUrl}/welcome-back?recovered=false`,
+      success_url: `${baseUrl}/welcome-back?recovered=true&session_id={CHECKOUT_SESSION_ID}${customerParam}`,
+      cancel_url:  `${baseUrl}/welcome-back?recovered=false${customerParam}`,
       metadata: {
         winback_subscriber_id: subscriberId,
         winback_customer_id:   subscriber.customerId,
@@ -95,12 +98,12 @@ export async function GET(
 
     if (!session.url) {
       console.error('Checkout session created without url:', session.id)
-      return NextResponse.redirect(`${baseUrl}/welcome-back?recovered=false`)
+      return NextResponse.redirect(`${baseUrl}/welcome-back?recovered=false${customerParam}`)
     }
 
     return NextResponse.redirect(session.url)
   } catch (err) {
     console.error('Checkout setup session failed:', err)
-    return NextResponse.redirect(`${baseUrl}/welcome-back?recovered=false`)
+    return NextResponse.redirect(`${baseUrl}/welcome-back?recovered=false&customer=${subscriber.customerId}`)
   }
 }

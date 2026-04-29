@@ -47,9 +47,13 @@ export default async function ReactivateChooserPage({
 
   if (!subscriber) notFound()
 
+  // Spec 36 — pass winback customer id on /welcome-back redirects so
+  // the page renders the merchant's brand (not Winback's).
+  const customerParam = `&customer=${subscriber.customerId}`
+
   // Already recovered — bounce to welcome
   if (subscriber.status === 'recovered') {
-    redirect('/welcome-back?recovered=true')
+    redirect(`/welcome-back?recovered=true${customerParam}`)
   }
 
   const [customer] = await db
@@ -59,7 +63,7 @@ export default async function ReactivateChooserPage({
     .limit(1)
 
   if (!customer?.stripeAccessToken) {
-    redirect('/welcome-back?recovered=false&reason=account_disconnected')
+    redirect(`/welcome-back?recovered=false&reason=account_disconnected${customerParam}`)
   }
 
   // Load active prices + their products (for display names)
@@ -72,7 +76,7 @@ export default async function ReactivateChooserPage({
   })
 
   if (pricesList.data.length === 0) {
-    redirect('/welcome-back?recovered=false&reason=price_unavailable')
+    redirect(`/welcome-back?recovered=false&reason=price_unavailable${customerParam}`)
   }
 
   const options: PriceOption[] = pricesList.data.map(p => {
@@ -113,7 +117,7 @@ export default async function ReactivateChooserPage({
 
         <div className="mt-6 text-center">
           <a
-            href="/welcome-back?recovered=false"
+            href={`/welcome-back?recovered=false${customerParam}`}
             className="text-xs text-slate-400 hover:text-slate-600"
           >
             Not now, take me back

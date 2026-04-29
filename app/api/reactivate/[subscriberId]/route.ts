@@ -28,8 +28,18 @@ type FailureReason =
   | 'price_unavailable'
   | 'checkout_failed'
 
-function failureRedirect(baseUrl: string, reason: FailureReason): NextResponse {
-  return NextResponse.redirect(`${baseUrl}/welcome-back?recovered=false&reason=${reason}`)
+function failureRedirect(
+  baseUrl: string,
+  reason: FailureReason,
+  customerId?: string,
+): NextResponse {
+  // Spec 36 — pass winback customer id when we know it so /welcome-back
+  // renders the merchant's brand (not Winback's). When the lookup that
+  // failed prevented us from knowing it (e.g. subscriber_not_found),
+  // fall through without — the page renders neutrally rather than
+  // exposing Winback.
+  const customerParam = customerId ? `&customer=${customerId}` : ''
+  return NextResponse.redirect(`${baseUrl}/welcome-back?recovered=false&reason=${reason}${customerParam}`)
 }
 
 export async function GET(
@@ -56,7 +66,7 @@ export async function GET(
 
   // Already recovered — just redirect (no changes, no event)
   if (subscriber.status === 'recovered') {
-    return NextResponse.redirect(`${baseUrl}/welcome-back?recovered=true`)
+    return NextResponse.redirect(`${baseUrl}/welcome-back?recovered=true&customer=${subscriber.customerId}`)
   }
 
   // Look up customer for access token
@@ -72,7 +82,7 @@ export async function GET(
       customerId: subscriber.customerId,
       properties: { subscriberId, reason: 'account_disconnected' },
     })
-    return failureRedirect(baseUrl, 'account_disconnected')
+    return failureRedirect(baseUrl, 'account_disconnected', subscriber.customerId)
   }
 
   logEvent({
@@ -131,7 +141,7 @@ export async function GET(
           })
 
           console.log('STRONG RECOVERY (resume):', subscriber.email)
-          return NextResponse.redirect(`${baseUrl}/welcome-back?recovered=true`)
+          return NextResponse.redirect(`${baseUrl}/welcome-back?recovered=true&customer=${customer.id}`)
         }
 
         // Spec 20a — Subscription is already active (data drift). Don't create
@@ -159,7 +169,7 @@ export async function GET(
           })
 
           console.log('REACTIVATE: already active, no-op:', subscriber.email)
-          return NextResponse.redirect(`${baseUrl}/welcome-back?recovered=true`)
+          return NextResponse.redirect(`${baseUrl}/welcome-back?recovered=true&customer=${customer.id}`)
         }
         // else: status is canceled / incomplete / past_due / unpaid → fall
         // through to checkout (Stage 2)
@@ -182,7 +192,7 @@ export async function GET(
         customerId: customer.id,
         properties: { subscriberId, reason: 'price_unavailable' },
       })
-      return failureRedirect(baseUrl, 'price_unavailable')
+      return failureRedirect(baseUrl, 'price_unavailable', customer.id)
     }
 
     // ─── Spec 20c routing ───────────────────────────────────────────────
@@ -207,8 +217,10 @@ export async function GET(
       mode: 'subscription',
       customer: subscriber.stripeCustomerId,
       line_items: [{ price: priceId, quantity: 1 }],
-      success_url: `${baseUrl}/welcome-back?recovered=true`,
-      cancel_url: `${baseUrl}/welcome-back?recovered=false`,
+      // Spec 36 — pass winback customer id so /welcome-back can render
+      // the merchant's brand (not Winback's).
+      success_url: `${baseUrl}/welcome-back?recovered=true&customer=${customer.id}`,
+      cancel_url: `${baseUrl}/welcome-back?recovered=false&customer=${customer.id}`,
       metadata: {
         winback_subscriber_id: subscriberId,
         winback_customer_id: customer.id,
@@ -227,6 +239,6 @@ export async function GET(
         error: err instanceof Error ? err.message : String(err),
       },
     })
-    return failureRedirect(baseUrl, 'checkout_failed')
+    return failureRedirect(baseUrl, 'checkout_failed', customer.id)
   }
 }
