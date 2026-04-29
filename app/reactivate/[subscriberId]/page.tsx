@@ -6,7 +6,6 @@ import { eq } from 'drizzle-orm'
 import { decrypt } from '@/src/winback/lib/encryption'
 import { verifySubscriberToken } from '@/src/winback/lib/unsubscribe-token'
 import { ChooserForm } from './chooser-form'
-import { Logo } from '@/components/logo'
 
 /**
  * Spec 20c — tier chooser page.
@@ -99,11 +98,26 @@ export default async function ReactivateChooserPage({
 
   const firstName = subscriber.name?.split(' ')[0] ?? 'there'
 
+  // Spec 36 — render the merchant's brand (NOT Winback's). Same pattern
+  // as /welcome-back: customer is already loaded above; pull a wordmark
+  // from product_name → founder_name. If both are missing, render
+  // nothing (blank space) — never the Winback logo.
+  const rawMerchantName = customer.productName ?? customer.founderName ?? ''
+  const merchantWordmark = rawMerchantName.trim().length > 0
+    ? (rawMerchantName.length > 40
+        ? rawMerchantName.slice(0, 39).trimEnd() + '…'
+        : rawMerchantName)
+    : null
+
   return (
     <div className="min-h-screen bg-[#f5f5f5] flex flex-col items-center py-12 px-4">
-      <div className="mb-8">
-        <Logo />
-      </div>
+      {merchantWordmark ? (
+        <div className="mb-8 text-2xl font-semibold text-slate-900 tracking-tight">
+          {merchantWordmark}
+        </div>
+      ) : (
+        <div className="mb-8" aria-hidden />
+      )}
 
       <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-8 max-w-md w-full">
         <h1 className="text-2xl font-bold text-slate-900 mb-2">

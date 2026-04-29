@@ -46,6 +46,13 @@ This spec replaces the Winback logo on `/welcome-back` with the
   storage. Out of scope here.
 - **Both flows fixed in one shot.** Spec 23 reactivation + Spec 35
   dunning hit the same page; one fix covers both.
+- **Chooser page included.** [app/reactivate/[subscriberId]/page.tsx](../app/reactivate/[subscriberId]/page.tsx)
+  was the third subscriber-visible page rendering the Winback logo —
+  added late in implementation when noticed during click-through.
+  Same pattern as `/welcome-back`: pull merchant wordmark from the
+  already-loaded `customer` row, render or fall through to blank.
+  Same goal: the Winback logo must be invisible to merchants'
+  subscribers across **all** customer-facing pages.
 
 ---
 
