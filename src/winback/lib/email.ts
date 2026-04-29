@@ -683,6 +683,146 @@ If you'd rather not hear from us, unsubscribe: ${unsubLink}`
 }
 
 /**
+ * Spec 33 — Multi-touch dunning T2 / T3.
+ *
+ * Sent ~24h before Stripe's next retry attempt by /api/cron/dunning-followup.
+ * The same function covers both touches; copy is switched by `isFinalRetry`.
+ *
+ *   T2 (`isFinalRetry: false`) — "Stripe will retry on {date}, update before then"
+ *   T3 (`isFinalRetry: true`)  — "Last automatic retry — your subscription ends"
+ *
+ * Idempotent at-most-once delivery via the partial unique index on
+ * wb_emails_sent (subscriber_id, type) — extended in migration 028 to cover
+ * 'dunning_t2' and 'dunning_t3'.
+ */
+export async function sendDunningFollowupEmail(params: {
+  subscriberId: string
+  email: string
+  customerName: string | null
+  planName: string
+  amountDue: number
+  currency: string
+  retryDate: Date
+  fromName: string
+  isFinalRetry: boolean
+}): Promise<void> {
+  const {
+    subscriberId, email, customerName, planName, amountDue, currency,
+    retryDate, fromName, isFinalRetry,
+  } = params
+
+  // Same suppression gates as the existing dunning email.
+  if (await isDoNotContact(subscriberId)) {
+    console.log('Skipping dunning followup — DNC:', subscriberId)
+    return
+  }
+  if (await isCustomerPausedForSubscriber(subscriberId)) {
+    console.log('Skipping dunning followup — customer paused:', subscriberId)
+    return
+  }
+  if (await isAiPaused(subscriberId)) {
+    console.log('Skipping dunning followup — AI paused:', subscriberId)
+    return
+  }
+
+  const resend = getResendClient()
+  const name = customerName ?? 'there'
+  const amount = (amountDue / 100).toFixed(2)
+  const updateLink = `${process.env.NEXT_PUBLIC_APP_URL}/api/update-payment/${subscriberId}`
+  const unsubLink = unsubscribeUrl(subscriberId)
+  const from = `${fromName} <noreply@winbackflow.co>`
+
+  // Format retry date + time. We mirror the existing dunning email's
+  // dd-LL formatting plus a UTC time so the customer can convert.
+  const retryDateStr = retryDate.toLocaleDateString('en-GB', {
+    day: 'numeric', month: 'long',
+  })
+  const retryTimeStr = retryDate.toLocaleTimeString('en-GB', {
+    hour: '2-digit', minute: '2-digit', timeZone: 'UTC',
+  }) + ' UTC'
+
+  const type: 'dunning_t2' | 'dunning_t3' = isFinalRetry ? 'dunning_t3' : 'dunning_t2'
+
+  const subject = isFinalRetry
+    ? `Last automatic retry — your subscription ends ${retryDateStr}`
+    : `Heads up — we'll retry your card on ${retryDateStr}`
+
+  const body = isFinalRetry
+    ? `Hi ${name},
+
+This is your last chance to update your payment before your subscription
+with ${fromName} ends.
+
+We'll try your card one final time on ${retryDateStr} at ${retryTimeStr}.
+If it fails, your subscription will be cancelled and you'll lose access
+to ${planName}.
+
+Update payment now:
+${updateLink}
+
+If you've decided to leave, no need to reply — your subscription will
+cancel on its own.
+
+— ${fromName}
+
+— — —
+If you'd rather not hear from us, unsubscribe: ${unsubLink}`
+    : `Hi ${name},
+
+Quick reminder: your last payment to ${fromName} for ${planName} (${amount} ${currency.toUpperCase()}) didn't go through, and we'll automatically try your card again on ${retryDateStr} at ${retryTimeStr}.
+
+If you'd like to update your card or use a different payment method
+before then:
+${updateLink}
+
+If everything's already sorted, you can ignore this email — the next
+retry will go through automatically.
+
+— ${fromName}
+
+— — —
+If you'd rather not hear from us, unsubscribe: ${unsubLink}`
+
+  const res = await callWithRetry(
+    () =>
+      resend.emails.send({
+        from,
+        to: email,
+        subject,
+        text: body,
+        headers: listUnsubscribeHeaders(subscriberId),
+      }),
+    { ctx: `sendDunningFollowup_${type}` },
+  )
+
+  if (res.error) {
+    await logEvent({
+      name: 'email_send_failed',
+      properties: { subscriberId, type, errorMessage: res.error.message },
+    })
+    throw new Error(`Resend error: ${res.error.message}`)
+  }
+
+  // Spec 28 partial unique index extended in migration 028 to cover
+  // dunning_t2 / dunning_t3 — at-most-once even on cron retries.
+  await recordEmailSentIdempotent(
+    {
+      subscriberId,
+      gmailMessageId: res.data?.id ?? '',
+      type,
+      subject,
+      bodyText: body,
+    },
+    `sendDunningFollowup_${type}`,
+  )
+
+  logEvent({
+    name: 'email_sent',
+    properties: { subscriberId, emailType: type, subject, messageId: res.data?.id ?? '' },
+  })
+}
+
+/**
  * Spec 29 — Password reset email. Plain-text transactional auth email.
  * No unsubscribe footer, no DNC check, no AI-pause check — this is an
  * account-recovery email, not a marketing/win-back email.
