@@ -15,6 +15,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 const mockCheckoutSessionsCreate = vi.hoisted(() => vi.fn())
+const mockSubscriptionsRetrieve  = vi.hoisted(() => vi.fn())
 
 vi.mock('stripe', () => ({
   default: class MockStripe {
@@ -22,6 +23,9 @@ vi.mock('stripe', () => ({
       sessions: {
         create: mockCheckoutSessionsCreate,
       },
+    }
+    subscriptions = {
+      retrieve: mockSubscriptionsRetrieve,
     }
   },
 }))
@@ -87,6 +91,11 @@ beforeEach(() => {
     }),
   })
 
+  // Default — most tests use a sub with a real currency.
+  mockSubscriptionsRetrieve.mockResolvedValue({
+    id: 'sub_stripe_x', currency: 'gbp', status: 'past_due',
+  })
+
   process.env.NEXT_PUBLIC_APP_URL = 'https://app.example.com'
 })
 
@@ -115,9 +124,10 @@ describe('GET /api/update-payment/[subscriberId]', () => {
   it('records click attribution + creates Checkout setup-mode session and redirects', async () => {
     mockDbSelect
       .mockReturnValueOnce(selectReturning([{
-        id:               'sub_1',
-        customerId:       'wb_cust_1',
-        stripeCustomerId: 'cus_stripe_1',
+        id:                   'sub_1',
+        customerId:           'wb_cust_1',
+        stripeCustomerId:     'cus_stripe_1',
+        stripeSubscriptionId: 'sub_stripe_1',
       }]))
       .mockReturnValueOnce(selectReturning([{
         id:                'wb_cust_1',
@@ -146,10 +156,14 @@ describe('GET /api/update-payment/[subscriberId]', () => {
       }),
     }))
 
-    // Checkout Session in setup mode with the right customer + metadata
+    // Subscription fetched to derive currency
+    expect(mockSubscriptionsRetrieve).toHaveBeenCalledWith('sub_stripe_1')
+
+    // Checkout Session in setup mode with the right customer + metadata + currency
     expect(mockCheckoutSessionsCreate).toHaveBeenCalledTimes(1)
     const arg = mockCheckoutSessionsCreate.mock.calls[0][0]
     expect(arg.mode).toBe('setup')
+    expect(arg.currency).toBe('gbp')
     expect(arg.customer).toBe('cus_stripe_1')
     expect(arg.success_url).toContain('/welcome-back?recovered=true')
     expect(arg.cancel_url).toContain('/welcome-back?recovered=false')
@@ -161,6 +175,42 @@ describe('GET /api/update-payment/[subscriberId]', () => {
 
     // Redirect to the session URL
     expect(res.headers.get('location')).toBe('https://checkout.stripe.com/c/pay/cs_test_123')
+  })
+
+  it('falls back to usd when the subscription cannot be retrieved', async () => {
+    mockDbSelect
+      .mockReturnValueOnce(selectReturning([{
+        id:                   'sub_1',
+        customerId:           'wb_cust_1',
+        stripeCustomerId:     'cus_stripe_1',
+        stripeSubscriptionId: 'sub_deleted',
+      }]))
+      .mockReturnValueOnce(selectReturning([{ id: 'wb_cust_1', stripeAccessToken: 'enc' }]))
+
+    mockSubscriptionsRetrieve.mockRejectedValueOnce(new Error('No such subscription'))
+    mockCheckoutSessionsCreate.mockResolvedValue({ id: 'cs_x', url: 'https://checkout.stripe.com/c/pay/cs_x' })
+
+    await GET(makeReq() as never, { params: Promise.resolve({ subscriberId: 'sub_1' }) })
+
+    expect(mockCheckoutSessionsCreate.mock.calls[0][0].currency).toBe('usd')
+  })
+
+  it('uses usd when the row has no stripeSubscriptionId at all', async () => {
+    mockDbSelect
+      .mockReturnValueOnce(selectReturning([{
+        id:                   'sub_1',
+        customerId:           'wb_cust_1',
+        stripeCustomerId:     'cus_stripe_1',
+        stripeSubscriptionId: null,
+      }]))
+      .mockReturnValueOnce(selectReturning([{ id: 'wb_cust_1', stripeAccessToken: 'enc' }]))
+
+    mockCheckoutSessionsCreate.mockResolvedValue({ id: 'cs_x', url: 'https://checkout.stripe.com/c/pay/cs_x' })
+
+    await GET(makeReq() as never, { params: Promise.resolve({ subscriberId: 'sub_1' }) })
+
+    expect(mockSubscriptionsRetrieve).not.toHaveBeenCalled()
+    expect(mockCheckoutSessionsCreate.mock.calls[0][0].currency).toBe('usd')
   })
 
   it('redirects to /welcome-back?recovered=false when Stripe throws', async () => {

@@ -64,8 +64,25 @@ export async function GET(
     const accessToken = decrypt(customer.stripeAccessToken)
     const stripe = new Stripe(accessToken)
 
+    // Stripe Checkout in setup mode requires `currency` (drives method
+    // filtering — e.g. SEPA for EUR, BACS for GBP). Pull the subscription
+    // we're trying to recover so the picker matches what'll actually be
+    // charged. Fall back to USD if the subscription isn't fetchable
+    // (deleted upstream, transient API blip, etc.) — better to surface a
+    // working Checkout in the merchant's default currency than fail.
+    let currency = 'usd'
+    if (subscriber.stripeSubscriptionId) {
+      try {
+        const sub = await stripe.subscriptions.retrieve(subscriber.stripeSubscriptionId)
+        if (sub.currency) currency = sub.currency
+      } catch (err) {
+        console.warn('[update-payment] subscription retrieve failed, defaulting to usd:', err)
+      }
+    }
+
     const session = await stripe.checkout.sessions.create({
       mode:        'setup',
+      currency,
       customer:    subscriber.stripeCustomerId,
       success_url: `${baseUrl}/welcome-back?recovered=true&session_id={CHECKOUT_SESSION_ID}`,
       cancel_url:  `${baseUrl}/welcome-back?recovered=false`,
