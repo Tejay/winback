@@ -486,7 +486,7 @@ export function DashboardClient({
       {tab === 'winback' && (
         <>
           {/* KPI row — blue tint background */}
-          <section className="rounded-3xl bg-blue-100 border border-blue-200 p-4 sm:p-5 mb-5">
+          <section className="rounded-3xl bg-blue-100 border border-blue-200 p-3 mb-7">
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
               <StatCard
                 accent="blue"
@@ -542,7 +542,7 @@ export function DashboardClient({
       {tab === 'paymentRecovery' && (
         <>
           {/* KPI row — green tint background */}
-          <section className="rounded-3xl bg-green-100 border border-green-200 p-4 sm:p-5 mb-5">
+          <section className="rounded-3xl bg-green-100 border border-green-200 p-3 mb-7">
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
               <StatCard
                 accent="green"
@@ -1176,12 +1176,12 @@ function StatCard({
       : 'bg-amber-50 text-amber-600'
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-100 p-6">
-      <div className={`${accentClass} rounded-xl w-9 h-9 flex items-center justify-center`}>
+    <div className="bg-white rounded-2xl border border-slate-100 px-4 py-4">
+      <div className={`${accentClass} rounded-lg w-7 h-7 flex items-center justify-center`}>
         {icon}
       </div>
-      <div className="text-4xl font-bold text-slate-900 mt-3 tabular-nums">{value}</div>
-      <div className="text-xs font-semibold uppercase tracking-widest text-slate-400 mt-1">
+      <div className="text-2xl sm:text-3xl font-bold text-slate-900 mt-2.5 tabular-nums">{value}</div>
+      <div className="text-[11px] font-semibold uppercase tracking-widest text-slate-400 mt-0.5">
         {label}
       </div>
     </div>
