@@ -16,7 +16,7 @@ export function Cta() {
           Bring back the cancellers.
         </h2>
         <p className="mt-4 text-sm text-slate-600 max-w-xl mx-auto">
-          Win-back is performance-billed: 1× MRR per recovered customer, refundable for 14 days, $0 if we don&apos;t recover anyone.{' '}
+          Win-back is performance-billed: 1 month&apos;s subscription fee per recovered customer, refundable for 14 days, $0 if we don&apos;t recover anyone.{' '}
           <Link href="/#pricing" className="text-blue-600 hover:text-blue-700 font-medium">
             See full pricing →
           </Link>
@@ -30,7 +30,7 @@ export function Cta() {
           </Link>
         </div>
         <p className="mt-6 text-xs text-slate-500">
-          Stripe Connect Standard · Read-only access · No card at signup.
+          Stripe Connect Standard · No card at signup.
         </p>
       </div>
     </section>

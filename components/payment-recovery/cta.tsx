@@ -30,7 +30,7 @@ export function Cta() {
           </Link>
         </div>
         <p className="mt-6 text-xs text-slate-500">
-          Stripe Connect Standard · Read-only access · No card at signup.
+          Stripe Connect Standard · No card at signup.
         </p>
       </div>
     </section>

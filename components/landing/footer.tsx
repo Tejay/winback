@@ -9,8 +9,8 @@ export function Footer() {
     <footer className="border-t border-slate-200 bg-white">
       <div className="max-w-5xl mx-auto px-6 py-8 flex flex-col sm:flex-row items-start justify-between gap-6 text-xs text-slate-500">
         <div className="leading-relaxed">
-          <div>© {new Date().getFullYear()} Winback Ltd · Company no. {'{TO_FILL}'}</div>
-          <div>{'{Registered office address — pending incorporation}'}</div>
+          <div>© {new Date().getFullYear()} Axiomis OÜ trading as Winback · Reg. no. 17493372</div>
+          <div>Sepapaja tn 6, 15551 Tallinn, Estonia</div>
           <div>
             <a href="mailto:support@winbackflow.co" className="hover:text-slate-900">
               support@winbackflow.co

@@ -19,7 +19,7 @@ export function EmailComparison() {
         <div className="max-w-3xl mx-auto text-center">
         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">The email</p>
         <h2 className="mt-3 text-3xl font-bold tracking-tight text-slate-900">
-          Their email. Then ours.
+          Contextual email, tuned for maximising recovery.
         </h2>
         <p className="mt-4 text-sm text-slate-600">
           Most payment-failure emails are a generic line and a raw URL. Customers gloss over them. Ours read the failure reason and tell the customer exactly what to do.
@@ -49,7 +49,7 @@ export function EmailComparison() {
             Winback
           </div>
           <div className="bg-white rounded-2xl border border-blue-200 p-6 text-sm text-slate-600 leading-relaxed shadow-md">
-            <p className="text-slate-400">From: Thejas &lt;noreply@winbackflow.co&gt;</p>
+            <p className="text-slate-400">From: Fitness App &lt;noreply@winbackflow.co&gt;</p>
             <p className="mt-2 text-slate-900 font-medium">Subject: Your payment didn&apos;t go through</p>
             <hr className="my-4 border-slate-100" />
             <p className="text-[11px] font-semibold uppercase tracking-widest text-blue-600">Heads up</p>
@@ -70,8 +70,7 @@ export function EmailComparison() {
             </button>
 
             <p className="mt-5">We&apos;ll try again on <span className="font-semibold">2 May</span> — updating before then means no interruption.</p>
-            <p className="mt-3">If you have questions, just reply.</p>
-            <p className="mt-3">— Thejas</p>
+            <p className="mt-3">— Fitness App</p>
             <hr className="my-4 border-slate-100" />
             <p className="text-[11px] text-slate-400">Don&apos;t want these reminders? <a href="#" className="underline">Unsubscribe</a>.</p>
           </div>

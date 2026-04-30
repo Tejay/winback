@@ -18,8 +18,9 @@ export function Hero() {
             Bring back the customers who chose to leave.
           </h1>
           <p className="mt-5 text-base sm:text-lg text-slate-600 leading-relaxed">
-            Cancellations aren&apos;t the end — most customers leave because the moment was wrong, not the product. Winback reads each cancellation reason against your account history, your changelog, and the customer&apos;s tenure, then writes a personal, single email that fits.{' '}
-            <span className="text-slate-900 font-medium">No templates, no broadcasts, no &quot;we&apos;d love to have you back!&quot;</span>
+            Cancellations are recoverable — if the reason actually lands. Winback reads what the customer said — and when they didn&apos;t say anything, what they did. Account history, changelog matches, tenure, engagement signals. Then writes a personal, single email that fits.{' '}
+            <span className="text-blue-600 font-semibold">Every email is AI-drafted, personalised to that subscriber</span>{' '}
+            — not a templated broadcast.
           </p>
         </div>
 

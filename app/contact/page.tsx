@@ -39,10 +39,10 @@ export default function ContactPage() {
           <div className="text-xs font-semibold uppercase tracking-widest text-slate-400 mb-2">
             Registered office
           </div>
-          <div>Winback Ltd</div>
-          <div>Company no. {'{TO_FILL — pending Companies House}'}</div>
-          <div>{'{Registered office address — pending incorporation}'}</div>
-          <div>England and Wales</div>
+          <div>Axiomis OÜ trading as Winback</div>
+          <div>Reg. no. 17493372</div>
+          <div>Sepapaja tn 6</div>
+          <div>15551 Tallinn, Estonia</div>
         </div>
 
         <p className="mt-8 text-xs text-slate-400">

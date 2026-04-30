@@ -22,7 +22,7 @@ export function BundleCallout() {
           Two flows. One platform.
         </h2>
         <p className="mt-4 text-sm text-slate-600 max-w-xl mx-auto">
-          You don&apos;t pick one. The platform fee covers payment recovery; the performance fee only kicks in when we recover a customer who actually quit. They work together, they bill together.
+          The platform fee covers payment recovery; the performance fee only kicks in when we recover a customer who actually quit. They work together, they bill together.
         </p>
       </div>
 
@@ -83,11 +83,11 @@ export function BundleCallout() {
                 </li>
                 <li className="flex items-start gap-2">
                   <Check className="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" strokeWidth={2.2} />
-                  <span>1× MRR per recovery · Refundable for 14 days</span>
+                  <span>1 month&apos;s subscription fee per recovery · Refundable for 14 days</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <Check className="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" strokeWidth={2.2} />
-                  <span className="text-slate-900 font-medium">$0 if we don&apos;t recover any</span>
+                  <span className="text-slate-900 font-medium">Performance-billed — $0 if we don&apos;t recover</span>
                 </li>
               </ul>
             </div>

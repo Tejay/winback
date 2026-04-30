@@ -41,7 +41,7 @@ export default function LandingPage() {
             <span className="block text-4xl sm:text-6xl font-bold text-slate-900">
               Recover customers.
             </span>
-            <span className="block text-4xl sm:text-6xl font-bold text-slate-400">
+            <span className="block text-4xl sm:text-6xl font-bold text-green-500">
               Automatically.
             </span>
           </h1>
@@ -49,7 +49,7 @@ export default function LandingPage() {
           <p className="mt-6 text-base sm:text-lg text-slate-600 max-w-2xl text-center leading-relaxed">
             Payment failures and deliberate cancellations are the two ways subscription customers slip away. Winback is{' '}
             <span className="text-slate-900 font-medium">one platform that catches both</span>{' '}
-            — always-on payment recovery, AI-drafted win-back emails. Same Stripe Connect. Same bill.
+            — always-on payment recovery, AI-drafted win-back emails. Two kinds of lost revenue, one Stripe connection.
           </p>
 
           <div className="flex flex-col items-center gap-2 mt-8">
@@ -57,10 +57,10 @@ export default function LandingPage() {
               href="/register"
               className="bg-[#0f172a] text-white rounded-full px-7 py-3 text-base font-medium hover:bg-[#1e293b]"
             >
-              Connect Stripe in 60 seconds →
+              Start free — no card →
             </Link>
             <p className="text-sm text-slate-500">
-              No card at signup · Read-only Stripe access
+              Connect Stripe · No card at signup.
             </p>
           </div>
 
