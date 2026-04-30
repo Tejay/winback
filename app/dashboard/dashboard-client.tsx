@@ -61,35 +61,63 @@ interface LabelPct {
   label: string
   pct: number
 }
+interface WinBackFilterCounts {
+  all: number
+  handoff: number
+  'has-reply': number
+  paused: number
+  recovered: number
+  done: number
+}
+interface PaymentFilterCounts {
+  all: number
+  'in-retry': number
+  'final-retry': number
+  recovered: number
+  lost: number
+}
 interface Stats {
   winBack: {
     thisMonth: Bucket
+    lastMonth: Bucket
     allTime: Bucket & { recoveryRate: number | null }
     inProgress: number
     handoffsNeedingAttention: number
     topReasons: LabelPct[]
+    filterCounts: WinBackFilterCounts
+    dailyRecovered: number[]
   }
   paymentRecovery: {
     thisMonth: Bucket
+    lastMonth: Bucket
     allTime: Bucket & { recoveryRate: number | null }
     inDunning: number
     topDeclineCodes: LabelPct[]
+    filterCounts: PaymentFilterCounts
+    dailyRecovered: number[]
   }
 }
 
+const EMPTY_BUCKET: Bucket = { recovered: 0, mrrRecoveredCents: 0 }
 const EMPTY_STATS: Stats = {
   winBack: {
-    thisMonth: { recovered: 0, mrrRecoveredCents: 0 },
+    thisMonth: EMPTY_BUCKET,
+    lastMonth: EMPTY_BUCKET,
     allTime: { recovered: 0, mrrRecoveredCents: 0, recoveryRate: null },
     inProgress: 0,
     handoffsNeedingAttention: 0,
     topReasons: [],
+    filterCounts: { all: 0, handoff: 0, 'has-reply': 0, paused: 0, recovered: 0, done: 0 },
+    dailyRecovered: [],
   },
   paymentRecovery: {
-    thisMonth: { recovered: 0, mrrRecoveredCents: 0 },
+    thisMonth: EMPTY_BUCKET,
+    lastMonth: EMPTY_BUCKET,
     allTime: { recovered: 0, mrrRecoveredCents: 0, recoveryRate: null },
     inDunning: 0,
     topDeclineCodes: [],
+    filterCounts: { all: 0, 'in-retry': 0, 'final-retry': 0, recovered: 0, lost: 0 },
+    dailyRecovered: [],
   },
 }
 
@@ -324,35 +352,15 @@ export function DashboardClient({
         </div>
       )}
 
-      {/* Billing alert */}
+      {/* Billing alert — Spec 40 polish: slide-in animation + CSS confetti
+          burst the first time it mounts. Only fires for trial accounts on
+          first-recovery; after that the user dismisses it and never sees
+          it again (localStorage-gated). */}
       {showBanner && (
-        <div className="bg-white border border-slate-200 rounded-2xl p-5 mb-6 flex items-start justify-between gap-4">
-          <div className="flex items-start gap-4">
-            <div className="bg-blue-50 rounded-full p-2 flex-shrink-0">
-              <Zap className="w-4 h-4 text-blue-600" />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-slate-900">
-                🎉 Your first recovery is in{firstRecovery.name ? ` — ${firstRecovery.name} is back` : ''} at ${(firstRecovery.mrrCents / 100).toFixed(0)}/mo.
-              </p>
-              <p className="text-sm text-slate-600 mt-1">
-                Add a payment method to start your $99/mo subscription —
-                covers up to 500 payment recoveries/month, plus a one-time
-                fee of <strong>1× MRR</strong> per win-back (refundable for
-                14 days).
-              </p>
-              <div className="mt-3 flex flex-wrap items-center gap-3 sm:gap-4">
-                <a href="/settings#billing" className="bg-[#0f172a] text-white rounded-full px-5 py-2 text-sm font-medium hover:bg-[#1e293b]">
-                  Add billing to keep recovering
-                </a>
-                <button onClick={dismissBanner} className="text-sm text-slate-400 hover:text-slate-600">Not now</button>
-              </div>
-            </div>
-          </div>
-          <button onClick={dismissBanner} className="text-slate-400 hover:text-slate-600">
-            <X className="w-4 h-4" />
-          </button>
-        </div>
+        <FirstRecoveryBanner
+          firstRecovery={firstRecovery!}
+          onDismiss={dismissBanner}
+        />
       )}
 
       {/* Backfill banner */}
@@ -496,12 +504,23 @@ export function DashboardClient({
                 icon={<CheckCircle className="w-4 h-4" />}
                 value={String(stats.winBack.allTime.recovered)}
                 label="Recovered"
+                delta={formatDelta(
+                  stats.winBack.thisMonth.recovered,
+                  stats.winBack.lastMonth.recovered,
+                  'count',
+                )}
+                sparkline={stats.winBack.dailyRecovered}
               />
               <StatCard
                 accent="blue"
                 icon={<DollarSign className="w-4 h-4" />}
                 value={`$${Math.round(stats.winBack.allTime.mrrRecoveredCents / 100).toLocaleString()}`}
                 label="MRR recovered"
+                delta={formatDelta(
+                  stats.winBack.thisMonth.mrrRecoveredCents,
+                  stats.winBack.lastMonth.mrrRecoveredCents,
+                  'money',
+                )}
               />
               <StatCard
                 accent="amber"
@@ -552,12 +571,23 @@ export function DashboardClient({
                 icon={<CheckCircle className="w-4 h-4" />}
                 value={String(stats.paymentRecovery.allTime.recovered)}
                 label="Recovered"
+                delta={formatDelta(
+                  stats.paymentRecovery.thisMonth.recovered,
+                  stats.paymentRecovery.lastMonth.recovered,
+                  'count',
+                )}
+                sparkline={stats.paymentRecovery.dailyRecovered}
               />
               <StatCard
                 accent="green"
                 icon={<DollarSign className="w-4 h-4" />}
                 value={`$${Math.round(stats.paymentRecovery.allTime.mrrRecoveredCents / 100).toLocaleString()}`}
                 label="MRR saved"
+                delta={formatDelta(
+                  stats.paymentRecovery.thisMonth.mrrRecoveredCents,
+                  stats.paymentRecovery.lastMonth.mrrRecoveredCents,
+                  'money',
+                )}
               />
               <StatCard
                 accent="amber"
@@ -577,19 +607,37 @@ export function DashboardClient({
       {/* Filter chips + search (per-tab state) */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 md:gap-4 mb-4">
         <div className="flex items-center gap-1 overflow-x-auto -mx-4 px-4 md:mx-0 md:px-0">
-          {filters.map((f) => (
-            <button
-              key={f.key}
-              onClick={() => setFilter(f.key)}
-              className={
-                filter === f.key
-                  ? 'bg-[#0f172a] text-white rounded-full px-4 py-1.5 text-sm font-medium'
-                  : 'text-slate-500 hover:text-slate-900 rounded-full px-4 py-1.5 text-sm font-medium transition-colors'
-              }
-            >
-              {f.label}
-            </button>
-          ))}
+          {filters.map((f) => {
+            const counts = (tab === 'winback'
+              ? stats.winBack.filterCounts
+              : stats.paymentRecovery.filterCounts) as unknown as Record<string, number>
+            const count = counts[f.key]
+            const active = filter === f.key
+            return (
+              <button
+                key={f.key}
+                onClick={() => setFilter(f.key)}
+                className={
+                  active
+                    ? 'flex items-center gap-1.5 bg-[#0f172a] text-white rounded-full px-4 py-1.5 text-sm font-medium'
+                    : 'flex items-center gap-1.5 text-slate-500 hover:text-slate-900 rounded-full px-4 py-1.5 text-sm font-medium transition-colors'
+                }
+              >
+                <span>{f.label}</span>
+                {count !== undefined && count > 0 && (
+                  <span
+                    className={
+                      active
+                        ? 'tabular-nums text-white/70 text-xs'
+                        : 'tabular-nums text-slate-400 text-xs'
+                    }
+                  >
+                    {count}
+                  </span>
+                )}
+              </button>
+            )
+          })}
         </div>
         <div className="relative w-full md:w-auto">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
@@ -1107,6 +1155,86 @@ function DunningStageBadge({ sub }: { sub: Subscriber }) {
 }
 
 /**
+ * Spec 40 polish — First-recovery banner. Slides in from the top and
+ * fires a confetti burst once on mount. CSS-only animation; no deps.
+ */
+function FirstRecoveryBanner({
+  firstRecovery,
+  onDismiss,
+}: {
+  firstRecovery: { name: string | null; mrrCents: number }
+  onDismiss: () => void
+}) {
+  return (
+    <div
+      className="relative overflow-hidden bg-white border border-blue-100 rounded-2xl p-5 mb-6 flex items-start justify-between gap-4"
+      style={{ animation: 'wb-slide-in 420ms cubic-bezier(0.2, 0.9, 0.32, 1.12) both' }}
+    >
+      {/* Confetti burst — 12 particles in a half-arc, CSS keyframes only */}
+      <div aria-hidden className="pointer-events-none absolute inset-0">
+        {Array.from({ length: 12 }).map((_, i) => {
+          const colors = ['#3b82f6', '#22c55e', '#f59e0b', '#ec4899', '#8b5cf6', '#06b6d4']
+          const c = colors[i % colors.length]
+          const angle = (i / 12) * Math.PI - Math.PI / 2 // -90..+90
+          const dx = Math.cos(angle) * 80
+          const dy = Math.sin(angle) * 60 - 30
+          return (
+            <span
+              key={i}
+              className="absolute left-12 top-9 block w-1.5 h-1.5 rounded-sm"
+              style={{
+                background: c,
+                animation: `wb-confetti 900ms ease-out both`,
+                animationDelay: `${50 + i * 18}ms`,
+                ['--dx' as string]: `${dx}px`,
+                ['--dy' as string]: `${dy}px`,
+              } as React.CSSProperties}
+            />
+          )
+        })}
+      </div>
+
+      <style>{`
+        @keyframes wb-slide-in {
+          from { opacity: 0; transform: translateY(-8px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes wb-confetti {
+          from { opacity: 1; transform: translate(0, 0) rotate(0deg); }
+          to   { opacity: 0; transform: translate(var(--dx), var(--dy)) rotate(220deg); }
+        }
+      `}</style>
+
+      <div className="flex items-start gap-4 relative z-10">
+        <div className="bg-blue-50 rounded-full p-2 flex-shrink-0">
+          <Sparkles className="w-4 h-4 text-blue-600" />
+        </div>
+        <div>
+          <p className="text-sm font-medium text-slate-900">
+            🎉 Your first recovery is in{firstRecovery.name ? ` — ${firstRecovery.name} is back` : ''} at ${(firstRecovery.mrrCents / 100).toFixed(0)}/mo.
+          </p>
+          <p className="text-sm text-slate-600 mt-1">
+            Add a payment method to start your $99/mo subscription —
+            covers up to 500 payment recoveries/month, plus a one-time
+            fee of <strong>1× MRR</strong> per win-back (refundable for
+            14 days).
+          </p>
+          <div className="mt-3 flex flex-wrap items-center gap-3 sm:gap-4">
+            <a href="/settings#billing" className="bg-[#0f172a] text-white rounded-full px-5 py-2 text-sm font-medium hover:bg-[#1e293b]">
+              Add billing to keep recovering
+            </a>
+            <button onClick={onDismiss} className="text-sm text-slate-400 hover:text-slate-600">Not now</button>
+          </div>
+        </div>
+      </div>
+      <button onClick={onDismiss} className="text-slate-400 hover:text-slate-600 relative z-10">
+        <X className="w-4 h-4" />
+      </button>
+    </div>
+  )
+}
+
+/**
  * Spec 40 — Pattern pills. Read-only chips showing a category breakdown
  * (top cancellation reasons / top decline codes). Each category gets a
  * stable semantic color so the founder can scan the strip and read
@@ -1171,11 +1299,17 @@ function StatCard({
   icon,
   value,
   label,
+  delta,
+  sparkline,
 }: {
   accent: 'blue' | 'green' | 'amber'
   icon: React.ReactNode
   value: string
   label: string
+  /** Spec 40 polish — month-over-month change. Pass a string like '+3' / '-$120' / '—'. */
+  delta?: { text: string; direction: 'up' | 'down' | 'flat' }
+  /** Spec 40 polish — 30-day daily series for the sparkline. */
+  sparkline?: number[]
 }) {
   const accentClass =
     accent === 'blue'
@@ -1184,15 +1318,84 @@ function StatCard({
       ? 'bg-green-50 text-green-600'
       : 'bg-amber-50 text-amber-600'
 
+  const deltaClass =
+    delta?.direction === 'up'
+      ? 'text-emerald-600'
+      : delta?.direction === 'down'
+      ? 'text-rose-600'
+      : 'text-slate-400'
+
   return (
     <div className="bg-white rounded-2xl border border-slate-100 px-4 py-4">
-      <div className={`${accentClass} rounded-lg w-7 h-7 flex items-center justify-center`}>
-        {icon}
+      <div className="flex items-start justify-between">
+        <div className={`${accentClass} rounded-lg w-7 h-7 flex items-center justify-center`}>
+          {icon}
+        </div>
+        {sparkline && sparkline.length > 0 && (
+          <Sparkline data={sparkline} accent={accent} />
+        )}
       </div>
       <div className="text-2xl sm:text-3xl font-bold text-slate-900 mt-2.5 tabular-nums">{value}</div>
       <div className="text-[11px] font-semibold uppercase tracking-widest text-slate-400 mt-0.5">
         {label}
       </div>
+      {delta && (
+        <div className={`text-[11px] font-medium tabular-nums mt-1.5 ${deltaClass}`}>
+          {delta.text}
+          <span className="text-slate-400 font-normal"> vs last month</span>
+        </div>
+      )}
     </div>
   )
+}
+
+/**
+ * Spec 40 polish — Sparkline. Tiny SVG line chart for a daily series
+ * (typically last 30 days). Renders inline at the top-right of a
+ * StatCard so it provides at-a-glance trend without competing with the
+ * primary number below.
+ *
+ * Visually quiet by design: stroke-only line, no axes, no fills, no
+ * dots. Width/height are fixed; the path is normalised to the data's
+ * min/max so even a small range stays visible.
+ */
+function Sparkline({ data, accent }: { data: number[]; accent: 'blue' | 'green' | 'amber' }) {
+  const w = 64
+  const h = 22
+  if (data.length === 0) return null
+  const max = Math.max(...data, 1)
+  const min = Math.min(...data, 0)
+  const range = max - min || 1
+  const dx = w / Math.max(data.length - 1, 1)
+  const points = data
+    .map((v, i) => `${(i * dx).toFixed(1)},${(h - ((v - min) / range) * h).toFixed(1)}`)
+    .join(' ')
+  const stroke =
+    accent === 'blue' ? '#2563eb' : accent === 'green' ? '#16a34a' : '#d97706'
+  return (
+    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} aria-hidden className="text-slate-300">
+      <polyline
+        points={points}
+        fill="none"
+        stroke={stroke}
+        strokeWidth={1.5}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        opacity={0.85}
+      />
+    </svg>
+  )
+}
+
+/**
+ * Spec 40 polish — Format an integer or money delta for the StatCard.
+ * Returns a `{text, direction}` payload the card knows how to render.
+ */
+function formatDelta(curr: number, prev: number, kind: 'count' | 'money'): { text: string; direction: 'up' | 'down' | 'flat' } {
+  const diff = curr - prev
+  if (diff === 0) return { text: '—', direction: 'flat' }
+  const sign = diff > 0 ? '+' : '−'
+  const abs = Math.abs(diff)
+  const value = kind === 'money' ? `$${Math.round(abs / 100).toLocaleString()}` : `${abs}`
+  return { text: `${sign}${value}`, direction: diff > 0 ? 'up' : 'down' }
 }

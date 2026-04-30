@@ -1,12 +1,14 @@
 import { NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
-import { customers, churnedSubscribers, recoveries } from '@/lib/schema'
-import { and, eq, gte, isNotNull, isNull, ne, or, sql } from 'drizzle-orm'
+import { customers, churnedSubscribers, emailsSent, recoveries } from '@/lib/schema'
+import { and, eq, gte, isNotNull, isNull, lt, ne, or, sql } from 'drizzle-orm'
 import {
   aggregateRecoveryRows,
+  buildDailySeries,
   recoveryRatePct,
   startOfMonthUtc,
+  startOfPrevMonthUtc,
   topNFromCounts,
   type LabelPct,
   type RecoveryAggRow,
@@ -38,21 +40,40 @@ const DUNNING_REASON = 'Payment failed'
 const ACTIVE_DUNNING_STATES = ['awaiting_retry', 'final_retry_pending'] as const
 
 type Bucket = { recovered: number; mrrRecoveredCents: number }
+type WinBackFilterCounts = {
+  all: number
+  handoff: number
+  'has-reply': number
+  paused: number
+  recovered: number
+  done: number
+}
+type PaymentFilterCounts = {
+  all: number
+  'in-retry': number
+  'final-retry': number
+  recovered: number
+  lost: number
+}
 type Stats = {
   winBack: {
     thisMonth: Bucket
+    lastMonth: Bucket                          // Spec 40 polish — month delta
     allTime: Bucket & { recoveryRate: number | null }
     inProgress: number
-    // Spec 40
     handoffsNeedingAttention: number
     topReasons: LabelPct[]
+    filterCounts: WinBackFilterCounts          // Spec 40 polish
+    dailyRecovered: number[]                   // Spec 40 polish — 30d sparkline
   }
   paymentRecovery: {
     thisMonth: Bucket
+    lastMonth: Bucket                          // Spec 40 polish — month delta
     allTime: Bucket & { recoveryRate: number | null }
     inDunning: number
-    // Spec 40
     topDeclineCodes: LabelPct[]
+    filterCounts: PaymentFilterCounts          // Spec 40 polish
+    dailyRecovered: number[]                   // Spec 40 polish — 30d sparkline
   }
 }
 
@@ -73,6 +94,7 @@ export async function GET() {
   }
 
   const monthStart = startOfMonthUtc()
+  const prevMonthStart = startOfPrevMonthUtc()
 
   // Aggregate recoveries — two queries, one for this-month and one for
   // all-time, each grouped by recoveryType only. We previously did this
@@ -82,9 +104,15 @@ export async function GET() {
   // because the two parameter placeholders were syntactically different
   // even though the runtime value matched. Two queries is simpler than
   // working around that.
-  const buildAggRows = async (filterToMonth: boolean): Promise<RecoveryAggRow[]> => {
+  const buildAggRows = async (
+    range: 'thisMonth' | 'lastMonth' | 'allTime',
+  ): Promise<Array<RecoveryAggRow & { range: 'thisMonth' | 'lastMonth' | 'allTime' }>> => {
     const conditions = [eq(recoveries.customerId, customer.id)]
-    if (filterToMonth) conditions.push(gte(recoveries.recoveredAt, monthStart))
+    if (range === 'thisMonth') conditions.push(gte(recoveries.recoveredAt, monthStart))
+    if (range === 'lastMonth') {
+      conditions.push(gte(recoveries.recoveredAt, prevMonthStart))
+      conditions.push(lt(recoveries.recoveredAt, monthStart))
+    }
     const rows = await db
       .select({
         recoveryType: recoveries.recoveryType,
@@ -96,20 +124,32 @@ export async function GET() {
       .groupBy(recoveries.recoveryType)
     return rows.map((r) => ({
       recoveryType: r.recoveryType,
-      isThisMonth: filterToMonth,
+      isThisMonth: range === 'thisMonth',
       count: Number(r.count),
       mrrCents: Number(r.mrrCents),
+      range,
     }))
   }
 
-  const [thisMonthAggRows, allTimeAggRows] = await Promise.all([
-    buildAggRows(true),
-    buildAggRows(false),
+  const [thisMonthAggRows, lastMonthAggRows, allTimeAggRows] = await Promise.all([
+    buildAggRows('thisMonth'),
+    buildAggRows('lastMonth'),
+    buildAggRows('allTime'),
   ])
-  // allTime rows are tagged isThisMonth=false; the aggregator adds them to
-  // the all-time totals only. thisMonth rows tagged isThisMonth=true add to
-  // both buckets via the existing reducer logic.
+  // allTime rows tagged isThisMonth=false; aggregator adds them to all-time
+  // only. thisMonth rows tagged true add to both. lastMonth rows are bucketed
+  // separately below — they're not part of the aggregator's win-back/payment
+  // partition (we want a parallel last-month bucket per cohort).
   const aggRows: RecoveryAggRow[] = [...thisMonthAggRows, ...allTimeAggRows]
+  const lastMonth: { winBack: Bucket; payment: Bucket } = {
+    winBack: { recovered: 0, mrrRecoveredCents: 0 },
+    payment: { recovered: 0, mrrRecoveredCents: 0 },
+  }
+  for (const r of lastMonthAggRows) {
+    const bucket = r.recoveryType === 'card_save' ? lastMonth.payment : lastMonth.winBack
+    bucket.recovered += r.count
+    bucket.mrrRecoveredCents += r.mrrCents
+  }
 
   const agg = aggregateRecoveryRows(aggRows)
   if (agg.legacyNullCount > 0) {
@@ -244,9 +284,88 @@ export async function GET() {
     4,
   )
 
+  // Spec 40 polish — filter-chip counts. One query per cohort with
+  // FILTER clauses; cheap because all counts come from the same scan.
+  const winBackBaseWhere = and(
+    eq(churnedSubscribers.customerId, customer.id),
+    or(
+      ne(churnedSubscribers.cancellationReason, DUNNING_REASON),
+      isNull(churnedSubscribers.cancellationReason),
+    ),
+  )
+  const [wbCounts] = await db
+    .select({
+      all: sql<number>`count(*)::int`.as('all'),
+      handoff: sql<number>`count(*) filter (where ${churnedSubscribers.founderHandoffAt} is not null and ${churnedSubscribers.founderHandoffResolvedAt} is null)::int`.as('handoff'),
+      hasReply: sql<number>`count(*) filter (where exists (
+        select 1 from ${emailsSent}
+        where ${emailsSent.subscriberId} = ${churnedSubscribers.id}
+          and ${emailsSent.repliedAt} is not null
+      ))::int`.as('has_reply'),
+      paused: sql<number>`count(*) filter (where ${churnedSubscribers.aiPausedUntil} is not null and ${churnedSubscribers.aiPausedUntil} > now())::int`.as('paused'),
+      recovered: sql<number>`count(*) filter (where ${churnedSubscribers.status} = 'recovered')::int`.as('recovered'),
+      done: sql<number>`count(*) filter (where ${churnedSubscribers.status} in ('lost','skipped') or ${churnedSubscribers.doNotContact} = true)::int`.as('done'),
+    })
+    .from(churnedSubscribers)
+    .where(winBackBaseWhere)
+
+  const paymentBaseWhere = and(
+    eq(churnedSubscribers.customerId, customer.id),
+    eq(churnedSubscribers.cancellationReason, DUNNING_REASON),
+  )
+  const [pCounts] = await db
+    .select({
+      all: sql<number>`count(*)::int`.as('all'),
+      inRetry: sql<number>`count(*) filter (where ${churnedSubscribers.dunningState} = 'awaiting_retry')::int`.as('in_retry'),
+      finalRetry: sql<number>`count(*) filter (where ${churnedSubscribers.dunningState} = 'final_retry_pending')::int`.as('final_retry'),
+      recovered: sql<number>`count(*) filter (where ${churnedSubscribers.status} = 'recovered')::int`.as('recovered'),
+      lost: sql<number>`count(*) filter (where ${churnedSubscribers.dunningState} = 'churned_during_dunning' or ${churnedSubscribers.status} = 'lost')::int`.as('lost'),
+    })
+    .from(churnedSubscribers)
+    .where(paymentBaseWhere)
+
+  const winBackFilterCounts: WinBackFilterCounts = {
+    all: Number(wbCounts.all),
+    handoff: Number(wbCounts.handoff),
+    'has-reply': Number(wbCounts.hasReply),
+    paused: Number(wbCounts.paused),
+    recovered: Number(wbCounts.recovered),
+    done: Number(wbCounts.done),
+  }
+  const paymentFilterCounts: PaymentFilterCounts = {
+    all: Number(pCounts.all),
+    'in-retry': Number(pCounts.inRetry),
+    'final-retry': Number(pCounts.finalRetry),
+    recovered: Number(pCounts.recovered),
+    lost: Number(pCounts.lost),
+  }
+
+  // Spec 40 polish — last 30 days of recoveries, per cohort, for the
+  // sparkline. Single query grouped by (recoveryType, day-truncated).
+  const sparkStart = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+  const dailyRows = await db
+    .select({
+      recoveryType: recoveries.recoveryType,
+      day: sql<string>`to_char(date_trunc('day', ${recoveries.recoveredAt}), 'YYYY-MM-DD')`.as('day'),
+      count: sql<number>`count(*)::int`.as('count'),
+    })
+    .from(recoveries)
+    .where(and(eq(recoveries.customerId, customer.id), gte(recoveries.recoveredAt, sparkStart)))
+    .groupBy(recoveries.recoveryType, sql`date_trunc('day', ${recoveries.recoveredAt})`)
+
+  const winBackDailyRaw: Array<{ day: string; count: number }> = []
+  const paymentDailyRaw: Array<{ day: string; count: number }> = []
+  for (const r of dailyRows) {
+    const target = r.recoveryType === 'card_save' ? paymentDailyRaw : winBackDailyRaw
+    target.push({ day: r.day, count: Number(r.count) })
+  }
+  const winBackDailyRecovered = buildDailySeries(winBackDailyRaw, 30)
+  const paymentDailyRecovered = buildDailySeries(paymentDailyRaw, 30)
+
   const stats: Stats = {
     winBack: {
       thisMonth: agg.winBackThisMonth,
+      lastMonth: lastMonth.winBack,
       allTime: {
         ...agg.winBackAllTime,
         recoveryRate: recoveryRatePct(agg.winBackAllTime.recovered, winBackLost),
@@ -254,15 +373,20 @@ export async function GET() {
       inProgress: Number(inProgress),
       handoffsNeedingAttention: Number(handoffsNeedingAttention),
       topReasons,
+      filterCounts: winBackFilterCounts,
+      dailyRecovered: winBackDailyRecovered,
     },
     paymentRecovery: {
       thisMonth: agg.paymentThisMonth,
+      lastMonth: lastMonth.payment,
       allTime: {
         ...agg.paymentAllTime,
         recoveryRate: recoveryRatePct(agg.paymentAllTime.recovered, paymentLost),
       },
       inDunning: Number(inDunning),
       topDeclineCodes,
+      filterCounts: paymentFilterCounts,
+      dailyRecovered: paymentDailyRecovered,
     },
   }
 

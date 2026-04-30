@@ -28,6 +28,39 @@ export function startOfMonthUtc(now: Date = new Date()): Date {
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1, 0, 0, 0, 0))
 }
 
+/** Start of the previous month at 00:00:00 UTC. */
+export function startOfPrevMonthUtc(now: Date = new Date()): Date {
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1, 0, 0, 0, 0))
+}
+
+/**
+ * Spec 40 — Build a 30-bucket daily series ending today (UTC).
+ *
+ * Given the raw rows ({ day: 'YYYY-MM-DD', count }) returned from a
+ * date-truncated GROUP BY query, fill in zeros for any missing days so
+ * the sparkline renders a continuous trend with no gaps.
+ *
+ * Returns oldest → newest, length 30. The dashboard SVG sparkline reads
+ * the array in order.
+ */
+export function buildDailySeries(
+  rows: Array<{ day: string; count: number }>,
+  days: number = 30,
+  now: Date = new Date(),
+): number[] {
+  const byDay = new Map<string, number>()
+  for (const r of rows) byDay.set(r.day, Number(r.count))
+
+  const out: number[] = []
+  const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date(today.getTime() - i * 24 * 60 * 60 * 1000)
+    const key = d.toISOString().slice(0, 10) // YYYY-MM-DD
+    out.push(byDay.get(key) ?? 0)
+  }
+  return out
+}
+
 /**
  * Recovery rate as a 0–100 integer. Returns null when the denominator
  * is zero (avoids the misleading "0% of 0 customers" read).

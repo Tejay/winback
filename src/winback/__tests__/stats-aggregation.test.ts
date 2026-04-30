@@ -9,8 +9,10 @@
 import { describe, it, expect } from 'vitest'
 import {
   aggregateRecoveryRows,
+  buildDailySeries,
   recoveryRatePct,
   startOfMonthUtc,
+  startOfPrevMonthUtc,
   topNFromCounts,
   type RecoveryAggRow,
 } from '../lib/stats'
@@ -29,6 +31,56 @@ describe('startOfMonthUtc', () => {
   it('handles January correctly (no off-by-one on year)', () => {
     const sample = new Date('2026-01-05T10:00:00Z')
     expect(startOfMonthUtc(sample).toISOString()).toBe('2026-01-01T00:00:00.000Z')
+  })
+})
+
+describe('startOfPrevMonthUtc', () => {
+  it('returns 00:00:00 UTC on the 1st of the previous month', () => {
+    const sample = new Date('2026-04-15T13:24:00Z')
+    expect(startOfPrevMonthUtc(sample).toISOString()).toBe('2026-03-01T00:00:00.000Z')
+  })
+
+  it('rolls over the year on January', () => {
+    const sample = new Date('2026-01-15T00:00:00Z')
+    expect(startOfPrevMonthUtc(sample).toISOString()).toBe('2025-12-01T00:00:00.000Z')
+  })
+})
+
+describe('buildDailySeries', () => {
+  it('returns 30 zeros when there are no rows', () => {
+    const result = buildDailySeries([], 30, new Date('2026-04-30T12:00:00Z'))
+    expect(result).toHaveLength(30)
+    expect(result.every((v) => v === 0)).toBe(true)
+  })
+
+  it('places counts on the right day, ascending oldest → newest', () => {
+    const today = new Date('2026-04-30T12:00:00Z')
+    const result = buildDailySeries(
+      [
+        { day: '2026-04-30', count: 5 },
+        { day: '2026-04-28', count: 2 },
+      ],
+      30,
+      today,
+    )
+    expect(result[result.length - 1]).toBe(5) // today
+    expect(result[result.length - 3]).toBe(2) // two days ago
+    expect(result[0]).toBe(0) // 30 days ago
+  })
+
+  it('respects the days argument', () => {
+    const result = buildDailySeries([], 7, new Date('2026-04-30T12:00:00Z'))
+    expect(result).toHaveLength(7)
+  })
+
+  it('drops days that fall outside the window', () => {
+    const today = new Date('2026-04-30T12:00:00Z')
+    const result = buildDailySeries(
+      [{ day: '2026-01-01', count: 100 }], // way outside window
+      30,
+      today,
+    )
+    expect(result.every((v) => v === 0)).toBe(true)
   })
 })
 
