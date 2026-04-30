@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { StatusBadge } from '@/components/status-badge'
 import { AiStateBadge } from '@/components/ai-state-badge'
-import { TrendingUp, CheckCircle, DollarSign, Users, Search, Zap, X, RotateCcw, Check, Loader2, Sparkles } from 'lucide-react'
+import { CheckCircle, Search, Zap, X, RotateCcw, Check, Loader2, Sparkles, MessageSquare, CreditCard } from 'lucide-react'
 
 interface Subscriber {
   id: string
@@ -40,11 +40,38 @@ interface Subscriber {
   recoveryLikelihood: 'high' | 'medium' | 'low' | null
 }
 
-interface Stats {
-  recoveryRate: number
+// Spec 39 — KPIs split by recovery type and time window. Backend
+// already separates win-back vs payment recovery via
+// recoveries.recoveryType; here we render two side-by-side panels
+// each with This-month / current-state / All-time zones.
+interface Bucket {
   recovered: number
   mrrRecoveredCents: number
-  pending: number
+}
+interface Stats {
+  winBack: {
+    thisMonth: Bucket
+    allTime: Bucket & { recoveryRate: number | null }
+    inProgress: number
+  }
+  paymentRecovery: {
+    thisMonth: Bucket
+    allTime: Bucket & { recoveryRate: number | null }
+    inDunning: number
+  }
+}
+
+const EMPTY_STATS: Stats = {
+  winBack: {
+    thisMonth: { recovered: 0, mrrRecoveredCents: 0 },
+    allTime: { recovered: 0, mrrRecoveredCents: 0, recoveryRate: null },
+    inProgress: 0,
+  },
+  paymentRecovery: {
+    thisMonth: { recovered: 0, mrrRecoveredCents: 0 },
+    allTime: { recovered: 0, mrrRecoveredCents: 0, recoveryRate: null },
+    inDunning: 0,
+  },
 }
 
 interface BackfillStatus {
@@ -74,7 +101,7 @@ export function DashboardClient({
   firstRecovery,
   pilotUntilIso = null,
 }: DashboardClientProps) {
-  const [stats, setStats] = useState<Stats>({ recoveryRate: 0, recovered: 0, mrrRecoveredCents: 0, pending: 0 })
+  const [stats, setStats] = useState<Stats>(EMPTY_STATS)
   const [subscribers, setSubscribers] = useState<Subscriber[]>([])
   const [filter, setFilter] = useState('all')
   const [search, setSearch] = useState('')
@@ -370,36 +397,38 @@ export function DashboardClient({
         </div>
       )}
 
-      {/* Stat cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mb-6">
-        <div className="bg-white rounded-2xl border border-slate-100 p-6">
-          <div className="bg-green-50 rounded-xl w-9 h-9 flex items-center justify-center text-green-600">
-            <TrendingUp className="w-4 h-4" />
-          </div>
-          <div className="text-4xl font-bold text-slate-900 mt-3">{stats.recoveryRate}%</div>
-          <div className="text-xs font-semibold uppercase tracking-widest text-slate-400 mt-1">Recovery Rate</div>
-        </div>
-        <div className="bg-white rounded-2xl border border-slate-100 p-6">
-          <div className="bg-green-50 rounded-xl w-9 h-9 flex items-center justify-center text-green-600">
-            <CheckCircle className="w-4 h-4" />
-          </div>
-          <div className="text-4xl font-bold text-slate-900 mt-3">{stats.recovered}</div>
-          <div className="text-xs font-semibold uppercase tracking-widest text-slate-400 mt-1">Recovered</div>
-        </div>
-        <div className="bg-white rounded-2xl border border-slate-100 p-6">
-          <div className="bg-green-50 rounded-xl w-9 h-9 flex items-center justify-center text-green-600">
-            <DollarSign className="w-4 h-4" />
-          </div>
-          <div className="text-4xl font-bold text-slate-900 mt-3">${Math.round(stats.mrrRecoveredCents / 100)}</div>
-          <div className="text-xs font-semibold uppercase tracking-widest text-slate-400 mt-1">MRR Recovered</div>
-        </div>
-        <div className="bg-white rounded-2xl border border-slate-100 p-6">
-          <div className="bg-amber-50 rounded-xl w-9 h-9 flex items-center justify-center text-amber-600">
-            <Users className="w-4 h-4" />
-          </div>
-          <div className="text-4xl font-bold text-slate-900 mt-3">{stats.pending}</div>
-          <div className="text-xs font-semibold uppercase tracking-widest text-slate-400 mt-1">Pending</div>
-        </div>
+      {/* Stat panels — Spec 39 */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4 mb-6">
+        <KpiPanel
+          accent="blue"
+          icon={<MessageSquare className="w-4 h-4" />}
+          title="Win-backs"
+          thisMonthCount={stats.winBack.thisMonth.recovered}
+          thisMonthMrrCents={stats.winBack.thisMonth.mrrRecoveredCents}
+          mrrLabel="MRR"
+          currentLabel="In progress"
+          currentValue={stats.winBack.inProgress}
+          allTimeCount={stats.winBack.allTime.recovered}
+          allTimeMrrCents={stats.winBack.allTime.mrrRecoveredCents}
+          allTimeMrrSuffix="/mo"
+          recoveryRate={stats.winBack.allTime.recoveryRate}
+          emptyHint="No win-backs yet — we'll surface them as they land."
+        />
+        <KpiPanel
+          accent="green"
+          icon={<CreditCard className="w-4 h-4" />}
+          title="Payment recoveries"
+          thisMonthCount={stats.paymentRecovery.thisMonth.recovered}
+          thisMonthMrrCents={stats.paymentRecovery.thisMonth.mrrRecoveredCents}
+          mrrLabel="saved"
+          currentLabel="In active dunning"
+          currentValue={stats.paymentRecovery.inDunning}
+          allTimeCount={stats.paymentRecovery.allTime.recovered}
+          allTimeMrrCents={stats.paymentRecovery.allTime.mrrRecoveredCents}
+          allTimeMrrSuffix=""
+          recoveryRate={stats.paymentRecovery.allTime.recoveryRate}
+          emptyHint="No payment recoveries yet — we'll show saves as cards fail and we save them."
+        />
       </div>
 
       {/* Filter tabs + search */}
@@ -780,5 +809,90 @@ One line per shipment. Plain English. What customers would actually notice.`}
         </>
       )}
     </>
+  )
+}
+
+/**
+ * Spec 39 — KPI panel. One per recovery type (win-back / payment-recovery).
+ * Three zones: This month (headline), current state, All time (secondary).
+ */
+function KpiPanel({
+  accent,
+  icon,
+  title,
+  thisMonthCount,
+  thisMonthMrrCents,
+  mrrLabel,
+  currentLabel,
+  currentValue,
+  allTimeCount,
+  allTimeMrrCents,
+  allTimeMrrSuffix,
+  recoveryRate,
+  emptyHint,
+}: {
+  accent: 'blue' | 'green'
+  icon: React.ReactNode
+  title: string
+  thisMonthCount: number
+  thisMonthMrrCents: number
+  mrrLabel: string
+  currentLabel: string
+  currentValue: number
+  allTimeCount: number
+  allTimeMrrCents: number
+  allTimeMrrSuffix: string
+  recoveryRate: number | null
+  emptyHint: string
+}) {
+  const isEmpty = thisMonthCount === 0 && allTimeCount === 0 && currentValue === 0
+  const accentBg = accent === 'blue' ? 'bg-blue-50' : 'bg-green-50'
+  const accentFg = accent === 'blue' ? 'text-blue-600' : 'text-green-600'
+
+  return (
+    <div className="bg-white rounded-2xl border border-slate-100 p-6">
+      <div className="flex items-center gap-3">
+        <div className={`${accentBg} rounded-xl w-9 h-9 flex items-center justify-center ${accentFg}`}>
+          {icon}
+        </div>
+        <h3 className="text-base font-semibold text-slate-900">{title}</h3>
+      </div>
+
+      <div className="mt-5">
+        <div className="text-xs font-semibold uppercase tracking-widest text-slate-400">
+          This month
+        </div>
+        <div className="mt-1 text-3xl font-bold text-slate-900 tabular-nums">
+          {thisMonthCount} <span className="text-base font-normal text-slate-500">recovered</span>
+          {' '}
+          <span className="text-2xl text-slate-400">·</span>
+          {' '}
+          ${Math.round(thisMonthMrrCents / 100)}
+          <span className="text-base font-normal text-slate-500"> {mrrLabel}</span>
+        </div>
+      </div>
+
+      <div className="mt-4 text-sm font-semibold text-slate-700">
+        {currentLabel}: <span className="text-slate-900 tabular-nums">{currentValue}</span>
+      </div>
+
+      <div className="mt-5 pt-4 border-t border-slate-100">
+        <div className="text-xs font-semibold uppercase tracking-widest text-slate-400">
+          All time
+        </div>
+        <div className="mt-1 text-sm text-slate-500 tabular-nums">
+          {allTimeCount} recovered
+          {' '}·{' '}
+          ${Math.round(allTimeMrrCents / 100).toLocaleString()}{allTimeMrrSuffix}
+        </div>
+        <div className="mt-1 text-sm text-slate-500 tabular-nums">
+          Recovery rate: {recoveryRate === null ? '—' : `${recoveryRate}%`}
+        </div>
+      </div>
+
+      {isEmpty && (
+        <p className="mt-4 text-xs text-slate-400 italic leading-relaxed">{emptyHint}</p>
+      )}
+    </div>
   )
 }
