@@ -139,6 +139,7 @@ async function seedDemo(): Promise<void> {
     passwordHash,
     name: DEMO_NAME,
     emailVerifiedAt: new Date(),  // skip email verification gate
+    isAdmin: true,                // unlock /admin screens for the demo
   }).returning({ id: users.id })
 
   const fakeStripeToken = encrypt('demo_fake_stripe_access_token_not_real')
