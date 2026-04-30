@@ -639,8 +639,6 @@ Best next step: ${declineCopy.action}
 ${updateBlockText}
 We'll try again on ${retryDateStr} — updating before then means no interruption to your service.
 
-If you have any questions, just reply to this email.
-
 — ${fromName}
 
 — — —

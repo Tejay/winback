@@ -42,7 +42,7 @@ async function main() {
         .limit(1)
     : []
 
-  const fromName = customer?.founderName ?? user?.name ?? 'The team'
+  const fromName = customer?.productName ?? customer?.founderName ?? user?.name ?? 'The team'
 
   console.log('Subscriber:', sub.id, '→', sub.email)
   console.log('Plan:     ', sub.planName, sub.mrrCents, 'cents')

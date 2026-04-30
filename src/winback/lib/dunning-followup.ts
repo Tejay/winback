@@ -92,7 +92,8 @@ async function processOnePass(opts: {
         continue
       }
 
-      const fromName = row.founderName ?? row.userName ?? row.productName ?? 'The team'
+      // Prefer product name so the subscriber sees the brand they signed up to.
+      const fromName = row.productName ?? row.founderName ?? row.userName ?? 'The team'
 
       await sendDunningFollowupEmail({
         subscriberId: row.subscriberId,
