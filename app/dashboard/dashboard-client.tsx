@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { StatusBadge } from '@/components/status-badge'
 import { AiStateBadge } from '@/components/ai-state-badge'
-import { TrendingUp, CheckCircle, DollarSign, Users, Search, Zap, X, RotateCcw, Check, Loader2, Sparkles } from 'lucide-react'
+import { TrendingUp, CheckCircle, DollarSign, Users, Search, Zap, X, RotateCcw, Check, Loader2, Sparkles, MessageSquare, CreditCard } from 'lucide-react'
 
 interface Subscriber {
   id: string
@@ -40,11 +40,38 @@ interface Subscriber {
   recoveryLikelihood: 'high' | 'medium' | 'low' | null
 }
 
-interface Stats {
-  recoveryRate: number
+// Spec 39 — KPIs split by recovery type and time window. Backend
+// already separates win-back vs payment recovery via
+// recoveries.recoveryType; here we render two side-by-side panels
+// each with This-month / current-state / All-time zones.
+interface Bucket {
   recovered: number
   mrrRecoveredCents: number
-  pending: number
+}
+interface Stats {
+  winBack: {
+    thisMonth: Bucket
+    allTime: Bucket & { recoveryRate: number | null }
+    inProgress: number
+  }
+  paymentRecovery: {
+    thisMonth: Bucket
+    allTime: Bucket & { recoveryRate: number | null }
+    inDunning: number
+  }
+}
+
+const EMPTY_STATS: Stats = {
+  winBack: {
+    thisMonth: { recovered: 0, mrrRecoveredCents: 0 },
+    allTime: { recovered: 0, mrrRecoveredCents: 0, recoveryRate: null },
+    inProgress: 0,
+  },
+  paymentRecovery: {
+    thisMonth: { recovered: 0, mrrRecoveredCents: 0 },
+    allTime: { recovered: 0, mrrRecoveredCents: 0, recoveryRate: null },
+    inDunning: 0,
+  },
 }
 
 interface BackfillStatus {
@@ -74,7 +101,7 @@ export function DashboardClient({
   firstRecovery,
   pilotUntilIso = null,
 }: DashboardClientProps) {
-  const [stats, setStats] = useState<Stats>({ recoveryRate: 0, recovered: 0, mrrRecoveredCents: 0, pending: 0 })
+  const [stats, setStats] = useState<Stats>(EMPTY_STATS)
   const [subscribers, setSubscribers] = useState<Subscriber[]>([])
   const [filter, setFilter] = useState('all')
   const [search, setSearch] = useState('')
@@ -370,36 +397,86 @@ export function DashboardClient({
         </div>
       )}
 
-      {/* Stat cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mb-6">
-        <div className="bg-white rounded-2xl border border-slate-100 p-6">
-          <div className="bg-green-50 rounded-xl w-9 h-9 flex items-center justify-center text-green-600">
-            <TrendingUp className="w-4 h-4" />
+      {/* Stat cards — Spec 39: two rows in distinct tinted containers, one
+          per recovery type. White cards "float" inside each tint to keep
+          the original clean card aesthetic while making the row grouping
+          obvious at a glance. */}
+      <div className="mb-6 space-y-4">
+        {/* Win-backs row — soft blue tint */}
+        <section className="rounded-3xl bg-blue-100/70 border border-blue-200/70 p-4 sm:p-5">
+          <div className="flex items-center gap-2 mb-3 px-1">
+            <div className="bg-blue-100 rounded-lg w-6 h-6 flex items-center justify-center text-blue-600">
+              <MessageSquare className="w-3.5 h-3.5" />
+            </div>
+            <span className="text-xs font-semibold uppercase tracking-widest text-blue-700">
+              Win-backs
+            </span>
           </div>
-          <div className="text-4xl font-bold text-slate-900 mt-3">{stats.recoveryRate}%</div>
-          <div className="text-xs font-semibold uppercase tracking-widest text-slate-400 mt-1">Recovery Rate</div>
-        </div>
-        <div className="bg-white rounded-2xl border border-slate-100 p-6">
-          <div className="bg-green-50 rounded-xl w-9 h-9 flex items-center justify-center text-green-600">
-            <CheckCircle className="w-4 h-4" />
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
+            <StatCard
+              accent="blue"
+              icon={<TrendingUp className="w-4 h-4" />}
+              value={stats.winBack.allTime.recoveryRate === null ? '—' : `${stats.winBack.allTime.recoveryRate}%`}
+              label="Recovery rate"
+            />
+            <StatCard
+              accent="blue"
+              icon={<CheckCircle className="w-4 h-4" />}
+              value={String(stats.winBack.allTime.recovered)}
+              label="Recovered"
+            />
+            <StatCard
+              accent="blue"
+              icon={<DollarSign className="w-4 h-4" />}
+              value={`$${Math.round(stats.winBack.allTime.mrrRecoveredCents / 100).toLocaleString()}`}
+              label="MRR recovered"
+            />
+            <StatCard
+              accent="amber"
+              icon={<Users className="w-4 h-4" />}
+              value={String(stats.winBack.inProgress)}
+              label="In progress"
+            />
           </div>
-          <div className="text-4xl font-bold text-slate-900 mt-3">{stats.recovered}</div>
-          <div className="text-xs font-semibold uppercase tracking-widest text-slate-400 mt-1">Recovered</div>
-        </div>
-        <div className="bg-white rounded-2xl border border-slate-100 p-6">
-          <div className="bg-green-50 rounded-xl w-9 h-9 flex items-center justify-center text-green-600">
-            <DollarSign className="w-4 h-4" />
+        </section>
+
+        {/* Payment recoveries row — soft green tint */}
+        <section className="rounded-3xl bg-green-100/70 border border-green-200/70 p-4 sm:p-5">
+          <div className="flex items-center gap-2 mb-3 px-1">
+            <div className="bg-green-100 rounded-lg w-6 h-6 flex items-center justify-center text-green-600">
+              <CreditCard className="w-3.5 h-3.5" />
+            </div>
+            <span className="text-xs font-semibold uppercase tracking-widest text-green-700">
+              Payment recoveries
+            </span>
           </div>
-          <div className="text-4xl font-bold text-slate-900 mt-3">${Math.round(stats.mrrRecoveredCents / 100)}</div>
-          <div className="text-xs font-semibold uppercase tracking-widest text-slate-400 mt-1">MRR Recovered</div>
-        </div>
-        <div className="bg-white rounded-2xl border border-slate-100 p-6">
-          <div className="bg-amber-50 rounded-xl w-9 h-9 flex items-center justify-center text-amber-600">
-            <Users className="w-4 h-4" />
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
+            <StatCard
+              accent="green"
+              icon={<TrendingUp className="w-4 h-4" />}
+              value={stats.paymentRecovery.allTime.recoveryRate === null ? '—' : `${stats.paymentRecovery.allTime.recoveryRate}%`}
+              label="Recovery rate"
+            />
+            <StatCard
+              accent="green"
+              icon={<CheckCircle className="w-4 h-4" />}
+              value={String(stats.paymentRecovery.allTime.recovered)}
+              label="Recovered"
+            />
+            <StatCard
+              accent="green"
+              icon={<DollarSign className="w-4 h-4" />}
+              value={`$${Math.round(stats.paymentRecovery.allTime.mrrRecoveredCents / 100).toLocaleString()}`}
+              label="MRR saved"
+            />
+            <StatCard
+              accent="amber"
+              icon={<Users className="w-4 h-4" />}
+              value={String(stats.paymentRecovery.inDunning)}
+              label="In dunning"
+            />
           </div>
-          <div className="text-4xl font-bold text-slate-900 mt-3">{stats.pending}</div>
-          <div className="text-xs font-semibold uppercase tracking-widest text-slate-400 mt-1">Pending</div>
-        </div>
+        </section>
       </div>
 
       {/* Filter tabs + search */}
@@ -780,5 +857,41 @@ One line per shipment. Plain English. What customers would actually notice.`}
         </>
       )}
     </>
+  )
+}
+
+/**
+ * Spec 39 — Single stat card. Mirrors the original dashboard card style
+ * (icon top-left, big number, small label). Used in both the win-back
+ * row and the payment-recovery row.
+ */
+function StatCard({
+  accent,
+  icon,
+  value,
+  label,
+}: {
+  accent: 'blue' | 'green' | 'amber'
+  icon: React.ReactNode
+  value: string
+  label: string
+}) {
+  const accentClass =
+    accent === 'blue'
+      ? 'bg-blue-50 text-blue-600'
+      : accent === 'green'
+      ? 'bg-green-50 text-green-600'
+      : 'bg-amber-50 text-amber-600'
+
+  return (
+    <div className="bg-white rounded-2xl border border-slate-100 p-6">
+      <div className={`${accentClass} rounded-xl w-9 h-9 flex items-center justify-center`}>
+        {icon}
+      </div>
+      <div className="text-4xl font-bold text-slate-900 mt-3 tabular-nums">{value}</div>
+      <div className="text-xs font-semibold uppercase tracking-widest text-slate-400 mt-1">
+        {label}
+      </div>
+    </div>
   )
 }
