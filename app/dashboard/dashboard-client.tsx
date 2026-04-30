@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { StatusBadge } from '@/components/status-badge'
 import { AiStateBadge } from '@/components/ai-state-badge'
-import { CheckCircle, Search, Zap, X, RotateCcw, Check, Loader2, Sparkles, MessageSquare, CreditCard } from 'lucide-react'
+import { TrendingUp, CheckCircle, DollarSign, Users, Search, Zap, X, RotateCcw, Check, Loader2, Sparkles, MessageSquare, CreditCard } from 'lucide-react'
 
 interface Subscriber {
   id: string
@@ -397,38 +397,81 @@ export function DashboardClient({
         </div>
       )}
 
-      {/* Stat panels — Spec 39 */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4 mb-6">
-        <KpiPanel
-          accent="blue"
-          icon={<MessageSquare className="w-4 h-4" />}
-          title="Win-backs"
-          thisMonthCount={stats.winBack.thisMonth.recovered}
-          thisMonthMrrCents={stats.winBack.thisMonth.mrrRecoveredCents}
-          mrrLabel="MRR"
-          currentLabel="In progress"
-          currentValue={stats.winBack.inProgress}
-          allTimeCount={stats.winBack.allTime.recovered}
-          allTimeMrrCents={stats.winBack.allTime.mrrRecoveredCents}
-          allTimeMrrSuffix="/mo"
-          recoveryRate={stats.winBack.allTime.recoveryRate}
-          emptyHint="No win-backs yet — we'll surface them as they land."
-        />
-        <KpiPanel
-          accent="green"
-          icon={<CreditCard className="w-4 h-4" />}
-          title="Payment recoveries"
-          thisMonthCount={stats.paymentRecovery.thisMonth.recovered}
-          thisMonthMrrCents={stats.paymentRecovery.thisMonth.mrrRecoveredCents}
-          mrrLabel="saved"
-          currentLabel="In active dunning"
-          currentValue={stats.paymentRecovery.inDunning}
-          allTimeCount={stats.paymentRecovery.allTime.recovered}
-          allTimeMrrCents={stats.paymentRecovery.allTime.mrrRecoveredCents}
-          allTimeMrrSuffix=""
-          recoveryRate={stats.paymentRecovery.allTime.recoveryRate}
-          emptyHint="No payment recoveries yet — we'll show saves as cards fail and we save them."
-        />
+      {/* Stat cards — Spec 39: two rows, one per recovery type. Each row
+          mirrors the original 4-card design (icon · big number · label).
+          Section header above each row identifies the cohort. */}
+      <div className="mb-6 space-y-5">
+        {/* Win-backs row */}
+        <div>
+          <div className="flex items-center gap-2 mb-2 px-1">
+            <MessageSquare className="w-3.5 h-3.5 text-blue-600" />
+            <span className="text-xs font-semibold uppercase tracking-widest text-slate-500">
+              Win-backs
+            </span>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
+            <StatCard
+              accent="blue"
+              icon={<TrendingUp className="w-4 h-4" />}
+              value={stats.winBack.allTime.recoveryRate === null ? '—' : `${stats.winBack.allTime.recoveryRate}%`}
+              label="Recovery rate"
+            />
+            <StatCard
+              accent="blue"
+              icon={<CheckCircle className="w-4 h-4" />}
+              value={String(stats.winBack.allTime.recovered)}
+              label="Recovered"
+            />
+            <StatCard
+              accent="blue"
+              icon={<DollarSign className="w-4 h-4" />}
+              value={`$${Math.round(stats.winBack.allTime.mrrRecoveredCents / 100).toLocaleString()}`}
+              label="MRR recovered"
+            />
+            <StatCard
+              accent="amber"
+              icon={<Users className="w-4 h-4" />}
+              value={String(stats.winBack.inProgress)}
+              label="In progress"
+            />
+          </div>
+        </div>
+
+        {/* Payment recoveries row */}
+        <div>
+          <div className="flex items-center gap-2 mb-2 px-1">
+            <CreditCard className="w-3.5 h-3.5 text-green-600" />
+            <span className="text-xs font-semibold uppercase tracking-widest text-slate-500">
+              Payment recoveries
+            </span>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
+            <StatCard
+              accent="green"
+              icon={<TrendingUp className="w-4 h-4" />}
+              value={stats.paymentRecovery.allTime.recoveryRate === null ? '—' : `${stats.paymentRecovery.allTime.recoveryRate}%`}
+              label="Recovery rate"
+            />
+            <StatCard
+              accent="green"
+              icon={<CheckCircle className="w-4 h-4" />}
+              value={String(stats.paymentRecovery.allTime.recovered)}
+              label="Recovered"
+            />
+            <StatCard
+              accent="green"
+              icon={<DollarSign className="w-4 h-4" />}
+              value={`$${Math.round(stats.paymentRecovery.allTime.mrrRecoveredCents / 100).toLocaleString()}`}
+              label="MRR saved"
+            />
+            <StatCard
+              accent="amber"
+              icon={<Users className="w-4 h-4" />}
+              value={String(stats.paymentRecovery.inDunning)}
+              label="In dunning"
+            />
+          </div>
+        </div>
       </div>
 
       {/* Filter tabs + search */}
@@ -813,86 +856,37 @@ One line per shipment. Plain English. What customers would actually notice.`}
 }
 
 /**
- * Spec 39 — KPI panel. One per recovery type (win-back / payment-recovery).
- * Three zones: This month (headline), current state, All time (secondary).
+ * Spec 39 — Single stat card. Mirrors the original dashboard card style
+ * (icon top-left, big number, small label). Used in both the win-back
+ * row and the payment-recovery row.
  */
-function KpiPanel({
+function StatCard({
   accent,
   icon,
-  title,
-  thisMonthCount,
-  thisMonthMrrCents,
-  mrrLabel,
-  currentLabel,
-  currentValue,
-  allTimeCount,
-  allTimeMrrCents,
-  allTimeMrrSuffix,
-  recoveryRate,
-  emptyHint,
+  value,
+  label,
 }: {
-  accent: 'blue' | 'green'
+  accent: 'blue' | 'green' | 'amber'
   icon: React.ReactNode
-  title: string
-  thisMonthCount: number
-  thisMonthMrrCents: number
-  mrrLabel: string
-  currentLabel: string
-  currentValue: number
-  allTimeCount: number
-  allTimeMrrCents: number
-  allTimeMrrSuffix: string
-  recoveryRate: number | null
-  emptyHint: string
+  value: string
+  label: string
 }) {
-  const isEmpty = thisMonthCount === 0 && allTimeCount === 0 && currentValue === 0
-  const accentBg = accent === 'blue' ? 'bg-blue-50' : 'bg-green-50'
-  const accentFg = accent === 'blue' ? 'text-blue-600' : 'text-green-600'
+  const accentClass =
+    accent === 'blue'
+      ? 'bg-blue-50 text-blue-600'
+      : accent === 'green'
+      ? 'bg-green-50 text-green-600'
+      : 'bg-amber-50 text-amber-600'
 
   return (
     <div className="bg-white rounded-2xl border border-slate-100 p-6">
-      <div className="flex items-center gap-3">
-        <div className={`${accentBg} rounded-xl w-9 h-9 flex items-center justify-center ${accentFg}`}>
-          {icon}
-        </div>
-        <h3 className="text-base font-semibold text-slate-900">{title}</h3>
+      <div className={`${accentClass} rounded-xl w-9 h-9 flex items-center justify-center`}>
+        {icon}
       </div>
-
-      <div className="mt-5">
-        <div className="text-xs font-semibold uppercase tracking-widest text-slate-400">
-          This month
-        </div>
-        <div className="mt-1 text-3xl font-bold text-slate-900 tabular-nums">
-          {thisMonthCount} <span className="text-base font-normal text-slate-500">recovered</span>
-          {' '}
-          <span className="text-2xl text-slate-400">·</span>
-          {' '}
-          ${Math.round(thisMonthMrrCents / 100)}
-          <span className="text-base font-normal text-slate-500"> {mrrLabel}</span>
-        </div>
+      <div className="text-4xl font-bold text-slate-900 mt-3 tabular-nums">{value}</div>
+      <div className="text-xs font-semibold uppercase tracking-widest text-slate-400 mt-1">
+        {label}
       </div>
-
-      <div className="mt-4 text-sm font-semibold text-slate-700">
-        {currentLabel}: <span className="text-slate-900 tabular-nums">{currentValue}</span>
-      </div>
-
-      <div className="mt-5 pt-4 border-t border-slate-100">
-        <div className="text-xs font-semibold uppercase tracking-widest text-slate-400">
-          All time
-        </div>
-        <div className="mt-1 text-sm text-slate-500 tabular-nums">
-          {allTimeCount} recovered
-          {' '}·{' '}
-          ${Math.round(allTimeMrrCents / 100).toLocaleString()}{allTimeMrrSuffix}
-        </div>
-        <div className="mt-1 text-sm text-slate-500 tabular-nums">
-          Recovery rate: {recoveryRate === null ? '—' : `${recoveryRate}%`}
-        </div>
-      </div>
-
-      {isEmpty && (
-        <p className="mt-4 text-xs text-slate-400 italic leading-relaxed">{emptyHint}</p>
-      )}
     </div>
   )
 }
