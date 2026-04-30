@@ -397,15 +397,18 @@ export function DashboardClient({
         </div>
       )}
 
-      {/* Stat cards — Spec 39: two rows, one per recovery type. Each row
-          mirrors the original 4-card design (icon · big number · label).
-          Section header above each row identifies the cohort. */}
-      <div className="mb-6 space-y-5">
-        {/* Win-backs row */}
-        <div>
-          <div className="flex items-center gap-2 mb-2 px-1">
-            <MessageSquare className="w-3.5 h-3.5 text-blue-600" />
-            <span className="text-xs font-semibold uppercase tracking-widest text-slate-500">
+      {/* Stat cards — Spec 39: two rows in distinct tinted containers, one
+          per recovery type. White cards "float" inside each tint to keep
+          the original clean card aesthetic while making the row grouping
+          obvious at a glance. */}
+      <div className="mb-6 space-y-4">
+        {/* Win-backs row — soft blue tint */}
+        <section className="rounded-3xl bg-blue-50/60 border border-blue-100/70 p-4 sm:p-5">
+          <div className="flex items-center gap-2 mb-3 px-1">
+            <div className="bg-blue-100 rounded-lg w-6 h-6 flex items-center justify-center text-blue-600">
+              <MessageSquare className="w-3.5 h-3.5" />
+            </div>
+            <span className="text-xs font-semibold uppercase tracking-widest text-blue-700">
               Win-backs
             </span>
           </div>
@@ -435,13 +438,15 @@ export function DashboardClient({
               label="In progress"
             />
           </div>
-        </div>
+        </section>
 
-        {/* Payment recoveries row */}
-        <div>
-          <div className="flex items-center gap-2 mb-2 px-1">
-            <CreditCard className="w-3.5 h-3.5 text-green-600" />
-            <span className="text-xs font-semibold uppercase tracking-widest text-slate-500">
+        {/* Payment recoveries row — soft green tint */}
+        <section className="rounded-3xl bg-green-50/60 border border-green-100/70 p-4 sm:p-5">
+          <div className="flex items-center gap-2 mb-3 px-1">
+            <div className="bg-green-100 rounded-lg w-6 h-6 flex items-center justify-center text-green-600">
+              <CreditCard className="w-3.5 h-3.5" />
+            </div>
+            <span className="text-xs font-semibold uppercase tracking-widest text-green-700">
               Payment recoveries
             </span>
           </div>
@@ -471,7 +476,7 @@ export function DashboardClient({
               label="In dunning"
             />
           </div>
-        </div>
+        </section>
       </div>
 
       {/* Filter tabs + search */}
