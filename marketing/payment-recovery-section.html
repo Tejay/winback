@@ -1,0 +1,497 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Payment recovery — Winback (proposal)</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  :root {
+    color-scheme: light;
+  }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  /* Subtle dotted background mark, not on page */
+  .grid-fade {
+    background-image:
+      radial-gradient(circle at 1px 1px, rgba(15, 23, 42, 0.06) 1px, transparent 0);
+    background-size: 24px 24px;
+  }
+  .timeline-line {
+    background: repeating-linear-gradient(to right, #cbd5e1 0 4px, transparent 4px 8px);
+  }
+</style>
+</head>
+<body class="bg-[#f5f5f5] text-slate-900">
+
+<!--
+  Standalone proposal for the "payment recovery" landing-page section.
+  All Tailwind classes + inline SVGs; no external assets except the CDN
+  Tailwind script. Drop into the existing winbackflow.co page or copy
+  any subsection into the React/Tailwind site.
+-->
+
+<main class="mx-auto max-w-6xl px-6 py-20">
+
+  <!-- ─── 1. Eyebrow + headline + subhead ─────────────────────────── -->
+  <section class="mx-auto max-w-3xl text-center">
+    <p class="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">
+      Payment recovery
+    </p>
+    <h1 class="mt-4 text-4xl sm:text-5xl font-bold tracking-tight text-slate-900">
+      Card failures don&apos;t have to cost you customers.
+    </h1>
+    <p class="mt-5 text-base sm:text-lg text-slate-600 leading-relaxed">
+      The average subscription business loses 5–7% of MRR every year to involuntary churn — payment failures that quietly remove customers who would have stayed.
+      <span class="text-slate-900 font-medium">Winback recovers it automatically.</span>
+      Three perfectly-timed emails, decline-aware coaching, and a one-tap update flow built around Apple Pay, Google Pay, and Link — not just card.
+    </p>
+  </section>
+
+  <!-- ─── 2. Three pillars ────────────────────────────────────────── -->
+  <section class="mt-16 grid grid-cols-1 md:grid-cols-3 gap-6">
+
+    <!-- Pillar 1: Smart timing -->
+    <div class="bg-white rounded-2xl border border-slate-100 p-7 shadow-sm">
+      <div class="w-10 h-10 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
+        <svg class="w-5 h-5" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8">
+          <circle cx="10" cy="10" r="7" />
+          <path d="M10 6v4l2.5 2" stroke-linecap="round" />
+        </svg>
+      </div>
+      <h3 class="mt-4 text-base font-semibold text-slate-900">Lead Stripe&apos;s retries.</h3>
+      <p class="mt-2 text-sm text-slate-600 leading-relaxed">
+        Our emails land <span class="font-medium text-slate-900">~24 hours before</span> every Stripe retry attempt. Three touches over three weeks, never duplicating Stripe&apos;s own messaging — yours leads, Stripe follows.
+      </p>
+    </div>
+
+    <!-- Pillar 2: Decline-aware -->
+    <div class="bg-white rounded-2xl border border-slate-100 p-7 shadow-sm">
+      <div class="w-10 h-10 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
+        <svg class="w-5 h-5" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8">
+          <path d="M3 8l7-4 7 4-7 4z" stroke-linejoin="round" />
+          <path d="M3 12l7 4 7-4" stroke-linejoin="round" />
+        </svg>
+      </div>
+      <h3 class="mt-4 text-base font-semibold text-slate-900">Tell them what&apos;s actually wrong.</h3>
+      <p class="mt-2 text-sm text-slate-600 leading-relaxed">
+        We read Stripe&apos;s decline code and rewrite the email to match. &quot;Your card expired&quot; if it did. &quot;Your bank flagged the charge&quot; if they did. <span class="font-medium text-slate-900">Customers know exactly what to do</span> — instead of giving up.
+      </p>
+    </div>
+
+    <!-- Pillar 3: Apple Pay / wallets -->
+    <div class="bg-white rounded-2xl border border-slate-100 p-7 shadow-sm">
+      <div class="w-10 h-10 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
+        <svg class="w-5 h-5" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8">
+          <rect x="3" y="6" width="14" height="9" rx="2" />
+          <path d="M3 9h14" />
+        </svg>
+      </div>
+      <h3 class="mt-4 text-base font-semibold text-slate-900">Apple&nbsp;Pay. Google&nbsp;Pay. Link.</h3>
+      <p class="mt-2 text-sm text-slate-600 leading-relaxed">
+        Our update-payment page surfaces every wallet the customer has set up — not just card.
+        <span class="font-medium text-slate-900">One tap to fix.</span> No card number to retype.
+      </p>
+    </div>
+  </section>
+
+  <!-- ─── 3. Timeline ─────────────────────────────────────────────── -->
+  <section class="mt-24">
+    <div class="max-w-3xl mx-auto text-center">
+      <p class="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">How it works</p>
+      <h2 class="mt-3 text-3xl font-bold tracking-tight text-slate-900">
+        Three touches, perfectly timed.
+      </h2>
+      <p class="mt-4 text-sm text-slate-600">
+        Stripe retries the card four times across ~21 days. We sit ~24 hours ahead of each retry — every one preceded by a nudge.
+      </p>
+    </div>
+
+    <!-- Timeline visual -->
+    <div class="mt-12 relative">
+      <!-- Dotted backbone -->
+      <div class="hidden sm:block absolute left-0 right-0 top-12 h-px timeline-line"></div>
+
+      <div class="grid grid-cols-1 sm:grid-cols-5 gap-6 relative">
+
+        <!-- Day 0 -->
+        <div class="text-center">
+          <div class="mx-auto w-6 h-6 rounded-full bg-blue-600 ring-4 ring-blue-100 relative z-10"></div>
+          <p class="mt-3 text-[11px] font-semibold uppercase tracking-widest text-blue-600">Day 0</p>
+          <p class="mt-1 text-sm font-medium text-slate-900">T1 — Heads up</p>
+          <p class="mt-1 text-xs text-slate-500">Stripe&apos;s 1st attempt failed. Customer hears from you immediately, with the reason.</p>
+        </div>
+
+        <!-- Day 2 -->
+        <div class="text-center">
+          <div class="mx-auto w-6 h-6 rounded-full bg-blue-600 ring-4 ring-blue-100 relative z-10"></div>
+          <p class="mt-3 text-[11px] font-semibold uppercase tracking-widest text-blue-600">Day 2</p>
+          <p class="mt-1 text-sm font-medium text-slate-900">T2 — Reminder</p>
+          <p class="mt-1 text-xs text-slate-500">24h before Stripe&apos;s 2nd attempt. &quot;Heads up — we&apos;ll retry tomorrow.&quot;</p>
+        </div>
+
+        <!-- Day 3 — Stripe retry -->
+        <div class="text-center">
+          <div class="mx-auto w-6 h-6 rounded-full bg-slate-300 ring-4 ring-slate-100 relative z-10"></div>
+          <p class="mt-3 text-[11px] font-semibold uppercase tracking-widest text-slate-400">Day 3</p>
+          <p class="mt-1 text-sm font-medium text-slate-500">Stripe retry #2</p>
+          <p class="mt-1 text-xs text-slate-500">Succeeds → recovered. Fails → we keep going.</p>
+        </div>
+
+        <!-- Day 15 -->
+        <div class="text-center">
+          <div class="mx-auto w-6 h-6 rounded-full bg-blue-600 ring-4 ring-blue-100 relative z-10"></div>
+          <p class="mt-3 text-[11px] font-semibold uppercase tracking-widest text-blue-600">Day 15</p>
+          <p class="mt-1 text-sm font-medium text-slate-900">T3 — Final reminder</p>
+          <p class="mt-1 text-xs text-slate-500">24h before the last automatic retry. Urgency dialled up.</p>
+        </div>
+
+        <!-- Day 16 -->
+        <div class="text-center">
+          <div class="mx-auto w-6 h-6 rounded-full bg-slate-300 ring-4 ring-slate-100 relative z-10"></div>
+          <p class="mt-3 text-[11px] font-semibold uppercase tracking-widest text-slate-400">Day 16</p>
+          <p class="mt-1 text-sm font-medium text-slate-500">Stripe&apos;s last try</p>
+          <p class="mt-1 text-xs text-slate-500">Then win-back kicks in if they cancel.</p>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── 4. Email comparison: theirs vs ours ─────────────────────── -->
+  <section class="mt-24">
+    <div class="max-w-3xl mx-auto text-center">
+      <p class="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">The email</p>
+      <h2 class="mt-3 text-3xl font-bold tracking-tight text-slate-900">
+        Their email. Then ours.
+      </h2>
+      <p class="mt-4 text-sm text-slate-600">
+        Most payment-failure emails are a generic line and a raw URL. Customers gloss over them. Ours read the failure reason and tell the customer exactly what to do.
+      </p>
+    </div>
+
+    <div class="mt-12 grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+      <!-- Generic email — the "before" -->
+      <div class="relative">
+        <div class="absolute -top-3 left-6 px-2.5 py-0.5 bg-slate-200 text-slate-600 text-[11px] font-semibold uppercase tracking-widest rounded-full">
+          Generic email
+        </div>
+        <div class="bg-white rounded-2xl border border-slate-200 p-6 text-sm text-slate-600 leading-relaxed shadow-sm">
+          <p class="text-slate-400">From: noreply@billing.example.com</p>
+          <p class="mt-2 text-slate-900 font-medium">Subject: Payment failed</p>
+          <hr class="my-4 border-slate-100" />
+          <p>Hi,</p>
+          <p class="mt-3">We were unable to process your payment for your subscription. Please update your payment method to avoid service interruption.</p>
+          <p class="mt-3 text-blue-600 underline break-all text-xs">https://billing.stripe.com/p/session/test_YWNjdF8xVEwya0VERkJtb3Z…</p>
+          <p class="mt-3">Thanks.</p>
+        </div>
+      </div>
+
+      <!-- Winback email — the "after" -->
+      <div class="relative">
+        <div class="absolute -top-3 left-6 px-2.5 py-0.5 bg-blue-600 text-white text-[11px] font-semibold uppercase tracking-widest rounded-full">
+          Winback
+        </div>
+        <div class="bg-white rounded-2xl border border-blue-200 p-6 text-sm text-slate-600 leading-relaxed shadow-md">
+          <p class="text-slate-400">From: Thejas &lt;noreply@winbackflow.co&gt;</p>
+          <p class="mt-2 text-slate-900 font-medium">Subject: Your payment didn&apos;t go through</p>
+          <hr class="my-4 border-slate-100" />
+          <p class="text-[11px] font-semibold uppercase tracking-widest text-blue-600">Heads up</p>
+          <p class="mt-2 text-slate-900">Hi Eve,</p>
+          <p class="mt-3">We tried to charge your card for Premium Monthly ($49.00 USD) but it didn&apos;t go through.</p>
+
+          <p class="mt-4 text-[13px] font-semibold text-slate-900">Why this happened</p>
+          <p class="mt-1">Your card expired since the last successful charge.</p>
+
+          <p class="mt-4 text-[13px] font-semibold text-slate-900">Best next step</p>
+          <p class="mt-1">Update the card details (or use a different card) before our next retry.</p>
+
+          <button class="mt-5 inline-flex items-center px-5 py-2.5 bg-[#0f172a] text-white rounded-full text-sm font-medium">
+            Update payment
+          </button>
+
+          <p class="mt-5">We&apos;ll try again on <span class="font-semibold">2 May</span> — updating before then means no interruption.</p>
+          <p class="mt-3">If you have questions, just reply.</p>
+          <p class="mt-3">— Thejas</p>
+          <hr class="my-4 border-slate-100" />
+          <p class="text-[11px] text-slate-400">Don&apos;t want these reminders? <a href="#" class="underline">Unsubscribe</a>.</p>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Decline-aware micro-copy -->
+    <div class="mt-10 flex flex-wrap items-center justify-center gap-2 text-xs text-slate-500">
+      <span class="text-slate-700 font-medium">Different code, different copy:</span>
+      <span class="bg-white border border-slate-200 rounded-full px-3 py-1">expired_card → &quot;Your card expired&quot;</span>
+      <span class="bg-white border border-slate-200 rounded-full px-3 py-1">insufficient_funds → &quot;Wait or use a different card&quot;</span>
+      <span class="bg-white border border-slate-200 rounded-full px-3 py-1">do_not_honor → &quot;Try a different card or call the bank&quot;</span>
+      <span class="bg-white border border-slate-200 rounded-full px-3 py-1">card_velocity_exceeded → &quot;Bank flagged the charge&quot;</span>
+      <span class="bg-white border border-slate-200 rounded-full px-3 py-1">processing_error → &quot;No action needed&quot;</span>
+    </div>
+  </section>
+
+  <!-- ─── 5. The update-payment moment ────────────────────────────── -->
+  <section class="mt-24">
+    <div class="max-w-3xl mx-auto text-center">
+      <p class="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">When they click</p>
+      <h2 class="mt-3 text-3xl font-bold tracking-tight text-slate-900">
+        Every payment method, one tap to fix.
+      </h2>
+      <p class="mt-4 text-sm text-slate-600 max-w-2xl mx-auto">
+        Apple Pay. Google Pay. Link. Card. Bank. Klarna. Afterpay. Whatever the customer already has set up — they update with one tap.
+        <span class="text-slate-900 font-medium">No card numbers to retype. No friction.</span>
+      </p>
+    </div>
+
+    <!-- Featured Checkout mockup — matches Stripe's actual setup-mode UI -->
+    <div class="mt-12 grid grid-cols-1 lg:grid-cols-5 gap-8 items-center">
+
+      <!-- Left rail: feature callouts that point at the visual -->
+      <div class="lg:col-span-2 space-y-6">
+        <div>
+          <div class="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-widest text-blue-600">
+            <span class="inline-block w-1.5 h-1.5 rounded-full bg-blue-600"></span>
+            Wallets surface first
+          </div>
+          <p class="mt-2 text-sm text-slate-600 leading-relaxed">
+            On Safari → Apple Pay. On Chrome → Google Pay. Link surfaces everywhere. The customer&apos;s already-saved card on their phone is one tap away — no typing.
+          </p>
+        </div>
+        <div>
+          <div class="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-widest text-blue-600">
+            <span class="inline-block w-1.5 h-1.5 rounded-full bg-blue-600"></span>
+            Bank, Klarna, Afterpay
+          </div>
+          <p class="mt-2 text-sm text-slate-600 leading-relaxed">
+            Every payment method the merchant has enabled in Stripe shows up automatically — including bank debit and BNPL. No extra config, no extra code.
+          </p>
+        </div>
+        <div>
+          <div class="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-widest text-blue-600">
+            <span class="inline-block w-1.5 h-1.5 rounded-full bg-blue-600"></span>
+            Failed invoice retried instantly
+          </div>
+          <p class="mt-2 text-sm text-slate-600 leading-relaxed">
+            The moment a new card is attached, we retry the open invoice server-side. No waiting for Stripe&apos;s next scheduled retry — recovery in seconds, not days.
+          </p>
+        </div>
+      </div>
+
+      <!-- Right: the polished Checkout mockup -->
+      <div class="lg:col-span-3">
+        <div class="max-w-md mx-auto">
+
+          <!-- Plan context strip -->
+          <div class="bg-slate-100 rounded-t-2xl px-6 pt-5 pb-4 border border-b-0 border-slate-200">
+            <p class="text-sm font-semibold text-slate-900">Update payment method</p>
+            <p class="mt-1.5 text-2xl font-bold text-slate-900">$12.00 <span class="text-sm font-normal text-slate-500">per month</span></p>
+            <p class="mt-1 text-xs text-slate-500">Linear Pro · Resumes immediately after update</p>
+          </div>
+
+          <!-- The form card -->
+          <div class="bg-white rounded-b-2xl border border-slate-200 shadow-md px-6 pt-6 pb-7">
+
+            <!-- Apple Pay + Google Pay row -->
+            <div class="grid grid-cols-2 gap-2.5">
+              <button class="py-3 bg-black text-white rounded-lg text-sm font-semibold flex items-center justify-center gap-1.5">
+                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M17.05 11.97c-.027-2.82 2.302-4.17 2.408-4.236-1.317-1.92-3.357-2.183-4.078-2.21-1.733-.18-3.387 1.02-4.27 1.02-.886 0-2.241-.998-3.687-.97-1.897.027-3.659 1.105-4.633 2.793-1.978 3.422-.504 8.473 1.41 11.244.937 1.358 2.05 2.879 3.51 2.825 1.416-.057 1.95-.91 3.66-.91 1.71 0 2.19.91 3.687.879 1.524-.027 2.488-1.385 3.42-2.747 1.077-1.575 1.519-3.103 1.546-3.18-.034-.014-2.964-1.135-2.973-4.508zm-2.78-8.282c.78-.949 1.31-2.265 1.166-3.581-1.128.046-2.504.752-3.314 1.7-.724.834-1.366 2.18-1.196 3.474 1.262.097 2.553-.642 3.344-1.593z"/></svg>
+                Pay
+              </button>
+              <button class="py-3 bg-black text-white rounded-lg text-sm font-semibold flex items-center justify-center gap-1.5">
+                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="10" fill="#fff" /><path d="M12.24 10.27v3.51h4.85c-.21 1.27-1.46 3.71-4.85 3.71-2.92 0-5.3-2.41-5.3-5.39s2.38-5.39 5.3-5.39c1.66 0 2.78.71 3.42 1.31l2.33-2.24C16.59 4.5 14.66 3.6 12.24 3.6c-4.66 0-8.44 3.78-8.44 8.4s3.78 8.4 8.44 8.4c4.87 0 8.1-3.43 8.1-8.25 0-.55-.06-.97-.13-1.39l-7.97-.49z" fill="#000"/></svg>
+                Pay
+              </button>
+            </div>
+
+            <!-- Link button -->
+            <button class="mt-2.5 w-full py-3 bg-emerald-500 text-white rounded-lg text-sm font-semibold flex items-center justify-center gap-2">
+              Pay faster with
+              <span class="bg-black text-emerald-400 px-1.5 py-0.5 rounded font-bold tracking-tight text-xs">link</span>
+            </button>
+
+            <!-- Divider -->
+            <div class="flex items-center gap-3 my-5">
+              <div class="flex-1 h-px bg-slate-200"></div>
+              <p class="text-xs text-slate-500">Or pay another way</p>
+              <div class="flex-1 h-px bg-slate-200"></div>
+            </div>
+
+            <!-- Method tabs -->
+            <div class="grid grid-cols-4 gap-2 mb-5">
+              <button class="py-2.5 px-2 border-2 border-blue-500 bg-blue-50 rounded-lg text-xs font-semibold text-blue-700 flex flex-col items-center gap-1">
+                <svg class="w-4 h-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2" y="5" width="16" height="11" rx="2" /><path d="M2 9h16" /></svg>
+                Card
+              </button>
+              <button class="py-2.5 px-2 border border-slate-200 bg-white rounded-lg text-xs font-medium text-slate-700 flex flex-col items-center gap-1">
+                <svg class="w-4 h-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 8L10 4l7 4M4 8v6h12V8M2 16h16" stroke-linecap="round"/></svg>
+                Bank
+              </button>
+              <button class="py-2.5 px-2 border border-slate-200 bg-pink-50 rounded-lg text-xs font-semibold text-pink-700 flex items-center justify-center">
+                Klarna.
+              </button>
+              <button class="py-2.5 px-2 border border-slate-200 bg-emerald-50 rounded-lg text-xs font-semibold text-emerald-700 flex items-center justify-center">
+                afterpay
+              </button>
+            </div>
+
+            <!-- Email -->
+            <label class="block">
+              <span class="text-xs font-medium text-slate-700">Email</span>
+              <div class="mt-1 px-3 py-2.5 border border-slate-200 rounded-md text-sm text-slate-900">sarah.chen@designstudio.co</div>
+            </label>
+
+            <!-- Card details -->
+            <label class="block mt-3">
+              <span class="text-xs font-medium text-slate-700">Card information</span>
+              <div class="mt-1 px-3 py-2.5 border border-slate-200 rounded-t-md text-sm text-slate-400 flex items-center justify-between">
+                <span>1234 1234 1234 1234</span>
+                <span class="flex gap-1 text-[10px]">
+                  <span class="bg-blue-700 text-white px-1.5 py-0.5 rounded">VISA</span>
+                  <span class="bg-orange-500 text-white px-1.5 py-0.5 rounded">MC</span>
+                  <span class="bg-blue-500 text-white px-1.5 py-0.5 rounded">AMEX</span>
+                </span>
+              </div>
+              <div class="grid grid-cols-2 -mt-px">
+                <div class="px-3 py-2.5 border border-slate-200 rounded-bl-md text-sm text-slate-400">MM / YY</div>
+                <div class="px-3 py-2.5 border-t border-r border-b border-slate-200 rounded-br-md text-sm text-slate-400">CVC</div>
+              </div>
+            </label>
+
+            <!-- Cardholder name -->
+            <label class="block mt-3">
+              <span class="text-xs font-medium text-slate-700">Cardholder name</span>
+              <div class="mt-1 px-3 py-2.5 border border-slate-200 rounded-md text-sm text-slate-400">Full name on card</div>
+            </label>
+
+            <!-- Country / postcode -->
+            <label class="block mt-3">
+              <span class="text-xs font-medium text-slate-700">Country or region</span>
+              <div class="mt-1 px-3 py-2.5 border border-slate-200 rounded-t-md text-sm text-slate-900 flex items-center gap-2">
+                <span>🇬🇧</span> United Kingdom
+              </div>
+              <div class="px-3 py-2.5 border-x border-b border-slate-200 rounded-b-md text-sm text-slate-900 -mt-px">SW1A 1AA</div>
+            </label>
+
+            <!-- Save with Link checkbox -->
+            <div class="mt-5 p-4 border border-slate-200 rounded-lg flex items-start gap-3">
+              <div class="mt-0.5 w-4 h-4 rounded-sm bg-indigo-600 flex items-center justify-center text-white text-[10px] flex-shrink-0">✓</div>
+              <div>
+                <p class="text-sm font-medium text-slate-900">
+                  Save info for 1-click checkout with
+                  <span class="bg-black text-emerald-400 px-1.5 py-0.5 rounded font-bold tracking-tight text-xs">link</span>
+                </p>
+                <p class="mt-1 text-xs text-slate-500">Pay faster everywhere Link is accepted.</p>
+              </div>
+            </div>
+
+            <!-- Pay button -->
+            <button class="mt-5 w-full py-3 bg-indigo-600 text-white rounded-lg text-sm font-semibold">
+              Update payment · $12.00
+            </button>
+
+            <!-- Stripe footer -->
+            <p class="mt-4 text-center text-xs text-slate-400">
+              Powered by <span class="font-semibold text-slate-500">stripe</span>
+              <span class="mx-1.5">·</span> Terms <span class="mx-1">·</span> Privacy
+            </p>
+
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── 6. Pricing punch line ───────────────────────────────────── -->
+  <section class="mt-24">
+    <div class="bg-[#0f172a] text-white rounded-3xl p-10 sm:p-16 grid-fade overflow-hidden relative">
+
+      <div class="relative max-w-4xl mx-auto">
+        <p class="text-xs font-semibold uppercase tracking-[0.18em] text-blue-400 text-center">
+          Pricing
+        </p>
+
+        <!-- Big stat hero -->
+        <div class="mt-6 flex flex-col sm:flex-row items-center justify-center gap-3 sm:gap-8">
+          <div class="text-center">
+            <p class="text-6xl sm:text-7xl font-bold tracking-tight leading-none">$99<span class="text-2xl text-slate-400 font-normal">/mo</span></p>
+          </div>
+          <div class="text-3xl sm:text-4xl text-slate-500 font-light hidden sm:block">·</div>
+          <div class="text-center">
+            <p class="text-5xl sm:text-6xl font-bold tracking-tight leading-none text-blue-400">500</p>
+            <p class="mt-2 text-xs font-semibold uppercase tracking-widest text-slate-300">recoveries / mo</p>
+          </div>
+        </div>
+
+        <h2 class="mt-10 text-3xl sm:text-4xl font-bold tracking-tight text-center">
+          Up to 500 card-save recoveries every month.<br class="hidden sm:block" />
+          <span class="text-blue-400">Included in your platform fee.</span>
+        </h2>
+
+        <p class="mt-5 text-base text-slate-300 max-w-2xl mx-auto text-center">
+          No per-recovery cut. The cap is generous — most pilots use a fraction. Cards fail, we recover them, you keep <span class="text-white font-semibold">100% of the MRR</span>.
+        </p>
+
+        <!-- What's included grid -->
+        <div class="mt-10 grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-2xl mx-auto text-sm">
+          <div class="flex items-start gap-3 bg-white/5 border border-white/10 rounded-xl p-4">
+            <svg class="w-5 h-5 text-blue-400 flex-shrink-0 mt-0.5" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 10l3.5 3.5L15 7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span class="text-slate-200"><span class="text-white font-medium">Three payment-failure emails</span> (T1, T2, T3) per recovery</span>
+          </div>
+          <div class="flex items-start gap-3 bg-white/5 border border-white/10 rounded-xl p-4">
+            <svg class="w-5 h-5 text-blue-400 flex-shrink-0 mt-0.5" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 10l3.5 3.5L15 7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span class="text-slate-200"><span class="text-white font-medium">Apple Pay / Google Pay / Link</span> on the update flow</span>
+          </div>
+          <div class="flex items-start gap-3 bg-white/5 border border-white/10 rounded-xl p-4">
+            <svg class="w-5 h-5 text-blue-400 flex-shrink-0 mt-0.5" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 10l3.5 3.5L15 7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span class="text-slate-200"><span class="text-white font-medium">Recovered customers</span> — keep 100% of the MRR</span>
+          </div>
+          <div class="flex items-start gap-3 bg-white/5 border border-white/10 rounded-xl p-4">
+            <svg class="w-5 h-5 text-blue-400 flex-shrink-0 mt-0.5" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 10l3.5 3.5L15 7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span class="text-slate-200"><span class="text-white font-medium">Decline-aware copy</span> + merchant-branded landing</span>
+          </div>
+        </div>
+
+        <!-- Payback math -->
+        <div class="mt-10 max-w-xl mx-auto text-center">
+          <p class="text-sm text-slate-300 leading-relaxed">
+            Save <span class="text-white font-semibold">one</span> $99/mo customer, the platform fee is paid for that month.<br class="hidden sm:block" />
+            Save <span class="text-white font-semibold">two</span>, you&apos;re profitable by lunch.
+          </p>
+        </div>
+
+        <!-- vs others -->
+        <p class="mt-6 text-xs text-slate-500 text-center">
+          Most recovery tools charge per save or take a percentage of recovered revenue.
+          <span class="text-slate-400">We don&apos;t.</span>
+        </p>
+
+        <!-- CTA -->
+        <div class="mt-10 flex flex-wrap items-center justify-center gap-3">
+          <a href="/register" class="inline-flex items-center px-7 py-3.5 bg-white text-[#0f172a] rounded-full text-sm font-semibold hover:bg-slate-100 transition shadow-lg shadow-blue-500/10">
+            Connect Stripe in 60 seconds
+          </a>
+          <a href="#how" class="inline-flex items-center px-7 py-3.5 border border-slate-700 text-white rounded-full text-sm font-medium hover:bg-slate-800 transition">
+            See how it works
+          </a>
+        </div>
+        <p class="mt-6 text-xs text-slate-500 text-center">
+          No card required to sign up. Billing starts on the first delivered save.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── 7. Footer note ──────────────────────────────────────────── -->
+  <p class="mt-10 text-center text-xs text-slate-400">
+    Stripe Connect Standard. Read-only Stripe access. SOC&nbsp;2 in progress.
+  </p>
+
+</main>
+
+</body>
+</html>

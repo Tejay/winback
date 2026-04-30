@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "Winback — recover churned subscribers automatically",
-  description: "The moment a customer cancels on Stripe, Winback sends a personalised win-back email. $99/mo platform with unlimited card saves, plus a one-time fee on each win-back. No card at signup.",
+  description: "Recover customers from both ends of churn — payment failures (up to 500 saves/mo, included) and deliberate cancellations (1× MRR per win-back, refundable). $99/mo platform fee, one Stripe Connect, no card at signup.",
 };
 
 export default function RootLayout({
