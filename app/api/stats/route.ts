@@ -120,33 +120,36 @@ export async function GET() {
     )
   }
 
-  // Lost counts for recovery-rate denominators. Partition by
-  // cancellationReason: 'Payment failed' → payment-recovery-lost,
-  // anything else (including NULL) → win-back-lost.
-  // coalesce() handles NULL — without it, NULL = 'Payment failed' returns
-  // NULL in SQL and produces a third silent grouping bucket, dropping
-  // those rows from both lost counts.
-  const isPaymentFailedExpr = sql<boolean>`coalesce(${churnedSubscribers.cancellationReason} = ${DUNNING_REASON}, false)`
-  const lostRows = await db
-    .select({
-      isPaymentFailed: isPaymentFailedExpr.as('is_pf'),
-      count: sql<number>`count(*)::int`.as('count'),
-    })
+  // Lost counts for recovery-rate denominators. Two separate queries
+  // (rather than one with GROUP BY on an expression) — Drizzle binds the
+  // 'Payment failed' parameter twice (SELECT alias + GROUP BY) which
+  // Postgres rejects as "column must appear in GROUP BY" because the
+  // placeholders are syntactically distinct.
+  const [{ count: paymentLostRaw }] = await db
+    .select({ count: sql<number>`count(*)::int`.as('count') })
     .from(churnedSubscribers)
     .where(
       and(
         eq(churnedSubscribers.customerId, customer.id),
         eq(churnedSubscribers.status, 'lost'),
+        eq(churnedSubscribers.cancellationReason, DUNNING_REASON),
       ),
     )
-    .groupBy(isPaymentFailedExpr)
-
-  let winBackLost = 0
-  let paymentLost = 0
-  for (const row of lostRows) {
-    if (row.isPaymentFailed) paymentLost += Number(row.count)
-    else winBackLost += Number(row.count)
-  }
+  const [{ count: winBackLostRaw }] = await db
+    .select({ count: sql<number>`count(*)::int`.as('count') })
+    .from(churnedSubscribers)
+    .where(
+      and(
+        eq(churnedSubscribers.customerId, customer.id),
+        eq(churnedSubscribers.status, 'lost'),
+        or(
+          ne(churnedSubscribers.cancellationReason, DUNNING_REASON),
+          isNull(churnedSubscribers.cancellationReason),
+        ),
+      ),
+    )
+  const paymentLost = Number(paymentLostRaw)
+  const winBackLost = Number(winBackLostRaw)
 
   // Current-state counters (no time window).
   const [{ count: inProgress }] = await db
