@@ -44,6 +44,10 @@ interface Subscriber {
   dunningLastTouchAt: string | null
   nextPaymentAttemptAt: string | null
   lastDeclineCode: string | null
+  // The webhook never sets cancelledAt for payment-failed rows, so the
+  // payment-recovery tab uses createdAt as the "failed at" anchor (the
+  // moment the failure was first observed).
+  createdAt: string | null
 }
 
 // Spec 39/40 — KPIs split by recovery type and time window plus
@@ -1054,7 +1058,7 @@ function PaymentRecoveryTable({
                     <div className="text-xs text-slate-400 mt-0.5 truncate max-w-[160px] sm:max-w-none">{sub.email ?? ''}</div>
                   </td>
                   <td className="hidden sm:table-cell text-sm text-slate-600 py-4 px-4">
-                    {sub.cancelledAt ? new Date(sub.cancelledAt).toISOString().split('T')[0] : '—'}
+                    {sub.createdAt ? new Date(sub.createdAt).toISOString().split('T')[0] : '—'}
                   </td>
                   <td className="hidden md:table-cell text-sm text-slate-600 py-4 px-4">
                     {sub.lastDeclineCode ?? '—'}
