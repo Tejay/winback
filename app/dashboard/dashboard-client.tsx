@@ -403,7 +403,7 @@ export function DashboardClient({
           obvious at a glance. */}
       <div className="mb-6 space-y-4">
         {/* Win-backs row — soft blue tint */}
-        <section className="rounded-3xl bg-blue-50/60 border border-blue-100/70 p-4 sm:p-5">
+        <section className="rounded-3xl bg-blue-100/70 border border-blue-200/70 p-4 sm:p-5">
           <div className="flex items-center gap-2 mb-3 px-1">
             <div className="bg-blue-100 rounded-lg w-6 h-6 flex items-center justify-center text-blue-600">
               <MessageSquare className="w-3.5 h-3.5" />
@@ -441,7 +441,7 @@ export function DashboardClient({
         </section>
 
         {/* Payment recoveries row — soft green tint */}
-        <section className="rounded-3xl bg-green-50/60 border border-green-100/70 p-4 sm:p-5">
+        <section className="rounded-3xl bg-green-100/70 border border-green-200/70 p-4 sm:p-5">
           <div className="flex items-center gap-2 mb-3 px-1">
             <div className="bg-green-100 rounded-lg w-6 h-6 flex items-center justify-center text-green-600">
               <CreditCard className="w-3.5 h-3.5" />
