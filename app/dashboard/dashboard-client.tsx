@@ -451,89 +451,8 @@ export function DashboardClient({
         </div>
       )}
 
-      {/* Stat cards — Spec 39: two rows in distinct tinted containers, one
-          per recovery type. White cards "float" inside each tint to keep
-          the original clean card aesthetic while making the row grouping
-          obvious at a glance. */}
-      <div className="mb-6 space-y-4">
-        {/* Win-backs row — soft blue tint */}
-        <section className="rounded-3xl bg-blue-100/70 border border-blue-200/70 p-4 sm:p-5">
-          <div className="flex items-center gap-2 mb-3 px-1">
-            <div className="bg-blue-100 rounded-lg w-6 h-6 flex items-center justify-center text-blue-600">
-              <MessageSquare className="w-3.5 h-3.5" />
-            </div>
-            <span className="text-xs font-semibold uppercase tracking-widest text-blue-700">
-              Win-backs
-            </span>
-          </div>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
-            <StatCard
-              accent="blue"
-              icon={<TrendingUp className="w-4 h-4" />}
-              value={stats.winBack.allTime.recoveryRate === null ? '—' : `${stats.winBack.allTime.recoveryRate}%`}
-              label="Recovery rate"
-            />
-            <StatCard
-              accent="blue"
-              icon={<CheckCircle className="w-4 h-4" />}
-              value={String(stats.winBack.allTime.recovered)}
-              label="Recovered"
-            />
-            <StatCard
-              accent="blue"
-              icon={<DollarSign className="w-4 h-4" />}
-              value={`$${Math.round(stats.winBack.allTime.mrrRecoveredCents / 100).toLocaleString()}`}
-              label="MRR recovered"
-            />
-            <StatCard
-              accent="amber"
-              icon={<Users className="w-4 h-4" />}
-              value={String(stats.winBack.inProgress)}
-              label="In progress"
-            />
-          </div>
-        </section>
-
-        {/* Payment recoveries row — soft green tint */}
-        <section className="rounded-3xl bg-green-100/70 border border-green-200/70 p-4 sm:p-5">
-          <div className="flex items-center gap-2 mb-3 px-1">
-            <div className="bg-green-100 rounded-lg w-6 h-6 flex items-center justify-center text-green-600">
-              <CreditCard className="w-3.5 h-3.5" />
-            </div>
-            <span className="text-xs font-semibold uppercase tracking-widest text-green-700">
-              Payment recoveries
-            </span>
-          </div>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
-            <StatCard
-              accent="green"
-              icon={<TrendingUp className="w-4 h-4" />}
-              value={stats.paymentRecovery.allTime.recoveryRate === null ? '—' : `${stats.paymentRecovery.allTime.recoveryRate}%`}
-              label="Recovery rate"
-            />
-            <StatCard
-              accent="green"
-              icon={<CheckCircle className="w-4 h-4" />}
-              value={String(stats.paymentRecovery.allTime.recovered)}
-              label="Recovered"
-            />
-            <StatCard
-              accent="green"
-              icon={<DollarSign className="w-4 h-4" />}
-              value={`$${Math.round(stats.paymentRecovery.allTime.mrrRecoveredCents / 100).toLocaleString()}`}
-              label="MRR saved"
-            />
-            <StatCard
-              accent="amber"
-              icon={<Users className="w-4 h-4" />}
-              value={String(stats.paymentRecovery.inDunning)}
-              label="In dunning"
-            />
-          </div>
-        </section>
-      </div>
-
-      {/* Spec 40 — tab strip */}
+      {/* Spec 40 — tab strip at top of the cohort area; KPI cards live
+          inside each tab below so the merchant sees one cohort at a time. */}
       <div className="flex items-center gap-2 border-b border-slate-200 mb-5">
         <button
           onClick={() => setTab('winback')}
@@ -559,9 +478,38 @@ export function DashboardClient({
         </button>
       </div>
 
-      {/* Spec 40 — Win-back tab attention header + pattern strip */}
+      {/* Spec 40 — Win-back tab: KPI row, attention alert, pattern strip */}
       {tab === 'winback' && (
         <>
+          {/* KPI row — soft blue tint */}
+          <section className="rounded-3xl bg-blue-100/70 border border-blue-200/70 p-4 sm:p-5 mb-5">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
+              <StatCard
+                accent="blue"
+                icon={<TrendingUp className="w-4 h-4" />}
+                value={stats.winBack.allTime.recoveryRate === null ? '—' : `${stats.winBack.allTime.recoveryRate}%`}
+                label="Recovery rate"
+              />
+              <StatCard
+                accent="blue"
+                icon={<CheckCircle className="w-4 h-4" />}
+                value={String(stats.winBack.allTime.recovered)}
+                label="Recovered"
+              />
+              <StatCard
+                accent="blue"
+                icon={<DollarSign className="w-4 h-4" />}
+                value={`$${Math.round(stats.winBack.allTime.mrrRecoveredCents / 100).toLocaleString()}`}
+                label="MRR recovered"
+              />
+              <StatCard
+                accent="amber"
+                icon={<Users className="w-4 h-4" />}
+                value={String(stats.winBack.inProgress)}
+                label="In progress"
+              />
+            </div>
+          </section>
           {stats.winBack.handoffsNeedingAttention > 0 && (
             <div className="mb-4 flex items-center justify-between gap-3 bg-amber-50 border border-amber-200 rounded-2xl px-5 py-3">
               <div className="flex items-center gap-2 text-sm">
@@ -595,9 +543,39 @@ export function DashboardClient({
         </>
       )}
 
-      {/* Spec 40 — Payment-recovery tab summary band + pattern strip */}
+      {/* Spec 40 — Payment-recovery tab: KPI row, summary band, pattern strip */}
       {tab === 'paymentRecovery' && (
         <>
+          {/* KPI row — soft green tint */}
+          <section className="rounded-3xl bg-green-100/70 border border-green-200/70 p-4 sm:p-5 mb-5">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
+              <StatCard
+                accent="green"
+                icon={<TrendingUp className="w-4 h-4" />}
+                value={stats.paymentRecovery.allTime.recoveryRate === null ? '—' : `${stats.paymentRecovery.allTime.recoveryRate}%`}
+                label="Recovery rate"
+              />
+              <StatCard
+                accent="green"
+                icon={<CheckCircle className="w-4 h-4" />}
+                value={String(stats.paymentRecovery.allTime.recovered)}
+                label="Recovered"
+              />
+              <StatCard
+                accent="green"
+                icon={<DollarSign className="w-4 h-4" />}
+                value={`$${Math.round(stats.paymentRecovery.allTime.mrrRecoveredCents / 100).toLocaleString()}`}
+                label="MRR saved"
+              />
+              <StatCard
+                accent="amber"
+                icon={<Users className="w-4 h-4" />}
+                value={String(stats.paymentRecovery.inDunning)}
+                label="In dunning"
+              />
+            </div>
+          </section>
+
           <div className="mb-4 grid grid-cols-1 sm:grid-cols-3 gap-3 bg-green-50/50 border border-green-100 rounded-2xl px-5 py-4">
             <div>
               <div className="text-xs font-semibold uppercase tracking-widest text-slate-500">MRR at risk</div>
