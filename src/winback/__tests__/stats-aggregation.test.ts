@@ -11,6 +11,7 @@ import {
   aggregateRecoveryRows,
   recoveryRatePct,
   startOfMonthUtc,
+  topNFromCounts,
   type RecoveryAggRow,
 } from '../lib/stats'
 
@@ -130,6 +131,15 @@ describe('aggregateRecoveryRows', () => {
     expect(result.legacyNullCount).toBe(0)
   })
 
+  it('handles unknown but non-null recoveryType (defensive bucketing)', () => {
+    const rows: RecoveryAggRow[] = [
+      { recoveryType: 'mystery', isThisMonth: true, count: 1, mrrCents: 100 },
+    ]
+    const result = aggregateRecoveryRows(rows)
+    expect(result.winBackThisMonth).toEqual({ recovered: 1, mrrRecoveredCents: 100 })
+    expect(result.legacyNullCount).toBe(0)
+  })
+
   it('handles a mix of all four buckets in a single call', () => {
     const rows: RecoveryAggRow[] = [
       { recoveryType: 'win_back', isThisMonth: true, count: 3, mrrCents: 6000 },
@@ -145,5 +155,89 @@ describe('aggregateRecoveryRows', () => {
     expect(result.paymentThisMonth).toEqual({ recovered: 8, mrrRecoveredCents: 25000 })
     expect(result.paymentAllTime).toEqual({ recovered: 89, mrrRecoveredCents: 420000 })
     expect(result.legacyNullCount).toBe(1)
+  })
+})
+
+describe('topNFromCounts', () => {
+  it('returns [] when there are no rows', () => {
+    expect(topNFromCounts([], 4)).toEqual([])
+  })
+
+  it('returns [] when total is 0 (all rows have count 0)', () => {
+    expect(topNFromCounts([{ label: 'Price', count: 0 }], 4)).toEqual([])
+  })
+
+  it('drops rows with null labels', () => {
+    const result = topNFromCounts(
+      [
+        { label: null, count: 5 },
+        { label: 'Price', count: 5 },
+      ],
+      4,
+    )
+    // Even though null is dropped from the output, it still counts toward the
+    // total — so Price is 50% of 10, not 100% of 5.
+    expect(result).toEqual([{ label: 'Price', pct: 50 }])
+  })
+
+  it('returns the top N by count', () => {
+    const result = topNFromCounts(
+      [
+        { label: 'Price', count: 32 },
+        { label: 'Features', count: 24 },
+        { label: 'Switched', count: 18 },
+        { label: 'Other', count: 26 },
+      ],
+      4,
+    )
+    expect(result.map((r) => r.label)).toEqual(['Price', 'Other', 'Features', 'Switched'])
+    expect(result[0]).toEqual({ label: 'Price', pct: 32 })
+    expect(result[1]).toEqual({ label: 'Other', pct: 26 })
+  })
+
+  it('caps results at N when more rows are present', () => {
+    const result = topNFromCounts(
+      [
+        { label: 'A', count: 10 },
+        { label: 'B', count: 8 },
+        { label: 'C', count: 6 },
+        { label: 'D', count: 4 },
+        { label: 'E', count: 2 },
+      ],
+      3,
+    )
+    expect(result.map((r) => r.label)).toEqual(['A', 'B', 'C'])
+  })
+
+  it('sorts ties alphabetically (deterministic across renders)', () => {
+    const result = topNFromCounts(
+      [
+        { label: 'Banana', count: 5 },
+        { label: 'Apple', count: 5 },
+        { label: 'Cherry', count: 5 },
+      ],
+      4,
+    )
+    expect(result.map((r) => r.label)).toEqual(['Apple', 'Banana', 'Cherry'])
+  })
+
+  it('rounds percentages to integers', () => {
+    const result = topNFromCounts(
+      [
+        { label: 'A', count: 1 },
+        { label: 'B', count: 2 },
+      ],
+      4,
+    )
+    expect(result).toEqual([
+      { label: 'B', pct: 67 }, // 2/3 = 66.67% → 67
+      { label: 'A', pct: 33 }, // 1/3 = 33.33% → 33
+    ])
+  })
+
+  it('handles a single category at 100%', () => {
+    expect(topNFromCounts([{ label: 'OnlyOne', count: 7 }], 4)).toEqual([
+      { label: 'OnlyOne', pct: 100 },
+    ])
   })
 })

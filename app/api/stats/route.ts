@@ -2,11 +2,13 @@ import { NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { customers, churnedSubscribers, recoveries } from '@/lib/schema'
-import { and, eq, isNull, ne, or, sql } from 'drizzle-orm'
+import { and, eq, gte, isNotNull, isNull, ne, or, sql } from 'drizzle-orm'
 import {
   aggregateRecoveryRows,
   recoveryRatePct,
   startOfMonthUtc,
+  topNFromCounts,
+  type LabelPct,
   type RecoveryAggRow,
 } from '@/src/winback/lib/stats'
 
@@ -41,11 +43,18 @@ type Stats = {
     thisMonth: Bucket
     allTime: Bucket & { recoveryRate: number | null }
     inProgress: number
+    // Spec 40
+    handoffsNeedingAttention: number
+    topReasons: LabelPct[]
   }
   paymentRecovery: {
     thisMonth: Bucket
     allTime: Bucket & { recoveryRate: number | null }
     inDunning: number
+    // Spec 40
+    mrrAtRiskCents: number
+    onFinalAttempt: number
+    topDeclineCodes: LabelPct[]
   }
 }
 
@@ -144,6 +153,85 @@ export async function GET() {
       ),
     )
 
+  // Spec 40 — Win-back: handoffs needing attention (the "Needs you" alert).
+  // Filter: handoff opened AND not yet resolved AND not already recovered.
+  const [{ count: handoffsNeedingAttention }] = await db
+    .select({ count: sql<number>`count(*)::int`.as('count') })
+    .from(churnedSubscribers)
+    .where(
+      and(
+        eq(churnedSubscribers.customerId, customer.id),
+        isNotNull(churnedSubscribers.founderHandoffAt),
+        isNull(churnedSubscribers.founderHandoffResolvedAt),
+        ne(churnedSubscribers.status, 'recovered'),
+        or(
+          ne(churnedSubscribers.cancellationReason, DUNNING_REASON),
+          isNull(churnedSubscribers.cancellationReason),
+        ),
+      ),
+    )
+
+  // Spec 40 — Win-back: top cancellation categories this month.
+  const winBackReasonRows = await db
+    .select({
+      label: churnedSubscribers.cancellationCategory,
+      count: sql<number>`count(*)::int`.as('count'),
+    })
+    .from(churnedSubscribers)
+    .where(
+      and(
+        eq(churnedSubscribers.customerId, customer.id),
+        gte(churnedSubscribers.cancelledAt, monthStart),
+        or(
+          ne(churnedSubscribers.cancellationReason, DUNNING_REASON),
+          isNull(churnedSubscribers.cancellationReason),
+        ),
+      ),
+    )
+    .groupBy(churnedSubscribers.cancellationCategory)
+
+  const topReasons = topNFromCounts(
+    winBackReasonRows.map((r) => ({ label: r.label, count: Number(r.count) })),
+    4,
+  )
+
+  // Spec 40 — Payment-recovery: MRR at risk + on-final-attempt count.
+  const [atRiskRow] = await db
+    .select({
+      mrrAtRiskCents: sql<number>`coalesce(sum(${churnedSubscribers.mrrCents}), 0)::bigint`.as('mrr_at_risk'),
+      onFinalAttempt: sql<number>`count(*) filter (where ${churnedSubscribers.dunningState} = 'final_retry_pending')::int`.as('on_final'),
+    })
+    .from(churnedSubscribers)
+    .where(
+      and(
+        eq(churnedSubscribers.customerId, customer.id),
+        sql`${churnedSubscribers.dunningState} in (${sql.raw(
+          ACTIVE_DUNNING_STATES.map((s) => `'${s}'`).join(','),
+        )})`,
+      ),
+    )
+
+  // Spec 40 — Payment-recovery: top decline codes this month.
+  const declineCodeRows = await db
+    .select({
+      label: churnedSubscribers.lastDeclineCode,
+      count: sql<number>`count(*)::int`.as('count'),
+    })
+    .from(churnedSubscribers)
+    .where(
+      and(
+        eq(churnedSubscribers.customerId, customer.id),
+        eq(churnedSubscribers.cancellationReason, DUNNING_REASON),
+        gte(churnedSubscribers.cancelledAt, monthStart),
+      ),
+    )
+    .groupBy(churnedSubscribers.lastDeclineCode)
+
+  const topDeclineCodes = topNFromCounts(
+    declineCodeRows.map((r) => ({ label: r.label, count: Number(r.count) })),
+    4,
+  )
+
   const stats: Stats = {
     winBack: {
       thisMonth: agg.winBackThisMonth,
@@ -152,6 +240,8 @@ export async function GET() {
         recoveryRate: recoveryRatePct(agg.winBackAllTime.recovered, winBackLost),
       },
       inProgress: Number(inProgress),
+      handoffsNeedingAttention: Number(handoffsNeedingAttention),
+      topReasons,
     },
     paymentRecovery: {
       thisMonth: agg.paymentThisMonth,
@@ -160,6 +250,9 @@ export async function GET() {
         recoveryRate: recoveryRatePct(agg.paymentAllTime.recovered, paymentLost),
       },
       inDunning: Number(inDunning),
+      mrrAtRiskCents: Number(atRiskRow?.mrrAtRiskCents ?? 0),
+      onFinalAttempt: Number(atRiskRow?.onFinalAttempt ?? 0),
+      topDeclineCodes,
     },
   }
 

@@ -39,6 +39,38 @@ export function recoveryRatePct(recovered: number, lost: number): number | null 
 }
 
 /**
+ * Spec 40 — Pattern-strip helper. Given a list of (label, count)
+ * pairs, return the top N as percentages of the total.
+ *
+ * - Returns [] when there are no rows.
+ * - Sorts by count DESC, falls back to alphabetical for ties so the
+ *   order is deterministic across renders.
+ * - Drops null/empty labels (DB rows with no category yet).
+ * - Percentages are rounded ints; rounding error may push the sum
+ *   off by ±1, which is acceptable for a UI strip.
+ */
+export type LabelCount = { label: string | null; count: number }
+export type LabelPct = { label: string; pct: number }
+
+export function topNFromCounts(rows: LabelCount[], n: number): LabelPct[] {
+  const total = rows.reduce((s, r) => s + r.count, 0)
+  if (total === 0) return []
+
+  const cleaned = rows
+    .filter((r) => r.label && r.count > 0)
+    .sort((a, b) => {
+      if (b.count !== a.count) return b.count - a.count
+      return (a.label ?? '').localeCompare(b.label ?? '')
+    })
+    .slice(0, n)
+
+  return cleaned.map((r) => ({
+    label: r.label as string,
+    pct: Math.round((r.count / total) * 100),
+  }))
+}
+
+/**
  * Bucket grouped recovery rows into win-back vs payment-recovery,
  * each split by this-month vs all-time.
  *

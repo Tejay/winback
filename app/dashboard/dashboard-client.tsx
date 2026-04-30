@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, Fragment } from 'react'
 import { StatusBadge } from '@/components/status-badge'
 import { AiStateBadge } from '@/components/ai-state-badge'
 import { TrendingUp, CheckCircle, DollarSign, Users, Search, Zap, X, RotateCcw, Check, Loader2, Sparkles, MessageSquare, CreditCard } from 'lucide-react'
@@ -38,26 +38,40 @@ interface Subscriber {
   // see WHY the AI made the call it made.
   handoffReasoning: string | null
   recoveryLikelihood: 'high' | 'medium' | 'low' | null
+  // Spec 40 — dunning fields surfaced on the payment-recovery tab.
+  dunningState: 'awaiting_retry' | 'final_retry_pending' | 'churned_during_dunning' | 'recovered_during_dunning' | null
+  dunningTouchCount: number | null
+  dunningLastTouchAt: string | null
+  nextPaymentAttemptAt: string | null
+  lastDeclineCode: string | null
 }
 
-// Spec 39 — KPIs split by recovery type and time window. Backend
-// already separates win-back vs payment recovery via
-// recoveries.recoveryType; here we render two side-by-side panels
-// each with This-month / current-state / All-time zones.
+// Spec 39/40 — KPIs split by recovery type and time window plus
+// Spec 40 attention/pattern fields (handoff alert, top reasons,
+// MRR-at-risk, on-final-attempt count, top decline codes).
 interface Bucket {
   recovered: number
   mrrRecoveredCents: number
+}
+interface LabelPct {
+  label: string
+  pct: number
 }
 interface Stats {
   winBack: {
     thisMonth: Bucket
     allTime: Bucket & { recoveryRate: number | null }
     inProgress: number
+    handoffsNeedingAttention: number
+    topReasons: LabelPct[]
   }
   paymentRecovery: {
     thisMonth: Bucket
     allTime: Bucket & { recoveryRate: number | null }
     inDunning: number
+    mrrAtRiskCents: number
+    onFinalAttempt: number
+    topDeclineCodes: LabelPct[]
   }
 }
 
@@ -66,11 +80,16 @@ const EMPTY_STATS: Stats = {
     thisMonth: { recovered: 0, mrrRecoveredCents: 0 },
     allTime: { recovered: 0, mrrRecoveredCents: 0, recoveryRate: null },
     inProgress: 0,
+    handoffsNeedingAttention: 0,
+    topReasons: [],
   },
   paymentRecovery: {
     thisMonth: { recovered: 0, mrrRecoveredCents: 0 },
     allTime: { recovered: 0, mrrRecoveredCents: 0, recoveryRate: null },
     inDunning: 0,
+    mrrAtRiskCents: 0,
+    onFinalAttempt: 0,
+    topDeclineCodes: [],
   },
 }
 
@@ -103,8 +122,18 @@ export function DashboardClient({
 }: DashboardClientProps) {
   const [stats, setStats] = useState<Stats>(EMPTY_STATS)
   const [subscribers, setSubscribers] = useState<Subscriber[]>([])
-  const [filter, setFilter] = useState('all')
-  const [search, setSearch] = useState('')
+  // Spec 40 — independent filter/search state per cohort tab.
+  type Cohort = 'winback' | 'paymentRecovery'
+  const [tab, setTab] = useState<Cohort>('winback')
+  const [winbackFilter, setWinbackFilter] = useState('all')
+  const [winbackSearch, setWinbackSearch] = useState('')
+  const [paymentFilter, setPaymentFilter] = useState('all')
+  const [paymentSearch, setPaymentSearch] = useState('')
+  const [expandedRowId, setExpandedRowId] = useState<string | null>(null)
+  const filter = tab === 'winback' ? winbackFilter : paymentFilter
+  const setFilter = tab === 'winback' ? setWinbackFilter : setPaymentFilter
+  const search = tab === 'winback' ? winbackSearch : paymentSearch
+  const setSearch = tab === 'winback' ? setWinbackSearch : setPaymentSearch
   const [selected, setSelected] = useState<Subscriber | null>(null)
   const [changelogOpen, setChangelogOpen] = useState(false)
   const [changelogText, setChangelogText] = useState(changelog)
@@ -151,12 +180,27 @@ export function DashboardClient({
   const fetchData = useCallback(() => {
     fetch('/api/stats').then((r) => r.json()).then(setStats)
     const params = new URLSearchParams()
-    if (filter !== 'all') params.set('filter', filter)
+    // Spec 40 — partition by cohort. The "Has reply" chip is win-back-only
+    // and serialised to ?hasReply=true rather than the filter slot so the
+    // existing AI-state filter pipeline stays clean.
+    params.set('cohort', tab === 'winback' ? 'winback' : 'payment-recovery')
+    if (filter === 'has-reply') {
+      params.set('hasReply', 'true')
+    } else if (filter !== 'all') {
+      params.set('filter', filter)
+    }
     if (search) params.set('search', search)
     fetch(`/api/subscribers?${params}`).then((r) => r.json()).then(setSubscribers)
-  }, [filter, search])
+  }, [tab, filter, search])
 
   useEffect(() => { fetchData() }, [fetchData])
+
+  // Spec 40 — switching tabs closes any open per-row UI on the previous tab:
+  // collapse expanded payment-recovery row, close the win-back drawer.
+  useEffect(() => {
+    setExpandedRowId(null)
+    setSelected(null)
+  }, [tab])
 
   function dismissBanner() {
     setBannerDismissed(true)
@@ -212,15 +256,25 @@ export function DashboardClient({
     fetchData()
   }
 
-  // Spec 22b — AI-state filters replacing raw status filters
-  const filters: Array<{ key: string; label: string }> = [
+  // Spec 22b + Spec 40 — AI-state filters for win-back cohort, dunning-
+  // state filters for payment-recovery cohort. Each tab keeps its own
+  // filter state so switching tabs doesn't lose context.
+  const winbackFilters: Array<{ key: string; label: string }> = [
     { key: 'all',       label: 'All' },
-    { key: 'active',    label: 'AI active' },
     { key: 'handoff',   label: 'Needs you' },
+    { key: 'has-reply', label: 'Has reply' },
     { key: 'paused',    label: 'Paused' },
     { key: 'recovered', label: 'Recovered' },
     { key: 'done',      label: 'Done' },
   ]
+  const paymentFilters: Array<{ key: string; label: string }> = [
+    { key: 'all',         label: 'All' },
+    { key: 'in-retry',    label: 'In retry' },
+    { key: 'final-retry', label: 'Final retry' },
+    { key: 'recovered',   label: 'Recovered' },
+    { key: 'lost',        label: 'Lost' },
+  ]
+  const filters = tab === 'winback' ? winbackFilters : paymentFilters
   // Spec 31 — pilot banner replaces the "add billing" banner while the
   // founder is on a free pilot. We don't ask them for a card during the
   // pilot window, and the bypass gates won't bill them anyway.
@@ -479,7 +533,107 @@ export function DashboardClient({
         </section>
       </div>
 
-      {/* Filter tabs + search */}
+      {/* Spec 40 — tab strip */}
+      <div className="flex items-center gap-2 border-b border-slate-200 mb-5">
+        <button
+          onClick={() => setTab('winback')}
+          className={
+            tab === 'winback'
+              ? 'flex items-center gap-2 px-4 py-2.5 -mb-px text-sm font-semibold text-blue-700 border-b-2 border-blue-600'
+              : 'flex items-center gap-2 px-4 py-2.5 -mb-px text-sm font-medium text-slate-500 hover:text-slate-900 border-b-2 border-transparent'
+          }
+        >
+          <MessageSquare className="w-3.5 h-3.5" />
+          Win-backs
+        </button>
+        <button
+          onClick={() => setTab('paymentRecovery')}
+          className={
+            tab === 'paymentRecovery'
+              ? 'flex items-center gap-2 px-4 py-2.5 -mb-px text-sm font-semibold text-green-700 border-b-2 border-green-600'
+              : 'flex items-center gap-2 px-4 py-2.5 -mb-px text-sm font-medium text-slate-500 hover:text-slate-900 border-b-2 border-transparent'
+          }
+        >
+          <CreditCard className="w-3.5 h-3.5" />
+          Payment recoveries
+        </button>
+      </div>
+
+      {/* Spec 40 — Win-back tab attention header + pattern strip */}
+      {tab === 'winback' && (
+        <>
+          {stats.winBack.handoffsNeedingAttention > 0 && (
+            <div className="mb-4 flex items-center justify-between gap-3 bg-amber-50 border border-amber-200 rounded-2xl px-5 py-3">
+              <div className="flex items-center gap-2 text-sm">
+                <span className="bg-amber-100 text-amber-700 rounded-full w-6 h-6 flex items-center justify-center text-xs font-bold">
+                  !
+                </span>
+                <span className="font-medium text-amber-900">
+                  {stats.winBack.handoffsNeedingAttention} subscriber{stats.winBack.handoffsNeedingAttention === 1 ? '' : 's'} need{stats.winBack.handoffsNeedingAttention === 1 ? 's' : ''} your attention
+                </span>
+              </div>
+              <button
+                onClick={() => setWinbackFilter('handoff')}
+                className="text-sm font-medium text-amber-900 hover:text-amber-700"
+              >
+                Resolve queue →
+              </button>
+            </div>
+          )}
+          {stats.winBack.topReasons.length > 0 && (
+            <div className="mb-4 text-xs text-slate-500">
+              <span className="font-semibold uppercase tracking-widest text-slate-400 mr-2">Top reasons this month:</span>
+              {stats.winBack.topReasons.map((r, i) => (
+                <span key={r.label}>
+                  {i > 0 ? ' · ' : ''}
+                  <span className="text-slate-700 font-medium">{r.label}</span>{' '}
+                  <span className="text-slate-400">({r.pct}%)</span>
+                </span>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Spec 40 — Payment-recovery tab summary band + pattern strip */}
+      {tab === 'paymentRecovery' && (
+        <>
+          <div className="mb-4 grid grid-cols-1 sm:grid-cols-3 gap-3 bg-green-50/50 border border-green-100 rounded-2xl px-5 py-4">
+            <div>
+              <div className="text-xs font-semibold uppercase tracking-widest text-slate-500">MRR at risk</div>
+              <div className="text-2xl font-bold text-slate-900 tabular-nums mt-0.5">
+                ${Math.round(stats.paymentRecovery.mrrAtRiskCents / 100).toLocaleString()}/mo
+              </div>
+            </div>
+            <div>
+              <div className="text-xs font-semibold uppercase tracking-widest text-slate-500">In retry</div>
+              <div className="text-2xl font-bold text-slate-900 tabular-nums mt-0.5">
+                {stats.paymentRecovery.inDunning - stats.paymentRecovery.onFinalAttempt}
+              </div>
+            </div>
+            <div>
+              <div className="text-xs font-semibold uppercase tracking-widest text-slate-500">On final attempt</div>
+              <div className="text-2xl font-bold text-slate-900 tabular-nums mt-0.5">
+                {stats.paymentRecovery.onFinalAttempt}
+              </div>
+            </div>
+          </div>
+          {stats.paymentRecovery.topDeclineCodes.length > 0 && (
+            <div className="mb-4 text-xs text-slate-500">
+              <span className="font-semibold uppercase tracking-widest text-slate-400 mr-2">Top decline codes this month:</span>
+              {stats.paymentRecovery.topDeclineCodes.map((r, i) => (
+                <span key={r.label}>
+                  {i > 0 ? ' · ' : ''}
+                  <span className="text-slate-700 font-medium">{r.label}</span>{' '}
+                  <span className="text-slate-400">({r.pct}%)</span>
+                </span>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Filter chips + search (per-tab state) */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 md:gap-4 mb-4">
         <div className="flex items-center gap-1 overflow-x-auto -mx-4 px-4 md:mx-0 md:px-0">
           {filters.map((f) => (
@@ -500,7 +654,7 @@ export function DashboardClient({
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
           <input
             type="text"
-            placeholder="Search name, email, reason"
+            placeholder={tab === 'winback' ? 'Search name, email, reason' : 'Search name, email, decline code'}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="border border-slate-200 rounded-full px-4 py-2 text-sm w-full md:w-64 pl-10 focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -508,59 +662,71 @@ export function DashboardClient({
         </div>
       </div>
 
-      {/* Subscriber table */}
-      <div className="bg-white rounded-2xl border border-slate-100 overflow-x-auto">
-        <table className="w-full">
-          <thead>
-            <tr className="border-b border-slate-100">
-              <th className="text-left text-xs font-semibold uppercase tracking-wide text-slate-400 py-3 px-4">Subscriber</th>
-              <th className="hidden lg:table-cell text-left text-xs font-semibold uppercase tracking-wide text-slate-400 py-3 px-4">Plan</th>
-              <th className="hidden sm:table-cell text-left text-xs font-semibold uppercase tracking-wide text-slate-400 py-3 px-4">Cancelled</th>
-              <th className="hidden md:table-cell text-left text-xs font-semibold uppercase tracking-wide text-slate-400 py-3 px-4">Reason</th>
-              <th className="text-left text-xs font-semibold uppercase tracking-wide text-slate-400 py-3 px-4">AI Status</th>
-              <th className="text-right text-xs font-semibold uppercase tracking-wide text-slate-400 py-3 px-4">MRR</th>
-            </tr>
-          </thead>
-          <tbody>
-            {subscribers.map((sub) => (
-              <tr
-                key={sub.id}
-                onClick={() => setSelected(sub)}
-                className="hover:bg-slate-50 cursor-pointer border-b border-slate-50 transition-colors"
-              >
-                <td className="py-4 pr-4 px-4">
-                  <div className="text-sm font-medium text-slate-900">{sub.name ?? 'Unknown'}</div>
-                  <div className="text-xs text-slate-400 mt-0.5 truncate max-w-[160px] sm:max-w-none">{sub.email ?? ''}</div>
-                </td>
-                <td className="hidden lg:table-cell text-sm text-slate-600 py-4 px-4">{sub.planName ?? '—'}</td>
-                <td className="hidden sm:table-cell text-sm text-slate-600 py-4 px-4">
-                  {sub.cancelledAt ? new Date(sub.cancelledAt).toISOString().split('T')[0] : '—'}
-                </td>
-                <td className="hidden md:table-cell text-sm text-slate-600 py-4 px-4">
-                  {sub.cancellationReason
-                    ? sub.cancellationReason.length > 45
-                      ? sub.cancellationReason.slice(0, 45) + '…'
-                      : sub.cancellationReason
-                    : '—'}
-                </td>
-                <td className="py-4 px-4">
-                  <AiStateBadge sub={sub} compact />
-                </td>
-                <td className="text-sm font-medium text-slate-900 py-4 px-4 text-right">
-                  ${(sub.mrrCents / 100).toFixed(2)}
-                </td>
+      {/* Subscriber table — per-tab columns + interaction model */}
+      {tab === 'winback' ? (
+        <div className="bg-white rounded-2xl border border-slate-100 overflow-x-auto">
+          <table className="w-full">
+            <thead>
+              <tr className="border-b border-slate-100">
+                <th className="text-left text-xs font-semibold uppercase tracking-wide text-slate-400 py-3 px-4">Subscriber</th>
+                <th className="hidden lg:table-cell text-left text-xs font-semibold uppercase tracking-wide text-slate-400 py-3 px-4">Plan</th>
+                <th className="hidden sm:table-cell text-left text-xs font-semibold uppercase tracking-wide text-slate-400 py-3 px-4">Cancelled</th>
+                <th className="hidden md:table-cell text-left text-xs font-semibold uppercase tracking-wide text-slate-400 py-3 px-4">Reason</th>
+                <th className="text-left text-xs font-semibold uppercase tracking-wide text-slate-400 py-3 px-4">AI Status</th>
+                <th className="text-right text-xs font-semibold uppercase tracking-wide text-slate-400 py-3 px-4">MRR</th>
               </tr>
-            ))}
-            {subscribers.length === 0 && (
-              <tr>
-                <td colSpan={6} className="text-center py-12 text-sm text-slate-400">
-                  No subscribers found. They&apos;ll appear here when cancellations come in from Stripe.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody>
+              {subscribers.map((sub) => (
+                <tr
+                  key={sub.id}
+                  onClick={() => setSelected(sub)}
+                  className="hover:bg-slate-50 cursor-pointer border-b border-slate-50 transition-colors"
+                >
+                  <td className="py-4 pr-4 px-4">
+                    <div className="text-sm font-medium text-slate-900">{sub.name ?? 'Unknown'}</div>
+                    <div className="text-xs text-slate-400 mt-0.5 truncate max-w-[160px] sm:max-w-none">{sub.email ?? ''}</div>
+                  </td>
+                  <td className="hidden lg:table-cell text-sm text-slate-600 py-4 px-4">{sub.planName ?? '—'}</td>
+                  <td className="hidden sm:table-cell text-sm text-slate-600 py-4 px-4">
+                    {sub.cancelledAt ? new Date(sub.cancelledAt).toISOString().split('T')[0] : '—'}
+                  </td>
+                  <td className="hidden md:table-cell text-sm text-slate-600 py-4 px-4">
+                    {sub.cancellationReason
+                      ? sub.cancellationReason.length > 45
+                        ? sub.cancellationReason.slice(0, 45) + '…'
+                        : sub.cancellationReason
+                      : '—'}
+                  </td>
+                  <td className="py-4 px-4">
+                    <AiStateBadge sub={sub} compact />
+                  </td>
+                  <td className="text-sm font-medium text-slate-900 py-4 px-4 text-right">
+                    ${(sub.mrrCents / 100).toFixed(2)}
+                  </td>
+                </tr>
+              ))}
+              {subscribers.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="text-center py-12 text-sm text-slate-400">
+                    No win-backs yet. Cancellations land here as they come in from Stripe.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <PaymentRecoveryTable
+          rows={subscribers}
+          expandedRowId={expandedRowId}
+          onToggleExpand={(id) => setExpandedRowId((current) => (current === id ? null : id))}
+          onResendDunning={async (id) => {
+            await fetch(`/api/subscribers/${id}/resend`, { method: 'POST' })
+            fetchData()
+          }}
+        />
+      )}
 
       {/* Subscriber detail panel */}
       {selected && (
@@ -858,6 +1024,145 @@ One line per shipment. Plain English. What customers would actually notice.`}
       )}
     </>
   )
+}
+
+/**
+ * Spec 40 — Payment-recovery table. Informational, no per-row drawer.
+ * Click chevron → expand row in place to show email-touch history,
+ * decline detail, and a single "Resend update-payment email" action.
+ */
+function PaymentRecoveryTable({
+  rows,
+  expandedRowId,
+  onToggleExpand,
+  onResendDunning,
+}: {
+  rows: Subscriber[]
+  expandedRowId: string | null
+  onToggleExpand: (id: string) => void
+  onResendDunning: (id: string) => void
+}) {
+  if (rows.length === 0) {
+    return (
+      <div className="bg-white rounded-2xl border border-slate-100 px-6 py-12 text-center text-sm text-slate-400">
+        No payment recoveries yet. We&apos;ll show saves here as cards fail and we recover them.
+      </div>
+    )
+  }
+  return (
+    <div className="bg-white rounded-2xl border border-slate-100 overflow-x-auto">
+      <table className="w-full">
+        <thead>
+          <tr className="border-b border-slate-100">
+            <th className="text-left text-xs font-semibold uppercase tracking-wide text-slate-400 py-3 px-4">Subscriber</th>
+            <th className="hidden sm:table-cell text-left text-xs font-semibold uppercase tracking-wide text-slate-400 py-3 px-4">Failed at</th>
+            <th className="hidden md:table-cell text-left text-xs font-semibold uppercase tracking-wide text-slate-400 py-3 px-4">Decline</th>
+            <th className="text-left text-xs font-semibold uppercase tracking-wide text-slate-400 py-3 px-4">Stage</th>
+            <th className="text-right text-xs font-semibold uppercase tracking-wide text-slate-400 py-3 px-4">MRR</th>
+            <th className="w-10" />
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((sub) => {
+            const expanded = expandedRowId === sub.id
+            return (
+              <Fragment key={sub.id}>
+                <tr
+                  onClick={() => onToggleExpand(sub.id)}
+                  className="hover:bg-slate-50 cursor-pointer border-b border-slate-50 transition-colors"
+                >
+                  <td className="py-4 pr-4 px-4">
+                    <div className="text-sm font-medium text-slate-900">{sub.name ?? 'Unknown'}</div>
+                    <div className="text-xs text-slate-400 mt-0.5 truncate max-w-[160px] sm:max-w-none">{sub.email ?? ''}</div>
+                  </td>
+                  <td className="hidden sm:table-cell text-sm text-slate-600 py-4 px-4">
+                    {sub.cancelledAt ? new Date(sub.cancelledAt).toISOString().split('T')[0] : '—'}
+                  </td>
+                  <td className="hidden md:table-cell text-sm text-slate-600 py-4 px-4">
+                    {sub.lastDeclineCode ?? '—'}
+                  </td>
+                  <td className="py-4 px-4">
+                    <DunningStageBadge sub={sub} />
+                  </td>
+                  <td className="text-sm font-medium text-slate-900 py-4 px-4 text-right">
+                    ${(sub.mrrCents / 100).toFixed(2)}
+                  </td>
+                  <td className="text-slate-400 py-4 px-2 text-right">
+                    <span className={`inline-block transition-transform ${expanded ? 'rotate-90' : ''}`}>›</span>
+                  </td>
+                </tr>
+                {expanded && (
+                  <tr className="bg-slate-50/60 border-b border-slate-100">
+                    <td colSpan={6} className="px-4 py-4">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                        <div>
+                          <div className="text-xs font-semibold uppercase tracking-widest text-slate-400 mb-1">Dunning state</div>
+                          <div className="text-slate-700">{sub.dunningState ?? 'none'}</div>
+                          {sub.dunningTouchCount != null && (
+                            <div className="text-xs text-slate-500 mt-1">
+                              T{sub.dunningTouchCount} sent
+                              {sub.dunningLastTouchAt
+                                ? ` on ${new Date(sub.dunningLastTouchAt).toISOString().split('T')[0]}`
+                                : ''}
+                            </div>
+                          )}
+                          {sub.nextPaymentAttemptAt && (
+                            <div className="text-xs text-slate-500 mt-1">
+                              Next Stripe retry: {new Date(sub.nextPaymentAttemptAt).toISOString().split('T')[0]}
+                            </div>
+                          )}
+                        </div>
+                        <div>
+                          <div className="text-xs font-semibold uppercase tracking-widest text-slate-400 mb-1">Last decline</div>
+                          <div className="text-slate-700">{sub.lastDeclineCode ?? '—'}</div>
+                        </div>
+                      </div>
+                      {(sub.dunningState === 'awaiting_retry' || sub.dunningState === 'final_retry_pending') && (
+                        <div className="mt-4">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              onResendDunning(sub.id)
+                            }}
+                            className="bg-[#0f172a] text-white rounded-full px-4 py-1.5 text-sm font-medium hover:bg-[#1e293b]"
+                          >
+                            Resend update-payment email
+                          </button>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                )}
+              </Fragment>
+            )
+          })}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+/**
+ * Spec 40 — short stage label for payment-recovery rows. Reads the
+ * dunning-state column directly so the badge is always in sync with
+ * the state machine the cron uses.
+ */
+function DunningStageBadge({ sub }: { sub: Subscriber }) {
+  const state = sub.dunningState
+  if (sub.status === 'recovered') {
+    return <span className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium bg-green-50 text-green-700 border border-green-200">Recovered</span>
+  }
+  if (state === 'final_retry_pending') {
+    return <span className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium bg-rose-50 text-rose-700 border border-rose-200">Final retry</span>
+  }
+  if (state === 'awaiting_retry') {
+    const t = sub.dunningTouchCount ?? 1
+    return <span className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200">In retry · T{t}</span>
+  }
+  if (state === 'churned_during_dunning') {
+    return <span className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium bg-slate-100 text-slate-500 border border-slate-200">Lost</span>
+  }
+  return <span className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium bg-slate-100 text-slate-500 border border-slate-200">{state ?? '—'}</span>
 }
 
 /**
