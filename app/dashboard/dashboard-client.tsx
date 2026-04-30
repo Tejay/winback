@@ -1107,23 +1107,55 @@ function DunningStageBadge({ sub }: { sub: Subscriber }) {
 
 /**
  * Spec 40 — Pattern pills. Read-only chips showing a category breakdown
- * (top cancellation reasons / top decline codes) as a flat list of small
- * pills. Visually consistent with the dashboard's other pill UI (filter
- * chips, status badges, dunning-stage badges) so this strip doesn't feel
- * like a stranded text line between the alert and the filters.
+ * (top cancellation reasons / top decline codes). Each category gets a
+ * stable semantic color so the founder can scan the strip and read
+ * meaning at a glance.
+ *
+ * Color rationale:
+ *   Win-back reasons:
+ *     Price    → rose   (revenue threat — frequent, fixable with bundling/discount)
+ *     Feature  → blue   (product gap — actionable signal for the roadmap)
+ *     Quality  → amber  (operational warning — bugs/deliverability/perf)
+ *     Switched → violet (competitive intel — who beat us, why)
+ *     Unused   → slate  (low recoverability — passive churn)
+ *     Other    → slate  (catch-all)
+ *   Decline codes (Stripe semantics):
+ *     insufficient_funds → amber  (temporary; often self-resolves at next pay cycle)
+ *     expired_card       → blue   (one click to fix once the customer updates)
+ *     do_not_honor       → rose   (bank refused; lower recoverability)
+ *     generic_decline    → slate  (unknown bucket)
  */
+const PATTERN_COLOR_MAP: Record<string, string> = {
+  // win-back categories
+  Price:    'bg-rose-50 text-rose-700',
+  Feature:  'bg-blue-50 text-blue-700',
+  Quality:  'bg-amber-50 text-amber-700',
+  Switched: 'bg-violet-50 text-violet-700',
+  Unused:   'bg-slate-100 text-slate-600',
+  Other:    'bg-slate-100 text-slate-600',
+  // decline codes
+  insufficient_funds: 'bg-amber-50 text-amber-700',
+  expired_card:       'bg-blue-50 text-blue-700',
+  do_not_honor:       'bg-rose-50 text-rose-700',
+  generic_decline:    'bg-slate-100 text-slate-600',
+}
+const PATTERN_DEFAULT = 'bg-slate-100 text-slate-700'
+
 function PatternPills({ items }: { items: Array<{ label: string; pct: number }> }) {
   return (
     <div className="flex flex-wrap items-center gap-2 mb-4">
-      {items.map((r) => (
-        <span
-          key={r.label}
-          className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700"
-        >
-          <span>{r.label}</span>
-          <span className="text-slate-400 tabular-nums">{r.pct}%</span>
-        </span>
-      ))}
+      {items.map((r) => {
+        const color = PATTERN_COLOR_MAP[r.label] ?? PATTERN_DEFAULT
+        return (
+          <span
+            key={r.label}
+            className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${color}`}
+          >
+            <span>{r.label}</span>
+            <span className="opacity-60 tabular-nums">{r.pct}%</span>
+          </span>
+        )
+      })}
     </div>
   )
 }
