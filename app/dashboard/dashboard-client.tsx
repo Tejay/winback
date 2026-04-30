@@ -451,29 +451,30 @@ export function DashboardClient({
         </div>
       )}
 
-      {/* Spec 40 — tab strip at top of the cohort area; KPI cards live
-          inside each tab below so the merchant sees one cohort at a time. */}
-      <div className="flex items-center gap-2 border-b border-slate-200 mb-5">
+      {/* Spec 40 — tab strip at top of the cohort area. Pill-button style
+          (filled in the cohort color when active) so the cohort split is
+          immediately legible, including in marketing screenshots. */}
+      <div className="flex items-center gap-3 mb-6">
         <button
           onClick={() => setTab('winback')}
           className={
             tab === 'winback'
-              ? 'flex items-center gap-2 px-4 py-2.5 -mb-px text-sm font-semibold text-blue-700 border-b-2 border-blue-600'
-              : 'flex items-center gap-2 px-4 py-2.5 -mb-px text-sm font-medium text-slate-500 hover:text-slate-900 border-b-2 border-transparent'
+              ? 'flex items-center gap-2 px-5 py-2.5 rounded-2xl text-sm font-semibold bg-blue-600 text-white shadow-sm'
+              : 'flex items-center gap-2 px-5 py-2.5 rounded-2xl text-sm font-medium bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300 transition-colors'
           }
         >
-          <MessageSquare className="w-3.5 h-3.5" />
+          <MessageSquare className="w-4 h-4" />
           Win-backs
         </button>
         <button
           onClick={() => setTab('paymentRecovery')}
           className={
             tab === 'paymentRecovery'
-              ? 'flex items-center gap-2 px-4 py-2.5 -mb-px text-sm font-semibold text-green-700 border-b-2 border-green-600'
-              : 'flex items-center gap-2 px-4 py-2.5 -mb-px text-sm font-medium text-slate-500 hover:text-slate-900 border-b-2 border-transparent'
+              ? 'flex items-center gap-2 px-5 py-2.5 rounded-2xl text-sm font-semibold bg-green-600 text-white shadow-sm'
+              : 'flex items-center gap-2 px-5 py-2.5 rounded-2xl text-sm font-medium bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300 transition-colors'
           }
         >
-          <CreditCard className="w-3.5 h-3.5" />
+          <CreditCard className="w-4 h-4" />
           Payment recoveries
         </button>
       </div>
