@@ -481,8 +481,8 @@ export function DashboardClient({
       {/* Spec 40 — Win-back tab: KPI row, attention alert, pattern strip */}
       {tab === 'winback' && (
         <>
-          {/* KPI row — soft blue tint */}
-          <section className="rounded-3xl bg-blue-100/70 border border-blue-200/70 p-4 sm:p-5 mb-5">
+          {/* KPI row — blue tint background */}
+          <section className="rounded-3xl bg-blue-100 border border-blue-200 p-4 sm:p-5 mb-5">
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
               <StatCard
                 accent="blue"
@@ -546,8 +546,8 @@ export function DashboardClient({
       {/* Spec 40 — Payment-recovery tab: KPI row, summary band, pattern strip */}
       {tab === 'paymentRecovery' && (
         <>
-          {/* KPI row — soft green tint */}
-          <section className="rounded-3xl bg-green-100/70 border border-green-200/70 p-4 sm:p-5 mb-5">
+          {/* KPI row — green tint background */}
+          <section className="rounded-3xl bg-green-100 border border-green-200 p-4 sm:p-5 mb-5">
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
               <StatCard
                 accent="green"
