@@ -110,9 +110,6 @@ export function renderDunningEmailHtml(i: DunningHtmlInputs): string {
               ${retryLine}
             </p>
             ${buttonBlock}
-            <p style="margin:0 0 8px 0;font-size:14px;line-height:1.6;color:#475569;">
-              If you have any questions, just reply to this email.
-            </p>
             <p style="margin:0;font-size:14px;line-height:1.6;color:#475569;">
               — ${escapeHtml(i.fromName)}
             </p>

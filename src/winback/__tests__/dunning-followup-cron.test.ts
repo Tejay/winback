@@ -132,7 +132,7 @@ describe('runDunningTouches — T2 pass', () => {
     expect(arg.isFinalRetry).toBe(false)
     expect(arg.subscriberId).toBe('s1')
     expect(arg.email).toBe('a@x.co')
-    expect(arg.fromName).toBe('Founder Name')   // founder takes precedence over user.name + product
+    expect(arg.fromName).toBe('Acme')   // productName takes precedence over founderName + userName
   })
 
   it('continues the loop when one row throws', async () => {
@@ -195,9 +195,20 @@ describe('runDunningTouches — T3 pass', () => {
   })
 })
 
+// Precedence: productName → founderName → userName → 'The team'.
+// Subscribers see the brand they signed up to, not the founder's personal name.
 describe('runDunningTouches — fallback fromName precedence', () => {
-  it('falls back to user.name when founderName is null', async () => {
-    setupSelects([makeRow({ founderName: null })], [])
+  it('falls back to founderName when productName is null', async () => {
+    setupSelects([makeRow({ productName: null })], [])
+    setupUpdate()
+
+    await runDunningTouches({ dryRun: false })
+
+    expect(mockSendDunningT2T3.mock.calls[0][0].fromName).toBe('Founder Name')
+  })
+
+  it('falls back to userName when productName + founderName both null', async () => {
+    setupSelects([makeRow({ productName: null, founderName: null })], [])
     setupUpdate()
 
     await runDunningTouches({ dryRun: false })
@@ -205,12 +216,12 @@ describe('runDunningTouches — fallback fromName precedence', () => {
     expect(mockSendDunningT2T3.mock.calls[0][0].fromName).toBe('User Name')
   })
 
-  it('falls back to productName when founderName + user.name both null', async () => {
-    setupSelects([makeRow({ founderName: null, userName: null })], [])
+  it('falls back to "The team" when all three are null', async () => {
+    setupSelects([makeRow({ productName: null, founderName: null, userName: null })], [])
     setupUpdate()
 
     await runDunningTouches({ dryRun: false })
 
-    expect(mockSendDunningT2T3.mock.calls[0][0].fromName).toBe('Acme')
+    expect(mockSendDunningT2T3.mock.calls[0][0].fromName).toBe('The team')
   })
 })

@@ -1,0 +1,353 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Home page changes — Winback (proposal)</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .grid-fade {
+    background-image: radial-gradient(circle at 1px 1px, rgba(15, 23, 42, 0.06) 1px, transparent 0);
+    background-size: 24px 24px;
+  }
+  .change-tag {
+    background: #fef3c7;
+    color: #92400e;
+    border: 1px dashed #f59e0b;
+  }
+</style>
+</head>
+<body class="bg-[#f5f5f5] text-slate-900">
+
+<!--
+  Three proposed home-page changes, shown in their natural order.
+  Each chunk is labelled (#1 / #2 / #3) so you can review independently.
+  Sketched with Tailwind CDN; same design tokens as the existing site.
+-->
+
+<main class="max-w-6xl mx-auto px-6 pt-16 pb-24 space-y-20">
+
+  <!-- ═════════════════════════════════════════════════════════════
+       CHANGE #3 — Repositioned home hero
+       Replaces lines ~15–58 of app/page.tsx
+       ═════════════════════════════════════════════════════════════ -->
+  <section>
+    <div class="mb-3 inline-flex items-center gap-2 text-[10px] font-semibold uppercase tracking-widest change-tag rounded-full px-2.5 py-0.5">
+      Change #3 · New hero
+    </div>
+
+    <div class="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
+      <div class="px-8 sm:px-14 py-16 sm:py-20 max-w-4xl mx-auto text-center">
+
+        <h1 class="text-4xl sm:text-6xl font-bold tracking-tight text-slate-900 leading-[1.05]">
+          Recover customers<br />
+          <span class="text-blue-600">from every direction.</span>
+        </h1>
+
+        <p class="mt-7 text-base sm:text-lg text-slate-600 leading-relaxed max-w-2xl mx-auto">
+          Payment failures and deliberate cancellations are the two ways subscription customers slip away. Winback is <span class="text-slate-900 font-medium">one platform that catches both</span> — always-on payment recovery, AI-drafted win-back emails. Same Stripe Connect. Same bill.
+        </p>
+
+        <!-- Two-flow visual hint (small, supporting) -->
+        <div class="mt-10 inline-flex items-center gap-3 sm:gap-5 text-sm">
+          <div class="flex items-center gap-2 px-4 py-2 rounded-full bg-blue-50 border border-blue-100 text-blue-700 font-medium">
+            <svg class="w-4 h-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="6" width="14" height="9" rx="2"/><path d="M3 9h14"/></svg>
+            Payment failures
+          </div>
+          <span class="text-slate-300">+</span>
+          <div class="flex items-center gap-2 px-4 py-2 rounded-full bg-blue-50 border border-blue-100 text-blue-700 font-medium">
+            <svg class="w-4 h-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 6h12M4 10h12M4 14h8" stroke-linecap="round"/></svg>
+            Deliberate cancellations
+          </div>
+        </div>
+
+        <div class="mt-10 flex flex-wrap items-center justify-center gap-3">
+          <a href="/register" class="inline-flex items-center px-7 py-3 bg-[#0f172a] text-white rounded-full text-sm font-semibold hover:bg-[#1e293b] transition">
+            Connect Stripe in 60 seconds
+          </a>
+          <a href="#how-it-works" class="inline-flex items-center px-7 py-3 border border-slate-200 bg-white text-slate-700 rounded-full text-sm font-medium hover:bg-slate-50 transition">
+            See how it works
+          </a>
+        </div>
+
+        <p class="mt-6 text-xs text-slate-400">
+          No card required · Read-only Stripe access · 60-second setup
+        </p>
+
+      </div>
+    </div>
+
+    <p class="mt-3 text-xs text-slate-500 italic">
+      Reframes the hero from "we do win-back; payment recovery is also there" to "we do recovery, period." Pre-empts the bundling question by making "one platform · both flows" the lead message.
+    </p>
+  </section>
+
+  <!-- ═════════════════════════════════════════════════════════════
+       CHANGE #1 — Bundle callout block
+       Slots in between hero and existing "How It Works"
+       ═════════════════════════════════════════════════════════════ -->
+  <section>
+    <div class="mb-3 inline-flex items-center gap-2 text-[10px] font-semibold uppercase tracking-widest change-tag rounded-full px-2.5 py-0.5">
+      Change #1 · Bundle callout
+    </div>
+
+    <div class="text-center mb-10">
+      <p class="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">What you get</p>
+      <h2 class="mt-3 text-3xl sm:text-4xl font-bold tracking-tight text-slate-900">
+        Two flows. One platform.
+      </h2>
+      <p class="mt-4 text-sm text-slate-600 max-w-xl mx-auto">
+        You don&apos;t pick one. The platform fee covers payment recovery; the performance fee only kicks in when we recover a customer who actually quit. They work together, they bill together.
+      </p>
+    </div>
+
+    <!-- Outer container = the platform; inner cards = the two flows -->
+    <div class="relative">
+
+      <!-- Floating "Winback Platform · $99/mo" badge -->
+      <div class="absolute -top-4 left-1/2 -translate-x-1/2 z-10">
+        <div class="inline-flex items-center gap-2 px-4 py-1.5 bg-[#0f172a] text-white rounded-full text-xs font-semibold shadow-md">
+          <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+          Winback Platform · $99/mo
+        </div>
+      </div>
+
+      <div class="bg-white border-2 border-[#0f172a] rounded-3xl p-3 shadow-md">
+
+        <!-- Inner two-card grid — visually conjoined -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
+
+          <!-- Payment Recovery card -->
+          <div class="bg-slate-50 rounded-2xl p-7">
+            <div class="flex items-center gap-3 mb-2">
+              <div class="w-9 h-9 rounded-lg bg-blue-600 text-white flex items-center justify-center">
+                <svg class="w-5 h-5" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="6" width="14" height="9" rx="2"/><path d="M3 9h14"/></svg>
+              </div>
+              <h3 class="text-lg font-semibold text-slate-900">Payment Recovery</h3>
+            </div>
+            <p class="text-sm text-slate-600 mb-4">
+              When cards fail. Three perfectly-timed emails, decline-aware coaching, Apple Pay / Google Pay / Link update flow.
+            </p>
+            <ul class="space-y-2 text-sm text-slate-700">
+              <li class="flex items-start gap-2">
+                <svg class="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 10l3 3 7-7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                <span>Up to 500 recoveries / month</span>
+              </li>
+              <li class="flex items-start gap-2">
+                <svg class="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 10l3 3 7-7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                <span>No per-recovery cut · No save caps within plan</span>
+              </li>
+              <li class="flex items-start gap-2">
+                <svg class="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 10l3 3 7-7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                <span class="text-slate-900 font-medium">Included in the platform fee</span>
+              </li>
+            </ul>
+          </div>
+
+          <!-- Win-back card -->
+          <div class="bg-slate-50 rounded-2xl p-7">
+            <div class="flex items-center gap-3 mb-2">
+              <div class="w-9 h-9 rounded-lg bg-blue-600 text-white flex items-center justify-center">
+                <svg class="w-5 h-5" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 6h12M4 10h12M4 14h8" stroke-linecap="round"/></svg>
+              </div>
+              <h3 class="text-lg font-semibold text-slate-900">Win-back</h3>
+            </div>
+            <p class="text-sm text-slate-600 mb-4">
+              When customers cancel deliberately. AI reads the reason, drafts a personalised email, fires when the product matches what they wanted.
+            </p>
+            <ul class="space-y-2 text-sm text-slate-700">
+              <li class="flex items-start gap-2">
+                <svg class="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 10l3 3 7-7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                <span>AI-drafted, never templated</span>
+              </li>
+              <li class="flex items-start gap-2">
+                <svg class="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 10l3 3 7-7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                <span>1× MRR per recovery · Refundable for 14 days</span>
+              </li>
+              <li class="flex items-start gap-2">
+                <svg class="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 10l3 3 7-7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                <span class="text-slate-900 font-medium">$0 if we don&apos;t recover any</span>
+              </li>
+            </ul>
+          </div>
+
+        </div>
+
+        <!-- Footer line inside the platform container -->
+        <div class="px-7 py-5 mt-3 border-t border-slate-100 text-center">
+          <p class="text-sm text-slate-600">
+            <span class="font-semibold text-slate-900">There&apos;s no half subscription.</span>
+            One Stripe Connect, both flows, one bill.
+          </p>
+        </div>
+
+      </div>
+    </div>
+
+    <p class="mt-3 text-xs text-slate-500 italic">
+      Both flows share the platform shell visually — outer dark border, single &quot;Winback Platform&quot; badge — to signal &quot;these aren&apos;t two products you pick from, they&apos;re one platform with two flows.&quot;
+    </p>
+  </section>
+
+  <!-- ═════════════════════════════════════════════════════════════
+       CHANGE #2 — Reframed pricing block
+       Replaces the two-fee table around line ~223–490 in app/page.tsx
+       ═════════════════════════════════════════════════════════════ -->
+  <section>
+    <div class="mb-3 inline-flex items-center gap-2 text-[10px] font-semibold uppercase tracking-widest change-tag rounded-full px-2.5 py-0.5">
+      Change #2 · Reframed pricing
+    </div>
+
+    <div class="text-center mb-10">
+      <p class="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">Pricing</p>
+      <h2 class="mt-3 text-3xl sm:text-4xl font-bold tracking-tight text-slate-900">
+        One bill. Two triggers.
+      </h2>
+      <p class="mt-4 text-sm text-slate-600 max-w-2xl mx-auto">
+        Not an à la carte menu. Both flows are the same product — you just see different line items depending on what we recovered for you that month.
+      </p>
+    </div>
+
+    <!-- The reframed bill -->
+    <div class="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
+
+      <!-- Header strip — looks like a bank/Stripe statement header -->
+      <div class="bg-slate-50 border-b border-slate-200 px-7 py-4 flex items-center justify-between">
+        <p class="text-sm font-semibold text-slate-900">Your monthly bill</p>
+        <p class="text-xs text-slate-500">Billed at end of month</p>
+      </div>
+
+      <!-- Math expression: $99 + 1× MRR -->
+      <div class="px-7 py-10 sm:py-12">
+        <div class="flex flex-col sm:flex-row items-center justify-center gap-5 sm:gap-8">
+
+          <!-- Term 1: $99 base -->
+          <div class="text-center">
+            <p class="text-5xl sm:text-6xl font-bold tracking-tight text-slate-900 leading-none">$99</p>
+            <p class="mt-2 text-xs font-semibold uppercase tracking-widest text-slate-500">Always</p>
+          </div>
+
+          <div class="text-3xl sm:text-4xl text-slate-400 font-light">+</div>
+
+          <!-- Term 2: 1× MRR conditional -->
+          <div class="text-center">
+            <p class="text-5xl sm:text-6xl font-bold tracking-tight text-blue-600 leading-none">1×&nbsp;MRR</p>
+            <p class="mt-2 text-xs font-semibold uppercase tracking-widest text-slate-500">Only on win-back recoveries</p>
+          </div>
+
+        </div>
+
+        <!-- Two columns explaining each term -->
+        <div class="mt-12 grid grid-cols-1 sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-slate-100">
+
+          <!-- Platform fee column -->
+          <div class="px-2 sm:pr-8 pb-6 sm:pb-0">
+            <p class="text-[11px] font-semibold uppercase tracking-widest text-blue-600">Platform fee</p>
+            <p class="mt-1 text-sm font-semibold text-slate-900">$99 / month, always</p>
+            <ul class="mt-3 space-y-2 text-sm text-slate-600">
+              <li class="flex items-start gap-2">
+                <svg class="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 10l3 3 7-7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                <span>Up to 500 payment-recovery saves / month</span>
+              </li>
+              <li class="flex items-start gap-2">
+                <svg class="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 10l3 3 7-7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                <span>Three-touch email sequence per failure</span>
+              </li>
+              <li class="flex items-start gap-2">
+                <svg class="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 10l3 3 7-7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                <span>Apple Pay / Google Pay / Link update flow</span>
+              </li>
+              <li class="flex items-start gap-2">
+                <svg class="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 10l3 3 7-7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                <span>AI classifier + win-back drafts (always running)</span>
+              </li>
+            </ul>
+          </div>
+
+          <!-- Performance fee column -->
+          <div class="px-2 sm:pl-8 pt-6 sm:pt-0">
+            <p class="text-[11px] font-semibold uppercase tracking-widest text-blue-600">Performance fee</p>
+            <p class="mt-1 text-sm font-semibold text-slate-900">1× MRR — only when we recover a deliberate cancel</p>
+            <ul class="mt-3 space-y-2 text-sm text-slate-600">
+              <li class="flex items-start gap-2">
+                <svg class="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 10l3 3 7-7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                <span>Charged per recovered customer, once</span>
+              </li>
+              <li class="flex items-start gap-2">
+                <svg class="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 10l3 3 7-7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                <span>Refundable in full for 14 days if they re-cancel</span>
+              </li>
+              <li class="flex items-start gap-2">
+                <svg class="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 10l3 3 7-7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                <span class="text-slate-900 font-semibold">$0 if we don&apos;t recover any</span>
+              </li>
+              <li class="flex items-start gap-2">
+                <svg class="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 10l3 3 7-7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                <span>Payment-recovery saves are <span class="font-medium">free</span> (covered by platform fee)</span>
+              </li>
+            </ul>
+          </div>
+
+        </div>
+
+        <!-- Worked example -->
+        <div class="mt-10 bg-slate-50 border border-slate-200 rounded-2xl px-6 py-5 max-w-2xl mx-auto">
+          <p class="text-[11px] font-semibold uppercase tracking-widest text-slate-500 mb-2">Worked example</p>
+          <p class="text-sm text-slate-700 leading-relaxed">
+            A merchant with a typical month: <span class="text-slate-900 font-medium">8 payment failures</span> recovered (free under platform fee), <span class="text-slate-900 font-medium">2 voluntary cancels</span> won back at $79/mo MRR each.
+          </p>
+          <div class="mt-4 grid grid-cols-3 gap-3 text-center">
+            <div>
+              <p class="text-xs text-slate-500">Platform</p>
+              <p class="text-lg font-semibold text-slate-900">$99</p>
+            </div>
+            <div>
+              <p class="text-xs text-slate-500">Performance (2 × $79)</p>
+              <p class="text-lg font-semibold text-slate-900">$158</p>
+            </div>
+            <div class="border-l border-slate-200 pl-3">
+              <p class="text-xs text-slate-500">Total bill</p>
+              <p class="text-lg font-bold text-blue-600">$257</p>
+            </div>
+          </div>
+          <p class="mt-3 text-xs text-slate-500">
+            They kept ~<span class="text-slate-900 font-semibold">$1,150 of MRR</span> that would have walked. Net positive on day one.
+          </p>
+        </div>
+      </div>
+
+      <!-- CTA strip -->
+      <div class="bg-slate-50 border-t border-slate-200 px-7 py-6 flex flex-wrap items-center justify-between gap-4">
+        <p class="text-sm text-slate-600">
+          <span class="text-slate-900 font-medium">No card required to sign up.</span>
+          Billing starts on the first delivered save.
+        </p>
+        <a href="/register" class="inline-flex items-center px-5 py-2.5 bg-[#0f172a] text-white rounded-full text-sm font-semibold hover:bg-[#1e293b] transition">
+          Connect Stripe →
+        </a>
+      </div>
+
+    </div>
+
+    <p class="mt-3 text-xs text-slate-500 italic">
+      Same numbers as today. The framing changes: &quot;$99 + 1× MRR&quot; reads as one bill with two terms, not two separate products. The worked example anchors the payback math without the user doing maths.
+    </p>
+  </section>
+
+  <!-- ═════════════════════════════════════════════════════════════
+       Notes
+       ═════════════════════════════════════════════════════════════ -->
+  <section class="text-center text-sm text-slate-500 max-w-3xl mx-auto pt-8 border-t border-slate-200">
+    <p>
+      Each of the three sections is annotated with the home-page line range it would replace. The bundle callout (#1) inserts as a new section between hero and the existing &quot;How It Works.&quot; The hero (#3) and pricing (#2) replace existing blocks.
+    </p>
+  </section>
+
+</main>
+
+</body>
+</html>

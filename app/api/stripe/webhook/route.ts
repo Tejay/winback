@@ -739,13 +739,16 @@ async function processPaymentFailed(event: Stripe.Event) {
     subscriberId = newSub.id
   }
 
-  // Get founder name for email
+  // Resolve display name for the From header + sign-off. Prefer the product
+  // name (e.g. "Fitness App") so the subscriber recognises the brand they
+  // signed up to; fall back to the founder name, then the user's account
+  // name, then a generic.
   const [user] = await db
     .select({ name: users.name, email: users.email })
     .from(users)
     .where(eq(users.id, customer.userId))
     .limit(1)
-  const fromName = customer.founderName ?? user?.name ?? 'The team'
+  const fromName = customer.productName ?? customer.founderName ?? user?.name ?? 'The team'
 
   await sendDunningEmail({
     subscriberId,

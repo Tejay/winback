@@ -30,18 +30,24 @@ export function StickyNav() {
       <div className="max-w-5xl mx-auto px-6 h-14 flex items-center justify-between">
         <Logo />
         <div className="flex items-center gap-6">
-          <a
-            href="#how-it-works"
+          <Link
+            href="/payment-recovery"
             className="hidden sm:inline text-slate-600 text-sm hover:text-slate-900"
           >
-            Product
-          </a>
-          <a
-            href="#pricing"
+            Payment recovery
+          </Link>
+          <Link
+            href="/win-back"
+            className="hidden sm:inline text-slate-600 text-sm hover:text-slate-900"
+          >
+            Win-back
+          </Link>
+          <Link
+            href="/pricing"
             className="hidden sm:inline text-slate-600 text-sm hover:text-slate-900"
           >
             Pricing
-          </a>
+          </Link>
           <Link
             href="/faq"
             className="hidden sm:inline text-slate-600 text-sm hover:text-slate-900"

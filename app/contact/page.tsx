@@ -4,13 +4,9 @@ export default function ContactPage() {
   return (
     <main className="min-h-screen bg-[#f5f5f5] py-12 px-6">
       <div className="max-w-3xl mx-auto bg-white rounded-2xl shadow-sm border border-slate-100 p-8">
-        <div className="text-xs font-semibold uppercase tracking-widest text-blue-600 mb-3">
+        <h1 className="text-xs font-semibold uppercase tracking-widest text-blue-600 mb-8">
           Contact
-        </div>
-        <h1 className="text-4xl font-bold text-slate-900 mb-2">Contact.</h1>
-        <p className="text-sm text-slate-500 mb-8">
-          Real humans, one business-day response during UK working hours.
-        </p>
+        </h1>
 
         <div className="space-y-6">
           <ContactBlock
@@ -39,10 +35,10 @@ export default function ContactPage() {
           <div className="text-xs font-semibold uppercase tracking-widest text-slate-400 mb-2">
             Registered office
           </div>
-          <div>Winback Ltd</div>
-          <div>Company no. {'{TO_FILL — pending Companies House}'}</div>
-          <div>{'{Registered office address — pending incorporation}'}</div>
-          <div>England and Wales</div>
+          <div>Axiomis OÜ trading as Winback</div>
+          <div>Reg. no. 17493372</div>
+          <div>Sepapaja tn 6</div>
+          <div>15551 Tallinn, Estonia</div>
         </div>
 
         <p className="mt-8 text-xs text-slate-400">
