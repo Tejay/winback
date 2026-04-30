@@ -103,8 +103,10 @@ export default function TermsPage() {
 
         <h2>10. Governing law</h2>
         <p>
-          These Terms are governed by the laws of England and Wales. Disputes are
-          subject to the exclusive jurisdiction of the courts of England and Wales.
+          These Terms are governed by the laws of the Republic of Estonia. Any
+          dispute arising out of or in connection with these Terms is subject to
+          the exclusive jurisdiction of the Tallinn District Court (Harju
+          Maakohus).
         </p>
 
         <h2>11. Changes</h2>

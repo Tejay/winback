@@ -20,7 +20,8 @@ export default function DpaPage() {
           and the Winback customer (&ldquo;Controller&rdquo;). It reflects the
           parties&rsquo; agreement on the processing of personal data of the
           Controller&rsquo;s churned subscribers (&ldquo;Data Subjects&rdquo;) in
-          accordance with Article 28 GDPR and UK GDPR.
+          accordance with Article 28 of Regulation (EU) 2016/679 (the EU General
+          Data Protection Regulation, &ldquo;GDPR&rdquo;).
         </p>
 
         <h2>1. Subject matter &amp; duration</h2>
@@ -64,19 +65,27 @@ export default function DpaPage() {
 
         <h2>6. International transfers</h2>
         <p>
-          Where personal data is transferred outside the UK/EEA, the parties rely on
-          the European Commission&rsquo;s Standard Contractual Clauses (Decision
-          2021/914) and the UK IDTA/Addendum, incorporated by reference. Module Two
-          (Controller-to-Processor) applies between Controller and Processor; Module
-          Three applies where a subprocessor acts as a further processor.
+          The Processor is established in the European Economic Area (Estonia).
+          Where the Processor or one of its subprocessors transfers personal
+          data outside the EEA, the parties rely on the European
+          Commission&rsquo;s Standard Contractual Clauses (Implementing Decision
+          (EU) 2021/914), incorporated into this DPA by reference. Module Two
+          (Controller-to-Processor) applies between Controller and Processor;
+          Module Three (Processor-to-Processor) applies where a subprocessor
+          acts as a further processor on behalf of the Processor. The Processor
+          implements supplementary technical measures including TLS 1.2+ in
+          transit, AES-128-GCM at rest for sensitive secrets, and role-based
+          access controls (see §8).
         </p>
 
         <h2>7. Data subject rights</h2>
         <p>
-          The Processor will, taking into account the nature of the processing, assist
-          the Controller by appropriate technical and organisational measures (including
-          the unsubscribe mechanism, subscriber data export, and DSR tooling) to respond
-          to requests under Chapter III GDPR.
+          The Processor will, taking into account the nature of the processing,
+          assist the Controller by appropriate technical and organisational
+          measures (including the unsubscribe mechanism, subscriber data export,
+          and DSR tooling) to respond to requests under Chapter III of the
+          GDPR. The Processor responds to forwarded data subject requests
+          within the timeframes set out in Article 12 GDPR.
         </p>
 
         <h2>8. Security measures</h2>
@@ -104,9 +113,13 @@ export default function DpaPage() {
 
         <h2>Appendix A — SCCs</h2>
         <p>
-          The Standard Contractual Clauses (EU 2021/914) and UK Addendum are
-          incorporated by reference. The annexes are populated with the information in
-          this DPA and at <a href="/subprocessors">/subprocessors</a>.
+          The Standard Contractual Clauses (Implementing Decision (EU)
+          2021/914) are incorporated by reference. Annex I (parties and
+          description of transfer) is populated with the parties identified in
+          this DPA and the categories of data and data subjects in §3. Annex II
+          (technical and organisational measures) is populated with the
+          measures in §8. Annex III (list of subprocessors) is published at{' '}
+          <a href="/subprocessors">/subprocessors</a> and updated in line with §5.
         </p>
 
         <h2>Contact</h2>
