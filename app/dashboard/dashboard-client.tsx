@@ -533,16 +533,7 @@ export function DashboardClient({
             </div>
           )}
           {stats.winBack.topReasons.length > 0 && (
-            <div className="mb-4 text-xs text-slate-500">
-              <span className="font-semibold uppercase tracking-widest text-slate-400 mr-2">Top reasons this month:</span>
-              {stats.winBack.topReasons.map((r, i) => (
-                <span key={r.label}>
-                  {i > 0 ? ' · ' : ''}
-                  <span className="text-slate-700 font-medium">{r.label}</span>{' '}
-                  <span className="text-slate-400">({r.pct}%)</span>
-                </span>
-              ))}
-            </div>
+            <PatternPills items={stats.winBack.topReasons} />
           )}
         </>
       )}
@@ -601,16 +592,7 @@ export function DashboardClient({
             </div>
           </div>
           {stats.paymentRecovery.topDeclineCodes.length > 0 && (
-            <div className="mb-4 text-xs text-slate-500">
-              <span className="font-semibold uppercase tracking-widest text-slate-400 mr-2">Top decline codes this month:</span>
-              {stats.paymentRecovery.topDeclineCodes.map((r, i) => (
-                <span key={r.label}>
-                  {i > 0 ? ' · ' : ''}
-                  <span className="text-slate-700 font-medium">{r.label}</span>{' '}
-                  <span className="text-slate-400">({r.pct}%)</span>
-                </span>
-              ))}
-            </div>
+            <PatternPills items={stats.paymentRecovery.topDeclineCodes} />
           )}
         </>
       )}
@@ -1145,6 +1127,29 @@ function DunningStageBadge({ sub }: { sub: Subscriber }) {
     return <span className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium bg-slate-100 text-slate-500 border border-slate-200">Lost</span>
   }
   return <span className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium bg-slate-100 text-slate-500 border border-slate-200">{state ?? '—'}</span>
+}
+
+/**
+ * Spec 40 — Pattern pills. Read-only chips showing a category breakdown
+ * (top cancellation reasons / top decline codes) as a flat list of small
+ * pills. Visually consistent with the dashboard's other pill UI (filter
+ * chips, status badges, dunning-stage badges) so this strip doesn't feel
+ * like a stranded text line between the alert and the filters.
+ */
+function PatternPills({ items }: { items: Array<{ label: string; pct: number }> }) {
+  return (
+    <div className="flex flex-wrap items-center gap-2 mb-4">
+      {items.map((r) => (
+        <span
+          key={r.label}
+          className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700"
+        >
+          <span>{r.label}</span>
+          <span className="text-slate-400 tabular-nums">{r.pct}%</span>
+        </span>
+      ))}
+    </div>
+  )
 }
 
 /**
