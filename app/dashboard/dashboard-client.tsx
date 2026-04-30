@@ -478,7 +478,7 @@ export function DashboardClient({
           onClick={() => setTab('paymentRecovery')}
           className={
             tab === 'paymentRecovery'
-              ? 'flex items-center gap-2 px-5 py-2.5 rounded-2xl text-sm font-semibold bg-green-600 text-white shadow-sm'
+              ? 'flex items-center gap-2 px-5 py-2.5 rounded-2xl text-sm font-semibold bg-emerald-700 text-white shadow-sm'
               : 'flex items-center gap-2 px-5 py-2.5 rounded-2xl text-sm font-medium bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300 transition-colors'
           }
         >
