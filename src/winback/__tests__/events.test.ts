@@ -70,7 +70,7 @@ describe('logEvent', () => {
 
     expect(consoleSpy).toHaveBeenCalledWith(
       '[events] logEvent failed',
-      expect.objectContaining({ name: 'oauth_completed', error: 'db down' }),
+      expect.objectContaining({ name: 'oauth_completed', errorMessage: 'db down' }),
     )
     consoleSpy.mockRestore()
   })

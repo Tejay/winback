@@ -29,9 +29,15 @@ export async function logEvent(params: {
     })
   } catch (err) {
     // Telemetry must never break the user flow. Log and move on.
+    // Some Neon/serverless errors arrive with empty `.message`, so include
+    // the error name + a stringified fallback to keep diagnostics useful.
+    const e = err as { name?: string; message?: string; code?: string; cause?: unknown }
     console.error('[events] logEvent failed', {
       name: params.name,
-      error: err instanceof Error ? err.message : String(err),
+      errorName:    e?.name ?? null,
+      errorMessage: e?.message || null,
+      errorCode:    e?.code ?? null,
+      raw:          String(err),
     })
   }
 }

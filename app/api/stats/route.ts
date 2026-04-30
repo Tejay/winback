@@ -4,14 +4,12 @@ import { db } from '@/lib/db'
 import { customers, churnedSubscribers, emailsSent, recoveries } from '@/lib/schema'
 import { and, eq, gte, isNotNull, isNull, lt, ne, or, sql } from 'drizzle-orm'
 import {
-  aggregateRecoveryRows,
   buildDailySeries,
   recoveryRatePct,
   startOfMonthUtc,
   startOfPrevMonthUtc,
   topNFromCounts,
   type LabelPct,
-  type RecoveryAggRow,
 } from '@/src/winback/lib/stats'
 
 /**
@@ -96,17 +94,13 @@ export async function GET() {
   const monthStart = startOfMonthUtc()
   const prevMonthStart = startOfPrevMonthUtc()
 
-  // Aggregate recoveries — two queries, one for this-month and one for
-  // all-time, each grouped by recoveryType only. We previously did this
-  // as a single query grouping on (recoveryType, recoveredAt >= monthStart),
-  // but Drizzle bound the date parameter twice (once in SELECT, once in
-  // GROUP BY) which Postgres rejected as "column must appear in GROUP BY"
-  // because the two parameter placeholders were syntactically different
-  // even though the runtime value matched. Two queries is simpler than
-  // working around that.
-  const buildAggRows = async (
+  // Aggregate recoveries — three queries (this-month / last-month / all-
+  // time), each grouped by recoveryType only. Single combined query was
+  // rejected by Postgres because Drizzle bound the date parameter twice
+  // (SELECT + GROUP BY) as syntactically distinct placeholders.
+  const buildBucketsByType = async (
     range: 'thisMonth' | 'lastMonth' | 'allTime',
-  ): Promise<Array<RecoveryAggRow & { range: 'thisMonth' | 'lastMonth' | 'allTime' }>> => {
+  ): Promise<{ winBack: Bucket; payment: Bucket; legacyNullCount: number }> => {
     const conditions = [eq(recoveries.customerId, customer.id)]
     if (range === 'thisMonth') conditions.push(gte(recoveries.recoveredAt, monthStart))
     if (range === 'lastMonth') {
@@ -122,39 +116,35 @@ export async function GET() {
       .from(recoveries)
       .where(and(...conditions))
       .groupBy(recoveries.recoveryType)
-    return rows.map((r) => ({
-      recoveryType: r.recoveryType,
-      isThisMonth: range === 'thisMonth',
-      count: Number(r.count),
-      mrrCents: Number(r.mrrCents),
-      range,
-    }))
+    const out = {
+      winBack: { recovered: 0, mrrRecoveredCents: 0 } as Bucket,
+      payment: { recovered: 0, mrrRecoveredCents: 0 } as Bucket,
+      legacyNullCount: 0,
+    }
+    for (const r of rows) {
+      const count = Number(r.count)
+      const mrr = Number(r.mrrCents)
+      if (r.recoveryType === 'card_save') {
+        out.payment.recovered += count
+        out.payment.mrrRecoveredCents += mrr
+      } else {
+        // 'win_back' or NULL/legacy → bucket as win-back
+        if (r.recoveryType === null) out.legacyNullCount += count
+        out.winBack.recovered += count
+        out.winBack.mrrRecoveredCents += mrr
+      }
+    }
+    return out
   }
 
-  const [thisMonthAggRows, lastMonthAggRows, allTimeAggRows] = await Promise.all([
-    buildAggRows('thisMonth'),
-    buildAggRows('lastMonth'),
-    buildAggRows('allTime'),
+  const [thisMonthBuckets, lastMonthBuckets, allTimeBuckets] = await Promise.all([
+    buildBucketsByType('thisMonth'),
+    buildBucketsByType('lastMonth'),
+    buildBucketsByType('allTime'),
   ])
-  // allTime rows tagged isThisMonth=false; aggregator adds them to all-time
-  // only. thisMonth rows tagged true add to both. lastMonth rows are bucketed
-  // separately below — they're not part of the aggregator's win-back/payment
-  // partition (we want a parallel last-month bucket per cohort).
-  const aggRows: RecoveryAggRow[] = [...thisMonthAggRows, ...allTimeAggRows]
-  const lastMonth: { winBack: Bucket; payment: Bucket } = {
-    winBack: { recovered: 0, mrrRecoveredCents: 0 },
-    payment: { recovered: 0, mrrRecoveredCents: 0 },
-  }
-  for (const r of lastMonthAggRows) {
-    const bucket = r.recoveryType === 'card_save' ? lastMonth.payment : lastMonth.winBack
-    bucket.recovered += r.count
-    bucket.mrrRecoveredCents += r.mrrCents
-  }
-
-  const agg = aggregateRecoveryRows(aggRows)
-  if (agg.legacyNullCount > 0) {
+  if (allTimeBuckets.legacyNullCount > 0) {
     console.warn(
-      `[stats] ${agg.legacyNullCount} recoveries with NULL recoveryType bucketed as win-back`,
+      `[stats] ${allTimeBuckets.legacyNullCount} recoveries with NULL recoveryType bucketed as win-back`,
     )
   }
 
@@ -364,11 +354,11 @@ export async function GET() {
 
   const stats: Stats = {
     winBack: {
-      thisMonth: agg.winBackThisMonth,
-      lastMonth: lastMonth.winBack,
+      thisMonth: thisMonthBuckets.winBack,
+      lastMonth: lastMonthBuckets.winBack,
       allTime: {
-        ...agg.winBackAllTime,
-        recoveryRate: recoveryRatePct(agg.winBackAllTime.recovered, winBackLost),
+        ...allTimeBuckets.winBack,
+        recoveryRate: recoveryRatePct(allTimeBuckets.winBack.recovered, winBackLost),
       },
       inProgress: Number(inProgress),
       handoffsNeedingAttention: Number(handoffsNeedingAttention),
@@ -377,11 +367,11 @@ export async function GET() {
       dailyRecovered: winBackDailyRecovered,
     },
     paymentRecovery: {
-      thisMonth: agg.paymentThisMonth,
-      lastMonth: lastMonth.payment,
+      thisMonth: thisMonthBuckets.payment,
+      lastMonth: lastMonthBuckets.payment,
       allTime: {
-        ...agg.paymentAllTime,
-        recoveryRate: recoveryRatePct(agg.paymentAllTime.recovered, paymentLost),
+        ...allTimeBuckets.payment,
+        recoveryRate: recoveryRatePct(allTimeBuckets.payment.recovered, paymentLost),
       },
       inDunning: Number(inDunning),
       topDeclineCodes,
