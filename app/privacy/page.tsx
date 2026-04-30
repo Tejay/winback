@@ -1,8 +1,11 @@
+import { Footer } from '@/components/landing/footer'
+
 export const metadata = { title: 'Privacy Policy — Winback' }
 
 export default function PrivacyPage() {
   return (
-    <main className="min-h-screen bg-[#f5f5f5] py-12 px-6">
+    <div className="min-h-screen bg-[#f5f5f5]">
+    <main className="py-12 px-6">
       <div className="max-w-3xl mx-auto bg-white rounded-2xl shadow-sm border border-slate-100 p-8 prose prose-slate prose-sm max-w-none">
         {/* LAWYER REVIEW BEFORE LAUNCH — draft based on public privacy policies of Churnkey, Stunning, Retainful, and ProfitWell. */}
         <div className="text-xs font-semibold uppercase tracking-widest text-blue-600 mb-3 not-prose">
@@ -13,8 +16,8 @@ export default function PrivacyPage() {
 
         <h2>1. Who we are</h2>
         <p>
-          Winback (&ldquo;we&rdquo;, &ldquo;us&rdquo;) is operated by Winback Ltd, a company
-          registered in the United Kingdom. Our service helps subscription businesses
+          Winback (&ldquo;we&rdquo;, &ldquo;us&rdquo;) is operated by Axiomis OÜ trading as
+          Winback, a company registered in Estonia. Our service helps subscription businesses
           re-engage customers who have cancelled. You can reach us at{' '}
           <a href="mailto:privacy@winbackflow.co">privacy@winbackflow.co</a>.
         </p>
@@ -112,5 +115,7 @@ export default function PrivacyPage() {
         </p>
       </div>
     </main>
+    <Footer />
+    </div>
   )
 }
