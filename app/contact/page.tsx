@@ -7,10 +7,7 @@ export default function ContactPage() {
         <div className="text-xs font-semibold uppercase tracking-widest text-blue-600 mb-3">
           Contact
         </div>
-        <h1 className="text-4xl font-bold text-slate-900 mb-2">Contact.</h1>
-        <p className="text-sm text-slate-500 mb-8">
-          Real humans, one business-day response during UK working hours.
-        </p>
+        <h1 className="text-4xl font-bold text-slate-900 mb-8">Contact.</h1>
 
         <div className="space-y-6">
           <ContactBlock
