@@ -24,9 +24,10 @@ export default function RefundsPage() {
         <ul>
           <li>
             <strong>Platform fee — $99 per month</strong>, billed as a recurring
-            Stripe Subscription. Starts when we deliver your first card save or
-            win-back, whichever comes first; the first cycle is prorated to that
-            date. Covers the platform itself plus unlimited card saves.
+            Stripe Subscription. Starts when we deliver your first payment
+            recovery or win-back, whichever comes first; the first cycle is
+            prorated to that date. Covers the platform itself plus up to 500
+            payment recoveries per month.
           </li>
           <li>
             <strong>Performance fee — one month of the recovered subscriber&rsquo;s
@@ -41,12 +42,13 @@ export default function RefundsPage() {
         <ul>
           <li>
             <strong>Until first delivery.</strong> You pay nothing until Winback
-            has actually delivered a card save or a win-back. If neither happens,
-            no platform fee is ever billed.
+            has actually delivered a payment recovery or a win-back. If neither
+            happens, no platform fee is ever billed.
           </li>
           <li>
-            <strong>Card saves do not incur a per-recovery fee.</strong> Recover
-            one failed payment or ten thousand — same flat $99/mo.
+            <strong>Payment recoveries do not incur a per-recovery fee.</strong>{' '}
+            The flat $99/mo includes up to 500 payment recoveries per month —
+            no incremental charge per recovery within that allowance.
           </li>
           <li>
             <strong>Stripe&rsquo;s own retries.</strong> If a failed payment is

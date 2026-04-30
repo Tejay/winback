@@ -52,11 +52,11 @@ export function BundleCallout() {
               <ul className="space-y-2 text-sm text-slate-700">
                 <li className="flex items-start gap-2">
                   <Check className="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" strokeWidth={2.2} />
-                  <span>Up to 500 recoveries / month</span>
+                  <span>Up to 500 payment recoveries / month</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <Check className="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" strokeWidth={2.2} />
-                  <span>No per-recovery cut · No save caps within plan</span>
+                  <span>No per-recovery cut · No extra charge within plan</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <Check className="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" strokeWidth={2.2} />

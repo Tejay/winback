@@ -4,7 +4,7 @@ import { Footer } from '@/components/landing/footer'
 export const metadata = {
   title: 'FAQ — Winback',
   description:
-    'Stripe access, win-back + card-save emails, pricing, and GDPR — answered.',
+    'Stripe access, payment recovery + win-back emails, pricing, and GDPR — answered.',
 }
 
 interface QA {
@@ -189,10 +189,11 @@ const SECTIONS: Array<{ heading: string; items: QA[] }> = [
           <>
             <p>
               Two fees. A flat <strong>$99/mo platform fee</strong> that
-              includes unlimited card saves &mdash; the emails we send when a
-              subscriber&rsquo;s payment fails so they can update their card.
-              And a one-time <strong>performance fee equal to one month of
-              the subscriber&rsquo;s MRR</strong> when we win back a cancelled
+              includes up to <strong>500 payment recoveries per month</strong>
+              {' '}&mdash; the emails we send when a subscriber&rsquo;s payment
+              fails so they can update their card. And a one-time{' '}
+              <strong>performance fee equal to one month of the
+              subscriber&rsquo;s MRR</strong> when we win back a cancelled
               subscriber. Charged once per win-back, never recurring.
             </p>
             <p className="mt-3">
@@ -209,9 +210,10 @@ const SECTIONS: Array<{ heading: string; items: QA[] }> = [
           <p>
             A subscriber who actively cancelled on Stripe, then clicked the
             reactivate link in our email and resumed their subscription. We
-            can prove the click, so we bill the one-time fee. Card saves
-            (failed-payment recoveries) are different &mdash; those are
-            covered by the platform fee, no separate charge.
+            can prove the click, so we bill the one-time fee. Payment
+            recoveries (when we save a failed-payment subscription) are
+            different &mdash; those are covered by the platform fee, no
+            separate charge.
           </p>
         ),
       },
@@ -242,9 +244,9 @@ const SECTIONS: Array<{ heading: string; items: QA[] }> = [
         a: (
           <p>
             Stripe&rsquo;s Smart Retries already recover a chunk of failed
-            payments on their own. Our card-save emails handle the rest
-            &mdash; the failures Stripe gives up on. Either way, you pay the
-            same $99/mo. No incremental fee per save.
+            payments on their own. Our payment-recovery emails handle the
+            rest &mdash; the failures Stripe gives up on. Either way, you pay
+            the same $99/mo. No incremental fee per recovery, up to 500/mo.
           </p>
         ),
       },
@@ -253,8 +255,8 @@ const SECTIONS: Array<{ heading: string; items: QA[] }> = [
         a: (
           <p>
             No card at signup. We ask for a payment method after we deliver
-            your first card save or win-back, whichever comes first. The
-            $99 platform fee starts on that same invoice. If we deliver
+            your first payment recovery or win-back, whichever comes first.
+            The $99 platform fee starts on that same invoice. If we deliver
             nothing, you pay nothing.
           </p>
         ),

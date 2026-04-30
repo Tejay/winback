@@ -31,7 +31,7 @@ export function FlowIllustration() {
             Cancelled
           </div>
           <div className="text-xs font-medium text-slate-700 mt-0.5">
-            £24.99/mo
+            $24.99/mo
           </div>
         </div>
 
@@ -66,7 +66,7 @@ export function FlowIllustration() {
             Recovered
           </div>
           <div className="text-xs font-medium text-slate-700 mt-0.5">
-            +£24.99/mo
+            +$24.99/mo
           </div>
         </div>
       </div>
