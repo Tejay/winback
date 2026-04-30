@@ -76,24 +76,42 @@ export async function GET() {
 
   const monthStart = startOfMonthUtc()
 
-  // Aggregate recoveries grouped by recoveryType × time-window.
-  const recoveryAggRaw = await db
-    .select({
-      recoveryType: recoveries.recoveryType,
-      isThisMonth: sql<boolean>`${recoveries.recoveredAt} >= ${monthStart}`.as('is_this_month'),
-      count: sql<number>`count(*)::int`.as('count'),
-      mrrCents: sql<number>`coalesce(sum(${recoveries.planMrrCents}), 0)::bigint`.as('mrr_cents'),
-    })
-    .from(recoveries)
-    .where(eq(recoveries.customerId, customer.id))
-    .groupBy(recoveries.recoveryType, sql`${recoveries.recoveredAt} >= ${monthStart}`)
+  // Aggregate recoveries — two queries, one for this-month and one for
+  // all-time, each grouped by recoveryType only. We previously did this
+  // as a single query grouping on (recoveryType, recoveredAt >= monthStart),
+  // but Drizzle bound the date parameter twice (once in SELECT, once in
+  // GROUP BY) which Postgres rejected as "column must appear in GROUP BY"
+  // because the two parameter placeholders were syntactically different
+  // even though the runtime value matched. Two queries is simpler than
+  // working around that.
+  const buildAggRows = async (filterToMonth: boolean): Promise<RecoveryAggRow[]> => {
+    const conditions = [eq(recoveries.customerId, customer.id)]
+    if (filterToMonth) conditions.push(gte(recoveries.recoveredAt, monthStart))
+    const rows = await db
+      .select({
+        recoveryType: recoveries.recoveryType,
+        count: sql<number>`count(*)::int`.as('count'),
+        mrrCents: sql<number>`coalesce(sum(${recoveries.planMrrCents}), 0)::bigint`.as('mrr_cents'),
+      })
+      .from(recoveries)
+      .where(and(...conditions))
+      .groupBy(recoveries.recoveryType)
+    return rows.map((r) => ({
+      recoveryType: r.recoveryType,
+      isThisMonth: filterToMonth,
+      count: Number(r.count),
+      mrrCents: Number(r.mrrCents),
+    }))
+  }
 
-  const aggRows: RecoveryAggRow[] = recoveryAggRaw.map((r) => ({
-    recoveryType: r.recoveryType,
-    isThisMonth: Boolean(r.isThisMonth),
-    count: Number(r.count),
-    mrrCents: Number(r.mrrCents),
-  }))
+  const [thisMonthAggRows, allTimeAggRows] = await Promise.all([
+    buildAggRows(true),
+    buildAggRows(false),
+  ])
+  // allTime rows are tagged isThisMonth=false; the aggregator adds them to
+  // the all-time totals only. thisMonth rows tagged isThisMonth=true add to
+  // both buckets via the existing reducer logic.
+  const aggRows: RecoveryAggRow[] = [...thisMonthAggRows, ...allTimeAggRows]
 
   const agg = aggregateRecoveryRows(aggRows)
   if (agg.legacyNullCount > 0) {
