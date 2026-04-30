@@ -35,11 +35,11 @@ export function PricingFormula() {
           <div className="flex flex-col sm:flex-row items-center justify-center gap-5 sm:gap-8">
             <div className="text-center">
               <p className="text-5xl sm:text-6xl font-bold tracking-tight text-slate-900 leading-none">$99</p>
-              <p className="mt-2 text-xs font-semibold uppercase tracking-widest text-slate-500">Always</p>
+              <p className="mt-2 text-xs font-semibold uppercase tracking-widest text-slate-500">Monthly platform fee</p>
             </div>
             <div className="text-3xl sm:text-4xl text-slate-400 font-light">+</div>
-            <div className="text-center">
-              <p className="text-4xl sm:text-5xl font-bold tracking-tight text-blue-600 leading-tight">1 month&apos;s fee</p>
+            <div className="text-center max-w-[18rem]">
+              <p className="text-2xl sm:text-3xl font-bold tracking-tight text-blue-600 leading-tight">Customer&apos;s monthly subscription fee</p>
               <p className="mt-2 text-xs font-semibold uppercase tracking-widest text-slate-500">Per win-back recovery</p>
             </div>
           </div>
@@ -71,7 +71,7 @@ export function PricingFormula() {
 
             <div className="px-2 sm:pl-8 pt-6 sm:pt-0">
               <p className="text-[11px] font-semibold uppercase tracking-widest text-blue-600">Performance fee</p>
-              <p className="mt-1 text-sm font-semibold text-slate-900">1 month&apos;s subscription fee — only when we recover a deliberate cancel</p>
+              <p className="mt-1 text-sm font-semibold text-slate-900">Only charged when we recover a customer who deliberately cancelled</p>
               <ul className="mt-3 space-y-2 text-sm text-slate-600">
                 <li className="flex items-start gap-2">
                   <Check className="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" strokeWidth={2.2} />
@@ -141,8 +141,8 @@ export function PricingFormula() {
               {/* Header row */}
               <div className="grid grid-cols-12 gap-3 px-5 py-3 bg-slate-50 border-b border-slate-200 text-[10px] font-semibold tracking-widest uppercase text-slate-500">
                 <div className="col-span-3">Average MRR</div>
-                <div className="col-span-4">Activity</div>
-                <div className="col-span-2 text-right">Monthly bill</div>
+                <div className="col-span-3">Activity</div>
+                <div className="col-span-3 text-right">Monthly bill</div>
                 <div className="col-span-3 text-right">12-mo recovered</div>
               </div>
 
@@ -152,9 +152,15 @@ export function PricingFormula() {
                   <span className="text-base font-semibold text-slate-900 tabular-nums">$19</span>
                   <span className="text-[10px] uppercase tracking-widest text-slate-400">Indie</span>
                 </div>
-                <div className="col-span-4 text-sm text-slate-600">2 win-backs · 25 recoveries</div>
-                <div className="col-span-2 text-right text-sm font-semibold text-slate-900 tabular-nums">$137</div>
-                <div className="col-span-3 text-right text-sm font-semibold text-emerald-600 tabular-nums">$456</div>
+                <div className="col-span-3 text-sm text-slate-600">2 win-backs · 25 recoveries</div>
+                <div className="col-span-3 text-right tabular-nums">
+                  <div className="text-sm font-semibold text-slate-900">$137</div>
+                  <div className="text-[10px] text-slate-400 leading-tight">$99 + 2×$19</div>
+                </div>
+                <div className="col-span-3 text-right tabular-nums">
+                  <div className="text-sm font-semibold text-emerald-600">$456</div>
+                  <div className="text-[10px] text-slate-400 leading-tight">2×$19×12</div>
+                </div>
               </div>
 
               {/* SMB — highlighted as "shown above" since the worked example uses these numbers */}
@@ -163,9 +169,15 @@ export function PricingFormula() {
                   <span className="text-base font-semibold text-slate-900 tabular-nums">$20</span>
                   <span className="text-[10px] uppercase tracking-widest text-blue-700 font-semibold">SMB · Shown above</span>
                 </div>
-                <div className="col-span-4 text-sm text-slate-600">3 win-backs · 40 recoveries</div>
-                <div className="col-span-2 text-right text-sm font-semibold text-slate-900 tabular-nums">$159</div>
-                <div className="col-span-3 text-right text-sm font-semibold text-emerald-600 tabular-nums">$720</div>
+                <div className="col-span-3 text-sm text-slate-600">3 win-backs · 40 recoveries</div>
+                <div className="col-span-3 text-right tabular-nums">
+                  <div className="text-sm font-semibold text-slate-900">$159</div>
+                  <div className="text-[10px] text-slate-400 leading-tight">$99 + 3×$20</div>
+                </div>
+                <div className="col-span-3 text-right tabular-nums">
+                  <div className="text-sm font-semibold text-emerald-600">$720</div>
+                  <div className="text-[10px] text-slate-400 leading-tight">3×$20×12</div>
+                </div>
               </div>
 
               {/* Mid-market */}
@@ -174,9 +186,15 @@ export function PricingFormula() {
                   <span className="text-base font-semibold text-slate-900 tabular-nums">$89</span>
                   <span className="text-[10px] uppercase tracking-widest text-slate-400">Mid-market</span>
                 </div>
-                <div className="col-span-4 text-sm text-slate-600">4 win-backs · 30 recoveries</div>
-                <div className="col-span-2 text-right text-sm font-semibold text-slate-900 tabular-nums">$455</div>
-                <div className="col-span-3 text-right text-sm font-semibold text-emerald-600 tabular-nums">$4,272</div>
+                <div className="col-span-3 text-sm text-slate-600">4 win-backs · 30 recoveries</div>
+                <div className="col-span-3 text-right tabular-nums">
+                  <div className="text-sm font-semibold text-slate-900">$455</div>
+                  <div className="text-[10px] text-slate-400 leading-tight">$99 + 4×$89</div>
+                </div>
+                <div className="col-span-3 text-right tabular-nums">
+                  <div className="text-sm font-semibold text-emerald-600">$4,272</div>
+                  <div className="text-[10px] text-slate-400 leading-tight">4×$89×12</div>
+                </div>
               </div>
             </div>
 
