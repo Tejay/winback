@@ -80,9 +80,14 @@ export default function PrivacyPage() {
 
         <h2>8. International transfers</h2>
         <p>
-          Our subprocessors are primarily based in the United States. Transfers rely on
-          the European Commission&rsquo;s Standard Contractual Clauses (2021/914) and
-          supplementary measures where applicable.
+          We are established in the European Economic Area (Estonia), and core
+          processing happens within the EEA. Some of our subprocessors
+          (Anthropic, Resend, and parts of Stripe) are based in the United
+          States. Transfers to those subprocessors rely on the European
+          Commission&rsquo;s Standard Contractual Clauses (Implementing Decision
+          (EU) 2021/914), incorporated into our Data Processing Agreement, plus
+          supplementary technical measures (TLS 1.2+ in transit, AES-128-GCM at
+          rest for sensitive secrets, and least-privilege access controls).
         </p>
 
         <h2>9. Retention</h2>

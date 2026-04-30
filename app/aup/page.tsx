@@ -112,7 +112,12 @@ export default function AupPage() {
             billing period;
           </li>
           <li>
-            Report to the ICO (UK), relevant DPA (EU), Stripe, or law
+            Report to the Estonian Data Protection Inspectorate
+            (Andmekaitse Inspektsioon,{' '}
+            <a href="https://www.aki.ee/" target="_blank" rel="noreferrer">www.aki.ee</a>)
+            as our lead supervisory authority, to your own EU/EEA national
+            supervisory authority where applicable, to the European Data
+            Protection Board for cross-border matters, and to Stripe or law
             enforcement where required.
           </li>
         </ol>
