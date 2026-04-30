@@ -104,10 +104,14 @@ export async function GET() {
 
   // Lost counts for recovery-rate denominators. Partition by
   // cancellationReason: 'Payment failed' → payment-recovery-lost,
-  // anything else → win-back-lost.
+  // anything else (including NULL) → win-back-lost.
+  // coalesce() handles NULL — without it, NULL = 'Payment failed' returns
+  // NULL in SQL and produces a third silent grouping bucket, dropping
+  // those rows from both lost counts.
+  const isPaymentFailedExpr = sql<boolean>`coalesce(${churnedSubscribers.cancellationReason} = ${DUNNING_REASON}, false)`
   const lostRows = await db
     .select({
-      isPaymentFailed: sql<boolean>`${churnedSubscribers.cancellationReason} = ${DUNNING_REASON}`.as('is_pf'),
+      isPaymentFailed: isPaymentFailedExpr.as('is_pf'),
       count: sql<number>`count(*)::int`.as('count'),
     })
     .from(churnedSubscribers)
@@ -117,7 +121,7 @@ export async function GET() {
         eq(churnedSubscribers.status, 'lost'),
       ),
     )
-    .groupBy(sql`${churnedSubscribers.cancellationReason} = ${DUNNING_REASON}`)
+    .groupBy(isPaymentFailedExpr)
 
   let winBackLost = 0
   let paymentLost = 0
@@ -147,6 +151,7 @@ export async function GET() {
     .where(
       and(
         eq(churnedSubscribers.customerId, customer.id),
+        eq(churnedSubscribers.cancellationReason, DUNNING_REASON),
         sql`${churnedSubscribers.dunningState} in (${sql.raw(
           ACTIVE_DUNNING_STATES.map((s) => `'${s}'`).join(','),
         )})`,
@@ -205,6 +210,7 @@ export async function GET() {
     .where(
       and(
         eq(churnedSubscribers.customerId, customer.id),
+        eq(churnedSubscribers.cancellationReason, DUNNING_REASON),
         sql`${churnedSubscribers.dunningState} in (${sql.raw(
           ACTIVE_DUNNING_STATES.map((s) => `'${s}'`).join(','),
         )})`,
@@ -212,6 +218,10 @@ export async function GET() {
     )
 
   // Spec 40 — Payment-recovery: top decline codes this month.
+  // Time anchor is createdAt — payment-recovery rows are inserted by the
+  // payment_failed webhook and never have cancelledAt populated (that
+  // column is for voluntary-cancel rows). createdAt is the moment we
+  // first saw the failure, which is the right "this month" semantics.
   const declineCodeRows = await db
     .select({
       label: churnedSubscribers.lastDeclineCode,
@@ -222,7 +232,7 @@ export async function GET() {
       and(
         eq(churnedSubscribers.customerId, customer.id),
         eq(churnedSubscribers.cancellationReason, DUNNING_REASON),
-        gte(churnedSubscribers.cancelledAt, monthStart),
+        gte(churnedSubscribers.createdAt, monthStart),
       ),
     )
     .groupBy(churnedSubscribers.lastDeclineCode)
