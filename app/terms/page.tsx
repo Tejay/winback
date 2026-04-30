@@ -35,15 +35,15 @@ export default function TermsPage() {
         </p>
         <p>
           The Service is free to sign up and use until Winback delivers your first
-          card save (failed-payment recovery email) or your first win-back (recovery
-          of a voluntarily-cancelled subscriber). At that point we ask for a payment
-          method and billing begins. There are two fees:
+          payment recovery (recovery of a failed-payment subscription) or your first
+          win-back (recovery of a voluntarily-cancelled subscriber). At that point we
+          ask for a payment method and billing begins. There are two fees:
         </p>
         <ul>
           <li>
             <strong>Platform fee — $99 per month</strong>, billed as a recurring
             Stripe Subscription (prorated for the first partial cycle). This covers
-            unlimited card saves and the platform itself.
+            up to 500 payment recoveries per month and the platform itself.
           </li>
           <li>
             <strong>Performance fee — one month of the recovered subscriber&rsquo;s

@@ -214,7 +214,7 @@ export default async function SettingsPage({
                 <span className="text-slate-400">/mo platform fee</span>
               </div>
               <p className="text-sm text-slate-500 mt-2">
-                Includes unlimited card saves. Plus a one-time fee of <strong className="text-slate-900">1× MRR</strong> per voluntary-cancellation win-back, refundable if they re-cancel within 14 days.
+                Includes up to 500 payment recoveries per month. Plus a one-time fee of <strong className="text-slate-900">1× MRR</strong> per voluntary-cancellation win-back, refundable if they re-cancel within 14 days.
               </p>
               {customer?.stripeSubscriptionId && customer?.activatedAt && (
                 <p className="text-xs text-slate-400 mt-3">

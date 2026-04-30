@@ -8,11 +8,18 @@ Resend within 60 seconds. An LLM classifies why they left and generates a
 targeted win-back message. When the product ships something matching their stated reason, the
 win-back fires automatically.
 
-**Pricing:** Flat **$99/mo platform fee** covering unlimited card-save (failed payment)
-emails, plus a one-time **1× MRR performance fee** per voluntary-cancellation win-back,
+**Pricing:** Flat **$99/mo platform fee** covering up to **500 payment recoveries per
+month** (the emails we send when a subscriber's payment fails so they can update their
+card), plus a one-time **1× MRR performance fee** per voluntary-cancellation win-back,
 refundable in full if the subscriber re-cancels within 14 days. No card at signup —
-billing starts on the first delivered save or win-back, whichever comes first.
-Implemented as a Stripe Subscription on Winback's own Stripe account.
+billing starts on the first delivered payment recovery or win-back, whichever comes
+first. Implemented as a Stripe Subscription on Winback's own Stripe account.
+
+**Naming canonical (merchant-facing):**
+- *Payment recovery* — the product (the flow that catches failed-payment subscriptions)
+- *Recovery / payment recovery* — the event/unit (what we count, cap, and bill against)
+- *Win-back* — both product and event
+- Don't use *card save* / *card-save* in merchant-facing copy. (Internal webhook code may still use it; that's fine.)
 
 **Live reference site:** https://churntool-jxgo.vercel.app
 Every UI decision must match this site exactly unless specified otherwise.

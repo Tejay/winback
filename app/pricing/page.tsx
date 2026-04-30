@@ -27,9 +27,9 @@ export default function PricingPage() {
             <div className="py-4">
               <dt className="text-slate-900 font-medium">When does the $99 start?</dt>
               <dd className="mt-1 text-slate-600 leading-relaxed">
-                After we deliver your first card save or win-back, whichever comes
-                first. We don&apos;t bill the platform fee at signup — it kicks in
-                once we&apos;ve actually saved you a dollar.
+                After we deliver your first payment recovery or win-back,
+                whichever comes first. We don&apos;t bill the platform fee at
+                signup — it kicks in once we&apos;ve actually saved you a dollar.
               </dd>
             </div>
             <div className="py-4">
@@ -42,17 +42,18 @@ export default function PricingPage() {
               <dt className="text-slate-900 font-medium">What counts as a win-back?</dt>
               <dd className="mt-1 text-slate-600 leading-relaxed">
                 A subscriber who actively cancelled and then reactivated their
-                subscription within our attribution window. Failed-payment recoveries
-                are <em>not</em> win-backs — those are covered by the platform fee.
+                subscription within our attribution window. Payment recoveries
+                are <em>not</em> win-backs — those are covered by the platform
+                fee (up to 500/month).
               </dd>
             </div>
             <div className="py-4">
               <dt className="text-slate-900 font-medium">What if no cancellations happen?</dt>
               <dd className="mt-1 text-slate-600 leading-relaxed">
-                You still pay $99/mo — your card saves alone justify the platform
-                fee. The performance fee just doesn&apos;t add anything that month.
-                If neither saves nor cancellations happen, the $99 doesn&apos;t
-                kick in until they do.
+                You still pay $99/mo — your payment recoveries alone justify
+                the platform fee. The performance fee just doesn&apos;t add
+                anything that month. If neither recoveries nor cancellations
+                happen, the $99 doesn&apos;t kick in until they do.
               </dd>
             </div>
           </dl>
@@ -66,7 +67,7 @@ export default function PricingPage() {
             Ready to start?
           </div>
           <h2 className="text-3xl sm:text-4xl font-bold text-slate-900 mt-3">
-            Free until your first save.
+            Free until your first recovery.
           </h2>
           <p className="mt-4 text-sm text-slate-600 max-w-xl mx-auto">
             Connect Stripe in 60 seconds. We don&apos;t bill the platform fee until we&apos;ve actually saved you a dollar — and the performance fee only earns when we recover a cancelled customer.

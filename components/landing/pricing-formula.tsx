@@ -52,7 +52,7 @@ export function PricingFormula() {
               <ul className="mt-3 space-y-2 text-sm text-slate-600">
                 <li className="flex items-start gap-2">
                   <Check className="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" strokeWidth={2.2} />
-                  <span>Up to 500 payment-recovery saves / month</span>
+                  <span>Up to 500 payment recoveries / month</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <Check className="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" strokeWidth={2.2} />
@@ -87,7 +87,7 @@ export function PricingFormula() {
                 </li>
                 <li className="flex items-start gap-2">
                   <Check className="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" strokeWidth={2.2} />
-                  <span>Payment-recovery saves are <span className="font-medium">free</span> (covered by platform fee)</span>
+                  <span>Payment recoveries are <span className="font-medium">free</span> (covered by platform fee)</span>
                 </li>
               </ul>
             </div>
@@ -135,7 +135,7 @@ export function PricingFormula() {
 
           {/* Scale strip — same model at other business sizes */}
           <div className="mt-8 max-w-2xl mx-auto">
-            <p className="text-[11px] font-semibold uppercase tracking-widest text-slate-400 mb-3">And at other scales</p>
+            <p className="text-[11px] font-semibold uppercase tracking-widest text-slate-400 mb-3">More examples</p>
 
             <div className="rounded-2xl border border-slate-200 overflow-hidden">
               {/* Header row */}
@@ -152,7 +152,7 @@ export function PricingFormula() {
                   <span className="text-base font-semibold text-slate-900 tabular-nums">$19</span>
                   <span className="text-[10px] uppercase tracking-widest text-slate-400">Indie</span>
                 </div>
-                <div className="col-span-4 text-sm text-slate-600">2 win-backs · 25 saves</div>
+                <div className="col-span-4 text-sm text-slate-600">2 win-backs · 25 recoveries</div>
                 <div className="col-span-2 text-right text-sm font-semibold text-slate-900 tabular-nums">$137</div>
                 <div className="col-span-3 text-right text-sm font-semibold text-emerald-600 tabular-nums">$456</div>
               </div>
@@ -163,7 +163,7 @@ export function PricingFormula() {
                   <span className="text-base font-semibold text-slate-900 tabular-nums">$20</span>
                   <span className="text-[10px] uppercase tracking-widest text-blue-700 font-semibold">SMB · Shown above</span>
                 </div>
-                <div className="col-span-4 text-sm text-slate-600">3 win-backs · 40 saves</div>
+                <div className="col-span-4 text-sm text-slate-600">3 win-backs · 40 recoveries</div>
                 <div className="col-span-2 text-right text-sm font-semibold text-slate-900 tabular-nums">$159</div>
                 <div className="col-span-3 text-right text-sm font-semibold text-emerald-600 tabular-nums">$720</div>
               </div>
@@ -174,14 +174,14 @@ export function PricingFormula() {
                   <span className="text-base font-semibold text-slate-900 tabular-nums">$89</span>
                   <span className="text-[10px] uppercase tracking-widest text-slate-400">Mid-market</span>
                 </div>
-                <div className="col-span-4 text-sm text-slate-600">4 win-backs · 30 saves</div>
+                <div className="col-span-4 text-sm text-slate-600">4 win-backs · 30 recoveries</div>
                 <div className="col-span-2 text-right text-sm font-semibold text-slate-900 tabular-nums">$455</div>
                 <div className="col-span-3 text-right text-sm font-semibold text-emerald-600 tabular-nums">$4,272</div>
               </div>
             </div>
 
             <p className="mt-3 text-xs text-slate-400 italic">
-              12-month recovered figures assume each won-back customer stays a year. Card-save revenue not included above.
+              12-month recovered figures assume each won-back customer stays a year. Payment-recovery revenue not included above.
             </p>
           </div>
 
@@ -190,7 +190,7 @@ export function PricingFormula() {
             <div className="rounded-2xl border border-slate-200 bg-white px-6 py-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <div className="flex items-center gap-2 text-sm text-slate-700">
                 <Check className="w-4 h-4 text-emerald-500 flex-shrink-0" strokeWidth={2.4} />
-                <span>Free until first save or win-back</span>
+                <span>Free until first payment recovery or win-back</span>
               </div>
               <div className="flex items-center gap-2 text-sm text-slate-700">
                 <Check className="w-4 h-4 text-emerald-500 flex-shrink-0" strokeWidth={2.4} />
@@ -211,7 +211,7 @@ export function PricingFormula() {
         <div className="bg-slate-50 border-t border-slate-200 px-7 py-6 text-center">
           <p className="text-sm text-slate-600">
             <span className="text-slate-900 font-medium">No card required to sign up.</span>{' '}
-            Billing starts on the first delivered save.
+            Billing starts on the first delivered payment recovery or win-back.
           </p>
         </div>
       </div>
