@@ -135,7 +135,7 @@ export function PricingFormula() {
 
           {/* Scale strip — same model at other business sizes */}
           <div className="mt-8 max-w-2xl mx-auto">
-            <p className="text-[11px] font-semibold uppercase tracking-widest text-slate-400 mb-3">And at other scales</p>
+            <p className="text-[11px] font-semibold uppercase tracking-widest text-slate-400 mb-3">More examples</p>
 
             <div className="rounded-2xl border border-slate-200 overflow-hidden">
               {/* Header row */}
