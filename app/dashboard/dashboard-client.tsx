@@ -73,8 +73,6 @@ interface Stats {
     thisMonth: Bucket
     allTime: Bucket & { recoveryRate: number | null }
     inDunning: number
-    mrrAtRiskCents: number
-    onFinalAttempt: number
     topDeclineCodes: LabelPct[]
   }
 }
@@ -91,8 +89,6 @@ const EMPTY_STATS: Stats = {
     thisMonth: { recovered: 0, mrrRecoveredCents: 0 },
     allTime: { recovered: 0, mrrRecoveredCents: 0, recoveryRate: null },
     inDunning: 0,
-    mrrAtRiskCents: 0,
-    onFinalAttempt: 0,
     topDeclineCodes: [],
   },
 }
@@ -571,26 +567,6 @@ export function DashboardClient({
             </div>
           </section>
 
-          <div className="mb-4 grid grid-cols-1 sm:grid-cols-3 gap-3 bg-green-50/50 border border-green-100 rounded-2xl px-5 py-4">
-            <div>
-              <div className="text-xs font-semibold uppercase tracking-widest text-slate-500">MRR at risk</div>
-              <div className="text-2xl font-bold text-slate-900 tabular-nums mt-0.5">
-                ${Math.round(stats.paymentRecovery.mrrAtRiskCents / 100).toLocaleString()}/mo
-              </div>
-            </div>
-            <div>
-              <div className="text-xs font-semibold uppercase tracking-widest text-slate-500">In retry</div>
-              <div className="text-2xl font-bold text-slate-900 tabular-nums mt-0.5">
-                {stats.paymentRecovery.inDunning - stats.paymentRecovery.onFinalAttempt}
-              </div>
-            </div>
-            <div>
-              <div className="text-xs font-semibold uppercase tracking-widest text-slate-500">On final attempt</div>
-              <div className="text-2xl font-bold text-slate-900 tabular-nums mt-0.5">
-                {stats.paymentRecovery.onFinalAttempt}
-              </div>
-            </div>
-          </div>
           {stats.paymentRecovery.topDeclineCodes.length > 0 && (
             <PatternPills items={stats.paymentRecovery.topDeclineCodes} />
           )}

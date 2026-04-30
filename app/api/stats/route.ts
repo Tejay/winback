@@ -52,8 +52,6 @@ type Stats = {
     allTime: Bucket & { recoveryRate: number | null }
     inDunning: number
     // Spec 40
-    mrrAtRiskCents: number
-    onFinalAttempt: number
     topDeclineCodes: LabelPct[]
   }
 }
@@ -221,23 +219,6 @@ export async function GET() {
     4,
   )
 
-  // Spec 40 — Payment-recovery: MRR at risk + on-final-attempt count.
-  const [atRiskRow] = await db
-    .select({
-      mrrAtRiskCents: sql<number>`coalesce(sum(${churnedSubscribers.mrrCents}), 0)::bigint`.as('mrr_at_risk'),
-      onFinalAttempt: sql<number>`count(*) filter (where ${churnedSubscribers.dunningState} = 'final_retry_pending')::int`.as('on_final'),
-    })
-    .from(churnedSubscribers)
-    .where(
-      and(
-        eq(churnedSubscribers.customerId, customer.id),
-        eq(churnedSubscribers.cancellationReason, DUNNING_REASON),
-        sql`${churnedSubscribers.dunningState} in (${sql.raw(
-          ACTIVE_DUNNING_STATES.map((s) => `'${s}'`).join(','),
-        )})`,
-      ),
-    )
-
   // Spec 40 — Payment-recovery: top decline codes this month.
   // Time anchor is createdAt — payment-recovery rows are inserted by the
   // payment_failed webhook and never have cancelledAt populated (that
@@ -281,8 +262,6 @@ export async function GET() {
         recoveryRate: recoveryRatePct(agg.paymentAllTime.recovered, paymentLost),
       },
       inDunning: Number(inDunning),
-      mrrAtRiskCents: Number(atRiskRow?.mrrAtRiskCents ?? 0),
-      onFinalAttempt: Number(atRiskRow?.onFinalAttempt ?? 0),
       topDeclineCodes,
     },
   }
