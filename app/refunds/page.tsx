@@ -1,8 +1,11 @@
 export const metadata = { title: 'Refunds & cancellations — Winback' }
 
+import { Footer } from '@/components/landing/footer'
+
 export default function RefundsPage() {
   return (
-    <main className="min-h-screen bg-[#f5f5f5] py-12 px-6">
+    <div className="min-h-screen bg-[#f5f5f5]">
+    <main className="py-12 px-6">
       <div className="max-w-3xl mx-auto bg-white rounded-2xl shadow-sm border border-slate-100 p-8 prose prose-slate prose-sm max-w-none">
         <div className="text-xs font-semibold uppercase tracking-widest text-blue-600 mb-3 not-prose">
           Legal
@@ -133,5 +136,7 @@ export default function RefundsPage() {
         </p>
       </div>
     </main>
+    <Footer />
+    </div>
   )
 }

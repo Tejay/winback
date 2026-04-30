@@ -1,8 +1,11 @@
 export const metadata = { title: 'Terms of Service — Winback' }
 
+import { Footer } from '@/components/landing/footer'
+
 export default function TermsPage() {
   return (
-    <main className="min-h-screen bg-[#f5f5f5] py-12 px-6">
+    <div className="min-h-screen bg-[#f5f5f5]">
+    <main className="py-12 px-6">
       <div className="max-w-3xl mx-auto bg-white rounded-2xl shadow-sm border border-slate-100 p-8 prose prose-slate prose-sm max-w-none">
         {/* LAWYER REVIEW BEFORE LAUNCH — boilerplate modelled on Churnkey and Retainful public terms. */}
         <div className="text-xs font-semibold uppercase tracking-widest text-blue-600 mb-3 not-prose">
@@ -14,7 +17,7 @@ export default function TermsPage() {
         <h2>1. Agreement</h2>
         <p>
           These Terms govern your use of Winback (the &ldquo;Service&rdquo;), operated
-          by Winback Ltd (&ldquo;we&rdquo;). By creating an account you agree to these
+          by Axiomis OÜ trading as Winback (&ldquo;we&rdquo;). By creating an account you agree to these
           Terms, our <a href="/privacy">Privacy Policy</a>, and our{' '}
           <a href="/dpa">Data Processing Agreement</a>.
         </p>
@@ -87,7 +90,7 @@ export default function TermsPage() {
         <h2>8. Limitation of liability</h2>
         <p>
           Our total liability for any claim arising out of these Terms is capped at the
-          greater of (a) £100 or (b) the fees you paid us in the 12 months preceding the
+          greater of (a) €100 or (b) the fees you paid us in the 12 months preceding the
           claim. We are not liable for indirect, incidental, or consequential damages.
         </p>
 
@@ -122,5 +125,7 @@ export default function TermsPage() {
         </p>
       </div>
     </main>
+    <Footer />
+    </div>
   )
 }

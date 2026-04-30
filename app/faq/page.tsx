@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { Footer } from '@/components/landing/footer'
 
 export const metadata = {
   title: 'FAQ — Winback',
@@ -317,12 +318,12 @@ const SECTIONS: Array<{ heading: string; items: QA[] }> = [
         a: (
           <p>
             Winback is operated by{' '}
-            <strong>[Company name &mdash; to be registered]</strong>, a company
-            registered in England and Wales. Contact:{' '}
+            <strong>Axiomis OÜ trading as Winback</strong>, a company
+            registered in Estonia (Reg. no. 17493372, Sepapaja tn 6, 15551 Tallinn). Contact:{' '}
             <a href="mailto:support@winbackflow.co" className="text-blue-600 hover:underline">
               support@winbackflow.co
             </a>
-            . <span className="text-slate-500 italic">(We&rsquo;ll update this entry once the company is formally incorporated.)</span>
+            .
           </p>
         ),
       },
@@ -332,7 +333,8 @@ const SECTIONS: Array<{ heading: string; items: QA[] }> = [
 
 export default function FAQPage() {
   return (
-    <main className="min-h-screen bg-[#f5f5f5] py-12 px-6">
+    <div className="min-h-screen bg-[#f5f5f5]">
+    <main className="py-12 px-6">
       <div className="max-w-3xl mx-auto bg-white rounded-2xl shadow-sm border border-slate-100 p-8">
         <div className="text-xs font-semibold uppercase tracking-widest text-blue-600 mb-3">
           FAQ
@@ -382,5 +384,7 @@ export default function FAQPage() {
         </div>
       </div>
     </main>
+    <Footer />
+    </div>
   )
 }

@@ -1,8 +1,11 @@
 export const metadata = { title: 'Data Processing Agreement — Winback' }
 
+import { Footer } from '@/components/landing/footer'
+
 export default function DpaPage() {
   return (
-    <main className="min-h-screen bg-[#f5f5f5] py-12 px-6">
+    <div className="min-h-screen bg-[#f5f5f5]">
+    <main className="py-12 px-6">
       <div className="max-w-3xl mx-auto bg-white rounded-2xl shadow-sm border border-slate-100 p-8 prose prose-slate prose-sm max-w-none">
         {/* LAWYER REVIEW BEFORE LAUNCH — modelled on Stunning and ProfitWell public DPAs. SCCs appendix to be attached. */}
         <div className="text-xs font-semibold uppercase tracking-widest text-blue-600 mb-3 not-prose">
@@ -13,7 +16,7 @@ export default function DpaPage() {
 
         <p>
           This Data Processing Agreement (&ldquo;DPA&rdquo;) forms part of the
-          <a href="/terms"> Terms of Service</a> between Winback Ltd (&ldquo;Processor&rdquo;)
+          <a href="/terms"> Terms of Service</a> between Axiomis OÜ trading as Winback (&ldquo;Processor&rdquo;)
           and the Winback customer (&ldquo;Controller&rdquo;). It reflects the
           parties&rsquo; agreement on the processing of personal data of the
           Controller&rsquo;s churned subscribers (&ldquo;Data Subjects&rdquo;) in
@@ -112,5 +115,7 @@ export default function DpaPage() {
         </p>
       </div>
     </main>
+    <Footer />
+    </div>
   )
 }
