@@ -16,7 +16,11 @@
  *
  * Login credentials printed at the end.
  */
-import 'dotenv/config'
+import { config } from 'dotenv'
+// Next.js loads .env.local automatically; tsx scripts need an explicit hint.
+// Fall back to .env so the script also works in CI / production contexts.
+config({ path: '.env.local' })
+config()
 import bcrypt from 'bcryptjs'
 import { eq } from 'drizzle-orm'
 import { db } from '../lib/db'
@@ -100,12 +104,27 @@ function randomCustomer(): { name: string; email: string } {
 // Seeding --------------------------------------------------------------
 
 async function wipeExistingDemo(): Promise<void> {
-  const existing = await db.select({ id: users.id }).from(users).where(eq(users.email, DEMO_EMAIL)).limit(1)
+  const existing = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(eq(users.email, DEMO_EMAIL))
+    .limit(1)
   if (existing.length === 0) return
-  // ON DELETE CASCADE handles customers → churned_subscribers → emails_sent /
-  // recoveries (cascade is set on the FK in lib/schema.ts).
+  const userId = existing[0].id
+
+  // wb_recoveries.customer_id is a non-cascading FK, so delete recoveries
+  // explicitly before nuking the customer. emails_sent and
+  // churned_subscribers cascade via their parent customer's FK chain.
+  const customerRows = await db
+    .select({ id: customers.id })
+    .from(customers)
+    .where(eq(customers.userId, userId))
+  for (const { id: customerId } of customerRows) {
+    await db.delete(recoveries).where(eq(recoveries.customerId, customerId))
+  }
+
   await db.delete(users).where(eq(users.email, DEMO_EMAIL))
-  console.log(`Wiped existing demo user (${existing[0].id})`)
+  console.log(`Wiped existing demo user (${userId})`)
 }
 
 async function seedDemo(): Promise<void> {
@@ -311,20 +330,16 @@ async function seedDemo(): Promise<void> {
       createdAt: failedAt,  // make it count for "this month" decline-code aggregation
     }).returning({ id: churnedSubscribers.id })
 
-    // Dunning email touches (T1, then T2/T3 if applicable)
-    for (let t = 1; t <= seed.touchCount; t++) {
-      await db.insert(emailsSent).values({
-        subscriberId: sub.id,
-        type: 'dunning',
-        subject: t === 1
-          ? "Your payment didn't go through"
-          : t === 2
-            ? "Quick reminder: card update needed"
-            : "Last try before your subscription pauses",
-        bodyText: `Hi ${cust.name.split(' ')[0]},\n\nWe couldn't process your latest payment for ${plan.name} (${seed.declineCode}). Update your card here to keep things running:\n\n[Update payment]\n\n— ${DEMO_NAME}`,
-        sentAt: new Date(failedAt.getTime() + (t - 1) * 24 * 60 * 60 * 1000 + 60 * 1000),
-      })
-    }
+    // One 'dunning' email row per subscriber — production uses a unique
+    // index (subscriber_id, type) and tracks touch progression via the
+    // dunningTouchCount column on the subscriber, not via repeated rows.
+    await db.insert(emailsSent).values({
+      subscriberId: sub.id,
+      type: 'dunning',
+      subject: "Your payment didn't go through",
+      bodyText: `Hi ${cust.name.split(' ')[0]},\n\nWe couldn't process your latest payment for ${plan.name} (${seed.declineCode}). Update your card here to keep things running:\n\n[Update payment]\n\n— ${DEMO_NAME}`,
+      sentAt: new Date(failedAt.getTime() + 60 * 1000),
+    })
 
     if (seed.recovered) {
       const recoveredAt = thisMonthDaysAgo(Math.max(0.5, seed.daysSinceFailed - 1))
