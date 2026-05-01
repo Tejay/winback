@@ -16,9 +16,11 @@ interface Subscriber {
   status: string
   mrrCents: number
   tenureDays: number | null
+  stripeEnum: string | null
   stripeComment: string | null
   replyText: string | null
   triggerKeyword: string | null
+  triggerNeed: string | null
   tier: number | null
   confidence: string | null
   winBackSubject: string | null
@@ -778,13 +780,89 @@ export function DashboardClient({
               </div>
             </div>
 
-            {selected.cancellationReason && (
-              <div className="mx-6 mt-4 bg-blue-50 rounded-xl p-4">
-                <div className="text-xs font-semibold uppercase tracking-widest text-blue-600 mb-2">Cancellation Reason</div>
-                <div className="text-sm font-medium text-slate-900 italic mb-1">{selected.cancellationReason}</div>
-                {selected.cancellationCategory && (
-                  <div className="text-xs text-slate-400">Category: {selected.cancellationCategory}</div>
-                )}
+            {/* Spec 40 polish — Why they cancelled, side-by-side.
+                Left: what the customer typed in Stripe's cancel flow
+                  (stripeComment / stripeEnum) — the raw voice.
+                Right: how the AI interpreted that into our internal
+                  cancellationReason + category + tier.
+                Lets the founder spot-check whether the AI's read
+                matches what the customer actually said. */}
+            {(selected.cancellationReason || selected.stripeComment || selected.stripeEnum) && (
+              <div className="mx-6 mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="bg-slate-50 rounded-xl p-4 border border-slate-100">
+                  <div className="text-[10px] font-semibold uppercase tracking-widest text-slate-500 mb-2">
+                    What they said
+                  </div>
+                  {selected.stripeEnum && (
+                    <div className="inline-flex items-center text-[11px] font-mono px-2 py-0.5 rounded bg-slate-200/70 text-slate-700 mb-2">
+                      {selected.stripeEnum}
+                    </div>
+                  )}
+                  {selected.stripeComment ? (
+                    <div className="text-sm text-slate-700 italic leading-relaxed">
+                      &ldquo;{selected.stripeComment}&rdquo;
+                    </div>
+                  ) : !selected.stripeEnum ? (
+                    <div className="text-xs text-slate-400 italic">
+                      Customer left no comment in Stripe&apos;s cancel flow.
+                    </div>
+                  ) : null}
+                </div>
+                <div className="bg-blue-50 rounded-xl p-4 border border-blue-100">
+                  <div className="flex items-center justify-between mb-2 gap-2">
+                    <div className="text-[10px] font-semibold uppercase tracking-widest text-blue-600">
+                      What we heard
+                    </div>
+                    {selected.tier != null && (
+                      <span className="inline-flex items-center rounded-full bg-blue-100 text-blue-700 text-[10px] font-bold px-2 py-0.5">
+                        T{selected.tier}
+                      </span>
+                    )}
+                  </div>
+                  {selected.cancellationReason && (
+                    <div className="text-sm font-medium text-slate-900 mb-1">
+                      {selected.cancellationReason}
+                    </div>
+                  )}
+                  {selected.cancellationCategory && (
+                    <div className="text-xs text-slate-500">
+                      Category: <span className="text-slate-700 font-medium">{selected.cancellationCategory}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Spec 40 polish — Trigger need. The LLM-extracted product gap
+                that, if shipped, would win this customer back. Drives the
+                changelog-match feature. Worth surfacing prominently because
+                this is *why* the win-back system has any standing power
+                beyond the immediate exit email. */}
+            {selected.triggerNeed && (
+              <div className="mx-6 mt-4 bg-violet-50 rounded-xl p-4 border border-violet-100">
+                <div className="flex items-start gap-3">
+                  <div className="bg-violet-100 rounded-lg w-8 h-8 flex items-center justify-center text-violet-700 flex-shrink-0 mt-0.5">
+                    <Sparkles className="w-4 h-4" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[10px] font-semibold uppercase tracking-widest text-violet-700 mb-1">
+                      What would win them back
+                    </div>
+                    <div className="text-sm text-slate-800 italic leading-relaxed">
+                      &ldquo;{selected.triggerNeed}&rdquo;
+                    </div>
+                    <div className="text-[11px] text-violet-700/70 mt-2">
+                      We&apos;ll auto-fire a win-back when your changelog mentions{' '}
+                      {selected.triggerKeyword ? (
+                        <span className="font-mono bg-violet-100 px-1 py-0.5 rounded">
+                          {selected.triggerKeyword}
+                        </span>
+                      ) : (
+                        <span>this</span>
+                      )}.
+                    </div>
+                  </div>
+                </div>
               </div>
             )}
 
