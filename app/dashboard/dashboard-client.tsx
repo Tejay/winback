@@ -181,29 +181,59 @@ export function DashboardClient({
     if (clDismissed) setChangelogNudgeDismissed(true)
   }, [])
 
-  // Poll backfill status while in progress
+  // Poll backfill status while in progress.
+  // Spec 40 polish — visibility-gated: pause the poll when the tab is in
+  // background. Backfill rarely completes within a single foreground
+  // session anyway, and a hidden tab polling every 3s burns Neon
+  // connections for nothing. Resumes on visibilitychange → 'visible'.
   useEffect(() => {
     let interval: ReturnType<typeof setInterval> | null = null
+    let stopped = false
 
     function pollBackfill() {
+      if (document.visibilityState !== 'visible') return
       fetch('/api/backfill/status')
         .then((r) => r.json())
         .then((data: BackfillStatus) => {
           setBackfill(data)
-          if (data.complete && interval) {
-            clearInterval(interval)
-            interval = null
-            // Refresh subscriber list when backfill finishes
+          if (data.complete) {
+            stopped = true
+            if (interval) {
+              clearInterval(interval)
+              interval = null
+            }
             fetchData()
           }
         })
         .catch(() => {})
     }
 
-    pollBackfill()
-    interval = setInterval(pollBackfill, 3000)
+    function startInterval() {
+      if (stopped || interval) return
+      pollBackfill() // fire once immediately
+      interval = setInterval(pollBackfill, 3000)
+    }
 
-    return () => { if (interval) clearInterval(interval) }
+    function stopInterval() {
+      if (interval) {
+        clearInterval(interval)
+        interval = null
+      }
+    }
+
+    function onVisibilityChange() {
+      if (stopped) return
+      if (document.visibilityState === 'visible') startInterval()
+      else stopInterval()
+    }
+
+    if (document.visibilityState === 'visible') startInterval()
+    document.addEventListener('visibilitychange', onVisibilityChange)
+
+    return () => {
+      stopInterval()
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
