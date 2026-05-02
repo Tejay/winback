@@ -358,26 +358,73 @@ const SECTIONS: Section[] = [
       {
         q: 'What counts as a win-back?',
         a: (
-          <p>
-            A subscriber who actively cancelled on Stripe, then clicked the
-            reactivate link in our email and resumed their subscription. We
-            can prove the click, so we bill the one-time fee. Payment
-            recoveries (when we save a failed-payment subscription) are
-            different &mdash; those are covered by the platform fee, no
-            separate charge.
-          </p>
+          <>
+            <p>
+              A subscriber comes back after we engaged with them.
+              Specifically, one of:
+            </p>
+            <ul className="mt-3 space-y-2 list-disc pl-5">
+              <li>They clicked our reactivate link.</li>
+              <li>They replied to our email.</li>
+              <li>
+                They came back within 30 days of us escalating to you (a
+                &ldquo;handoff&rdquo;).
+              </li>
+              <li>
+                They came back within 30 days of you pausing our AI for
+                them.
+              </li>
+            </ul>
+            <p className="mt-3">
+              Payment recoveries are billed separately &mdash; covered by
+              the $99/mo platform fee.
+            </p>
+          </>
         ),
       },
       {
-        q: 'What if someone reactivates without clicking our email?',
+        q: 'If I personally write back to a customer Winback handed off to me, who earns the fee?',
         a: (
-          <p>
-            We don&rsquo;t bill for it. Maybe our email nudged them
-            indirectly, maybe not &mdash; but &ldquo;we sent an email and
-            something happened&rdquo; isn&rsquo;t proof. The win-back fee
-            only fires when there&rsquo;s a tracked click on our reactivation
-            link, so every invoice has a verifiable trigger behind it.
-          </p>
+          <>
+            <p>
+              The fee covers detection and surfacing, not the reply. Our
+              AI catches the cancellation, classifies why, and gets the
+              case in front of you fast &mdash; without that, the customer
+              would&rsquo;ve been just another quiet churn in your Stripe
+              dashboard. The conversation you have with them is yours;
+              we&rsquo;re charging for the pipeline that made that
+              conversation possible.
+            </p>
+            <p className="mt-3">
+              Same logic when you pause our AI to handle a subscriber
+              yourself.
+            </p>
+          </>
+        ),
+      },
+      {
+        q: 'What if someone reactivates without us doing anything?',
+        a: (
+          <>
+            <p>No bill if we did nothing. That covers:</p>
+            <ul className="mt-3 space-y-2 list-disc pl-5">
+              <li>
+                <strong>Organic</strong> &mdash; they came back on their
+                own. No email engagement, no handoff, no pause.
+              </li>
+              <li>
+                <strong>Weak</strong> &mdash; we sent an email but they
+                didn&rsquo;t click, didn&rsquo;t reply, and we didn&rsquo;t
+                escalate.
+              </li>
+            </ul>
+            <p className="mt-3">
+              Both still count as recoveries in your dashboard &mdash;
+              that&rsquo;s the full picture of what came back. The fee
+              fires only when we can point to a verifiable trigger
+              (click, reply, handoff, or pause).
+            </p>
+          </>
         ),
       },
       {
