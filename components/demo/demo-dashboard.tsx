@@ -84,26 +84,28 @@ interface Pipeline30d {
 // like a healthy SaaS at ~$30K MRR with realistic monthly churn.
 // ─────────────────────────────────────────────────────────────────────────
 
+// Win-back at industry-realistic ~20% recovery rate (voluntary cancellations
+// are HARD to recover — customer made a deliberate choice to leave).
 const WINBACK_PIPELINE: Pipeline30d = {
-  churnedMrrCents:    942000,  // $9,420
-  recoveredMrrCents:  482000,  // $4,820
-  inFlightMrrCents:   320000,  // $3,200
-  lostMrrCents:       140000,  // $1,400
+  churnedMrrCents:   1000000,  // $10,000
+  recoveredMrrCents:  200000,  // $2,000  (20%)
+  inFlightMrrCents:   500000,  // $5,000
+  lostMrrCents:       300000,  // $3,000
 }
 
 const WINBACK_KPI = {
-  recoveryRate30d:        51,
-  recoveredLifetime:      47,
-  cumulativeRevenueCents: 1245000,  // $12,450 lifetime saved
-  activeMrrCents:         89000,    // $890/mo currently active
-  inProgress:             8,
+  recoveryRate30d:        20,
+  recoveredLifetime:      35,
+  cumulativeRevenueCents: 980000,   // $9,800 lifetime saved
+  activeMrrCents:         76000,    // $760/mo currently active
+  inProgress:             12,
   handoffsNeedingAttention: 3,
-  recoveredThisMonth:     8,
-  recoveredLastMonth:     5,
-  mrrThisMonthCents:      89000,
-  mrrLastMonthCents:      63000,
-  // Sparkline — 30-day daily recovered count, upward trend.
-  dailyRecovered: [0, 0, 1, 0, 0, 1, 1, 0, 1, 0, 1, 1, 0, 1, 0, 1, 1, 1, 0, 1, 1, 1, 0, 1, 2, 1, 1, 2, 1, 2],
+  recoveredThisMonth:     4,
+  recoveredLastMonth:     3,
+  mrrThisMonthCents:      36000,
+  mrrLastMonthCents:      28000,
+  // Sparkline — 30-day daily recovered count, gentle upward trend.
+  dailyRecovered: [0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 0, 1, 0, 1, 0, 0, 1, 0, 1, 0, 1, 1],
 }
 
 const WINBACK_TOP_REASONS = [
@@ -114,7 +116,7 @@ const WINBACK_TOP_REASONS = [
 ]
 
 const WINBACK_FILTER_COUNTS = {
-  all: 15, handoff: 3, hasReply: 2, paused: 1, recovered: 5, done: 4,
+  all: 15, handoff: 3, hasReply: 2, paused: 1, recovered: 3, done: 7,
 }
 
 const WINBACK_ROWS: WinBackRow[] = [
@@ -154,7 +156,7 @@ const WINBACK_ROWS: WinBackRow[] = [
     cancellationReason: 'Missing per-segment dashboards',
     cancellationCategory: 'Feature',
     tier: 2,
-    status: 'recovered',
+    status: 'contacted',
   },
   {
     id: 'wb-4',
@@ -191,7 +193,7 @@ const WINBACK_ROWS: WinBackRow[] = [
     cancellationReason: 'Slow query performance on big datasets',
     cancellationCategory: 'Quality',
     tier: 2,
-    status: 'recovered',
+    status: 'lost',
   },
   {
     id: 'wb-7',
@@ -229,7 +231,7 @@ const WINBACK_ROWS: WinBackRow[] = [
     cancellationReason: 'Need SAML SSO for our compliance review',
     cancellationCategory: 'Feature',
     tier: 3,
-    status: 'recovered',
+    status: 'lost',
   },
   {
     id: 'wb-10',
@@ -265,7 +267,7 @@ const WINBACK_ROWS: WinBackRow[] = [
     cancellationReason: 'Workflow doesn’t match our team’s ops',
     cancellationCategory: 'Other',
     tier: 2,
-    status: 'recovered',
+    status: 'lost',
   },
 ]
 
@@ -276,24 +278,28 @@ const WINBACK_SELECTED_ID = 'wb-2'
 
 // ─────────────────────────────────────────────────────────────────────────
 
+// Payment recovery at industry-realistic ~80% rate. Failed payments are
+// involuntary — the customer wanted to stay, the card just broke.
+// Stripe Smart Retries + a one-click update-payment email together
+// recover the vast majority.
 const PAYMENT_PIPELINE: Pipeline30d = {
   churnedMrrCents:    720000,  // $7,200
-  recoveredMrrCents:  450000,  // $4,500
-  inFlightMrrCents:   230000,  // $2,300
-  lostMrrCents:        40000,  // $400
+  recoveredMrrCents:  580000,  // $5,800  (~80%)
+  inFlightMrrCents:   120000,  // $1,200
+  lostMrrCents:        20000,  // $200
 }
 
 const PAYMENT_KPI = {
-  recoveryRate30d:        63,
-  recoveredLifetime:      89,
-  cumulativeRevenueCents: 1482000,  // $14,820 lifetime saved
-  activeMrrCents:         120000,   // $1,200/mo currently active
-  inDunning:              12,
-  recoveredThisMonth:     14,
-  recoveredLastMonth:     11,
-  mrrThisMonthCents:      120000,
-  mrrLastMonthCents:      94000,
-  dailyRecovered: [1, 0, 1, 1, 2, 1, 0, 1, 2, 1, 1, 2, 1, 0, 1, 1, 2, 2, 1, 1, 0, 2, 1, 1, 2, 1, 2, 1, 1, 2],
+  recoveryRate30d:        80,
+  recoveredLifetime:      124,
+  cumulativeRevenueCents: 1950000,  // $19,500 lifetime saved
+  activeMrrCents:         158000,   // $1,580/mo currently active
+  inDunning:              6,
+  recoveredThisMonth:     18,
+  recoveredLastMonth:     14,
+  mrrThisMonthCents:      158000,
+  mrrLastMonthCents:      125000,
+  dailyRecovered: [1, 1, 2, 1, 2, 2, 1, 2, 2, 1, 2, 3, 1, 1, 2, 2, 3, 2, 1, 2, 1, 2, 2, 3, 2, 2, 3, 1, 2, 3],
 }
 
 const PAYMENT_TOP_DECLINES = [
@@ -304,22 +310,23 @@ const PAYMENT_TOP_DECLINES = [
 ]
 
 const PAYMENT_FILTER_COUNTS = {
-  all: 14, inRetry: 8, finalRetry: 3, recovered: 5, lost: 2,
+  all: 14, inRetry: 2, finalRetry: 1, recovered: 11, lost: 0,
 }
 
 const PAYMENT_ROWS: PaymentRow[] = [
   // Active retries first (sorted by next-retry urgency in the real product).
+  // At ~80% recovery, only a handful are still in flight at any time.
   { id: 'pr-1',  name: 'Ava Rivera',       email: 'ava@thirdcoffee.co',         planName: 'Starter',  mrrCents: 2900,  failedAt: '2026-04-30', declineCode: 'do_not_honor',       status: 'pending', dunningState: 'awaiting_retry',      dunningTouchCount: 2 },
   { id: 'pr-2',  name: 'Ethan Morales',    email: 'ethan.m@yarrow.so',          planName: 'Growth',   mrrCents: 8900,  failedAt: '2026-04-27', declineCode: 'insufficient_funds', status: 'pending', dunningState: 'final_retry_pending', dunningTouchCount: 3 },
   { id: 'pr-3',  name: 'Alex Morales',     email: 'alex@midmornin.com',         planName: 'Growth',   mrrCents: 8900,  failedAt: '2026-04-29', declineCode: 'expired_card',       status: 'pending', dunningState: 'awaiting_retry',      dunningTouchCount: 2 },
-  { id: 'pr-4',  name: 'Reese Kim',        email: 'reese@stickleback.tech',     planName: 'Pro',      mrrCents: 14900, failedAt: '2026-04-26', declineCode: 'expired_card',       status: 'pending', dunningState: 'final_retry_pending', dunningTouchCount: 3 },
-  { id: 'pr-5',  name: 'Liam Cohen',       email: 'liam.c@quietbox.app',        planName: 'Starter',  mrrCents: 1900,  failedAt: '2026-04-28', declineCode: 'insufficient_funds', status: 'pending', dunningState: 'awaiting_retry',      dunningTouchCount: 2 },
-  { id: 'pr-6',  name: 'Reese Kim',        email: 'reese.k@pulsegrid.co',       planName: 'Growth',   mrrCents: 8900,  failedAt: '2026-05-01', declineCode: 'insufficient_funds', status: 'pending', dunningState: 'awaiting_retry',      dunningTouchCount: 2 },
-  { id: 'pr-7',  name: 'Reese Andersson',  email: 'reese@lumencraft.io',        planName: 'Growth',   mrrCents: 8900,  failedAt: '2026-04-25', declineCode: 'generic_decline',    status: 'pending', dunningState: 'final_retry_pending', dunningTouchCount: 3 },
-  { id: 'pr-8',  name: 'Sienna Park',      email: 'sienna@northpeak.io',        planName: 'Starter',  mrrCents: 2900,  failedAt: '2026-04-24', declineCode: 'insufficient_funds', status: 'pending', dunningState: 'awaiting_retry',      dunningTouchCount: 1 },
-  { id: 'pr-9',  name: 'Owen Brennan',     email: 'owen@yarrow.so',             planName: 'Pro',      mrrCents: 14900, failedAt: '2026-04-23', declineCode: 'insufficient_funds', status: 'pending', dunningState: 'awaiting_retry',      dunningTouchCount: 2 },
-  { id: 'pr-10', name: 'Mira Patel',       email: 'mira@thirdcoffee.co',        planName: 'Growth',   mrrCents: 8900,  failedAt: '2026-04-22', declineCode: 'expired_card',       status: 'pending', dunningState: 'awaiting_retry',      dunningTouchCount: 1 },
-  // Recovered + lost at the bottom.
+  // Recovered — the bulk of the cohort.
+  { id: 'pr-4',  name: 'Reese Kim',        email: 'reese@stickleback.tech',     planName: 'Pro',      mrrCents: 14900, failedAt: '2026-04-26', declineCode: 'expired_card',       status: 'recovered', dunningState: 'recovered_during_dunning' },
+  { id: 'pr-5',  name: 'Liam Cohen',       email: 'liam.c@quietbox.app',        planName: 'Starter',  mrrCents: 1900,  failedAt: '2026-04-28', declineCode: 'insufficient_funds', status: 'recovered', dunningState: 'recovered_during_dunning' },
+  { id: 'pr-6',  name: 'Reese Kim',        email: 'reese.k@pulsegrid.co',       planName: 'Growth',   mrrCents: 8900,  failedAt: '2026-05-01', declineCode: 'insufficient_funds', status: 'recovered', dunningState: 'recovered_during_dunning' },
+  { id: 'pr-7',  name: 'Reese Andersson',  email: 'reese@lumencraft.io',        planName: 'Growth',   mrrCents: 8900,  failedAt: '2026-04-25', declineCode: 'generic_decline',    status: 'recovered', dunningState: 'recovered_during_dunning' },
+  { id: 'pr-8',  name: 'Sienna Park',      email: 'sienna@northpeak.io',        planName: 'Starter',  mrrCents: 2900,  failedAt: '2026-04-24', declineCode: 'insufficient_funds', status: 'recovered', dunningState: 'recovered_during_dunning' },
+  { id: 'pr-9',  name: 'Owen Brennan',     email: 'owen@yarrow.so',             planName: 'Pro',      mrrCents: 14900, failedAt: '2026-04-23', declineCode: 'insufficient_funds', status: 'recovered', dunningState: 'recovered_during_dunning' },
+  { id: 'pr-10', name: 'Mira Patel',       email: 'mira@thirdcoffee.co',        planName: 'Growth',   mrrCents: 8900,  failedAt: '2026-04-22', declineCode: 'expired_card',       status: 'recovered', dunningState: 'recovered_during_dunning' },
   { id: 'pr-11', name: 'Ava Morales',      email: 'ava@thirdcoffee.co',         planName: 'Starter',  mrrCents: 4900,  failedAt: '2026-04-26', declineCode: 'do_not_honor',       status: 'recovered', dunningState: 'recovered_during_dunning' },
   { id: 'pr-12', name: 'Taylor Brennan',   email: 'taylor.b@quietbox.app',      planName: 'Starter',  mrrCents: 1900,  failedAt: '2026-04-22', declineCode: 'insufficient_funds', status: 'recovered', dunningState: 'recovered_during_dunning' },
   { id: 'pr-13', name: 'Casey Okafor',     email: 'casey@lumencraft.io',        planName: 'Starter',  mrrCents: 1900,  failedAt: '2026-04-13', declineCode: 'expired_card',       status: 'recovered', dunningState: 'recovered_during_dunning' },

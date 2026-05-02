@@ -51,9 +51,11 @@ export default function WinBackDemoPage() {
           </div>
           <ul className="space-y-3 text-sm text-slate-600 leading-relaxed">
             <li>
-              <strong className="text-slate-900">Pipeline strip</strong> (top): of the $9,420 you&rsquo;d lose this
-              month to cancellations, $4,820 is already recovered, $3,200 is
-              still in play, only $1,400 lost.
+              <strong className="text-slate-900">Pipeline strip</strong> (top): of the $10,000 in monthly
+              cancellations, $2,000 already recovered, $5,000 still in
+              play, $3,000 lost. Voluntary win-back is hard &mdash; ~20%
+              recovery is industry-standard, and the in-flight number
+              tells you what&rsquo;s still possible.
             </li>
             <li>
               <strong className="text-slate-900">Drawer</strong> (right): every cancellation is classified by reason,

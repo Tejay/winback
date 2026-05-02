@@ -51,8 +51,10 @@ export default function PaymentRecoveryDemoPage() {
           <ul className="space-y-3 text-sm text-slate-600 leading-relaxed">
             <li>
               <strong className="text-slate-900">Pipeline strip</strong> (top): of $7,200 in failed payments this
-              month, $4,500 already saved. The rest are in active retry &mdash;
-              you&rsquo;ll see most of them resolve within two weeks.
+              month, $5,800 already saved &mdash; ~80% recovery is typical
+              for involuntary churn (the customer wanted to stay, the card
+              just broke). The remaining $1,200 is still in active retry;
+              most resolve within two weeks.
             </li>
             <li>
               <strong className="text-slate-900">Decline codes</strong> (pattern strip): the top reasons cards fail in
