@@ -78,6 +78,13 @@ interface PaymentFilterCounts {
   recovered: number
   lost: number
 }
+// Spec 43 — pipeline strip per cohort.
+interface Pipeline30d {
+  churnedMrrCents: number
+  recoveredMrrCents: number
+  inFlightMrrCents: number
+  lostMrrCents: number
+}
 interface Stats {
   // Spec 41 — same lifetime number on both cohorts (cached on the customer row).
   cumulativeRevenueSavedCents: number
@@ -91,6 +98,7 @@ interface Stats {
     topReasons: LabelPct[]
     filterCounts: WinBackFilterCounts
     dailyRecovered: number[]
+    pipeline30d: Pipeline30d
   }
   paymentRecovery: {
     thisMonth: Bucket
@@ -100,10 +108,17 @@ interface Stats {
     topDeclineCodes: LabelPct[]
     filterCounts: PaymentFilterCounts
     dailyRecovered: number[]
+    pipeline30d: Pipeline30d
   }
 }
 
 const EMPTY_BUCKET: Bucket = { recovered: 0, mrrRecoveredCents: 0 }
+const EMPTY_PIPELINE: Pipeline30d = {
+  churnedMrrCents: 0,
+  recoveredMrrCents: 0,
+  inFlightMrrCents: 0,
+  lostMrrCents: 0,
+}
 const EMPTY_STATS: Stats = {
   cumulativeRevenueSavedCents: 0,
   cumulativeRevenueLastComputedAt: null,
@@ -116,6 +131,7 @@ const EMPTY_STATS: Stats = {
     topReasons: [],
     filterCounts: { all: 0, handoff: 0, 'has-reply': 0, paused: 0, recovered: 0, done: 0 },
     dailyRecovered: [],
+    pipeline30d: EMPTY_PIPELINE,
   },
   paymentRecovery: {
     thisMonth: EMPTY_BUCKET,
@@ -125,6 +141,7 @@ const EMPTY_STATS: Stats = {
     topDeclineCodes: [],
     filterCounts: { all: 0, 'in-retry': 0, 'final-retry': 0, recovered: 0, lost: 0 },
     dailyRecovered: [],
+    pipeline30d: EMPTY_PIPELINE,
   },
 }
 
@@ -524,9 +541,30 @@ export function DashboardClient({
         </button>
       </div>
 
-      {/* Spec 40 — Win-back tab: KPI row, attention alert, pattern strip */}
+      {/* Spec 40/43 — Win-back tab. Reading order top→bottom:
+          handoff alert (act now) → pipeline strip (loss framing) →
+          KPI band → pattern strip → subscriber table. */}
       {tab === 'winback' && (
         <>
+          {stats.winBack.handoffsNeedingAttention > 0 && (
+            <div className="mb-4 flex items-center justify-between gap-3 bg-amber-50 border border-amber-200 rounded-2xl px-5 py-3">
+              <div className="flex items-center gap-2 text-sm">
+                <span className="bg-amber-100 text-amber-700 rounded-full w-6 h-6 flex items-center justify-center text-xs font-bold">
+                  !
+                </span>
+                <span className="font-medium text-amber-900">
+                  {stats.winBack.handoffsNeedingAttention} subscriber{stats.winBack.handoffsNeedingAttention === 1 ? '' : 's'} need{stats.winBack.handoffsNeedingAttention === 1 ? 's' : ''} your attention
+                </span>
+              </div>
+              <button
+                onClick={() => setWinbackFilter('handoff')}
+                className="text-sm font-medium text-amber-900 hover:text-amber-700"
+              >
+                Resolve queue →
+              </button>
+            </div>
+          )}
+          <PipelineStrip pipeline={stats.winBack.pipeline30d} />
           {/* KPI row — blue tint background */}
           <section className="rounded-3xl bg-blue-100 border border-blue-200 p-3 mb-7">
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
@@ -568,33 +606,17 @@ export function DashboardClient({
               />
             </div>
           </section>
-          {stats.winBack.handoffsNeedingAttention > 0 && (
-            <div className="mb-4 flex items-center justify-between gap-3 bg-amber-50 border border-amber-200 rounded-2xl px-5 py-3">
-              <div className="flex items-center gap-2 text-sm">
-                <span className="bg-amber-100 text-amber-700 rounded-full w-6 h-6 flex items-center justify-center text-xs font-bold">
-                  !
-                </span>
-                <span className="font-medium text-amber-900">
-                  {stats.winBack.handoffsNeedingAttention} subscriber{stats.winBack.handoffsNeedingAttention === 1 ? '' : 's'} need{stats.winBack.handoffsNeedingAttention === 1 ? 's' : ''} your attention
-                </span>
-              </div>
-              <button
-                onClick={() => setWinbackFilter('handoff')}
-                className="text-sm font-medium text-amber-900 hover:text-amber-700"
-              >
-                Resolve queue →
-              </button>
-            </div>
-          )}
           {stats.winBack.topReasons.length > 0 && (
             <PatternPills items={stats.winBack.topReasons} />
           )}
         </>
       )}
 
-      {/* Spec 40 — Payment-recovery tab: KPI row, summary band, pattern strip */}
+      {/* Spec 40/43 — Payment-recovery tab. No handoff alert (win-back only).
+          Reading order: pipeline strip → KPI band → pattern strip → table. */}
       {tab === 'paymentRecovery' && (
         <>
+          <PipelineStrip pipeline={stats.paymentRecovery.pipeline30d} />
           {/* KPI row — green tint background */}
           <section className="rounded-3xl bg-green-100 border border-green-200 p-3 mb-7">
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
@@ -1400,6 +1422,62 @@ function PatternPills({ items }: { items: Array<{ label: string; pct: number }> 
           </span>
         )
       })}
+    </div>
+  )
+}
+
+/**
+ * Spec 43 — Loss-framing pipeline strip. Sits above the KPI band on
+ * each tab. Tells the merchant "of $X churned in the last 30 days,
+ * here's the recovered/in-flight/lost breakdown" — same numbers as
+ * other dashboard surfaces, framed as defense against quantified loss
+ * rather than additive savings.
+ *
+ * Visual: three labeled $ amounts (subtle color per type) with a
+ * thin proportional bar below showing the split. The bar makes the
+ * loss-framing land viscerally — the eye sees the rose chunk before
+ * reading any number. Tonally muted (200/300-weight colors, no
+ * border) so it stays quieter than the KPI band.
+ *
+ * Hidden when the cohort has zero churn in the window (don't render
+ * "$0 churned" — looks broken on a brand-new tenant).
+ *
+ * In-flight comes pre-computed from the API (churned − recovered −
+ * lost, clamped ≥0) so the math always balances client-side. The
+ * proportional bar uses raw cents as flex-grow values so segments
+ * size correctly without explicit percentage math (and the right
+ * edge stays flush — no rounding-induced gaps).
+ */
+function PipelineStrip({ pipeline }: { pipeline: Pipeline30d }) {
+  if (pipeline.churnedMrrCents === 0) return null
+  const fmt = (cents: number) => `$${Math.round(cents / 100).toLocaleString()}`
+  return (
+    <div className="mb-4 bg-slate-50 rounded-2xl px-5 py-3.5">
+      <div className="flex flex-wrap items-baseline justify-between gap-y-1 gap-x-4 text-xs tabular-nums mb-2.5">
+        <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+          <span className="text-emerald-700">
+            <span className="font-semibold">{fmt(pipeline.recoveredMrrCents)}</span>
+            {' '}recovered
+          </span>
+          <span className="text-amber-700">
+            <span className="font-semibold">{fmt(pipeline.inFlightMrrCents)}</span>
+            {' '}in flight
+          </span>
+          <span className="text-rose-700">
+            <span className="font-semibold">{fmt(pipeline.lostMrrCents)}</span>
+            {' '}lost
+          </span>
+        </div>
+        <span className="text-slate-500">
+          <span className="font-semibold">{fmt(pipeline.churnedMrrCents)}</span>
+          {' '}· 30d
+        </span>
+      </div>
+      <div className="flex h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+        <div className="bg-emerald-300" style={{ flexGrow: pipeline.recoveredMrrCents }} />
+        <div className="bg-amber-300" style={{ flexGrow: pipeline.inFlightMrrCents }} />
+        <div className="bg-rose-300" style={{ flexGrow: pipeline.lostMrrCents }} />
+      </div>
     </div>
   )
 }
