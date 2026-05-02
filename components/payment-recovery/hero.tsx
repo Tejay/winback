@@ -13,9 +13,10 @@ export function Hero() {
           Card failures don&apos;t have to cost you customers.
         </h1>
         <p className="mt-5 text-base sm:text-lg text-slate-600 leading-relaxed">
-          The average subscription business loses 5–7% of MRR every year to involuntary churn — payment failures that quietly remove customers who would have stayed.{' '}
-          <span className="text-slate-900 font-medium">Winback recovers it automatically.</span>{' '}
-          Three perfectly-timed emails, decline-aware coaching, and a one-tap update flow built around Apple Pay, Google Pay, and Link — not just card.
+          The average subscription business loses 5&ndash;7% of MRR every
+          year to involuntary churn &mdash; payment failures that quietly
+          remove customers who would have stayed.{' '}
+          <span className="text-slate-900 font-medium">Winback recovers it automatically.</span>
         </p>
       </div>
     </section>
