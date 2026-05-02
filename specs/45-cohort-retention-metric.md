@@ -1,5 +1,10 @@
 # Spec 45 — Cohort retention: are recovered customers sticking?
 
+> **Status: Deferred indefinitely (2026-05-02).** Captured for future
+> reference; not on the implementation roadmap. Founder review:
+> not necessary right now. Revive by removing this block when
+> priorities shift.
+
 **Phase:** Dashboard depth — answers a question merchants WILL ask
 **Depends on:** Spec 41 (cumulative revenue saved — establishes the
 recovery+lifecycle data plumbing this spec extends)

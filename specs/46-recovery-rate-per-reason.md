@@ -1,5 +1,10 @@
 # Spec 46 — Recovery rate per cancellation reason (AI feedback loop)
 
+> **Status: Deferred indefinitely (2026-05-02).** Captured for future
+> reference; not on the implementation roadmap. Founder review:
+> not necessary right now. Revive by removing this block when
+> priorities shift.
+
 **Phase:** Dashboard depth — diagnostic for both merchant and product
 **Depends on:** Spec 40 (pattern strip — establishes the
 cancellationCategory aggregation we extend), Spec 19b (categories
