@@ -53,6 +53,14 @@ type PaymentFilterCounts = {
   recovered: number
   lost: number
 }
+// Spec 43 — pipeline strip per cohort. churned = recovered + inFlight +
+// lost (math always balances; inFlight computed in JS as the residual).
+type Pipeline30d = {
+  churnedMrrCents: number
+  recoveredMrrCents: number
+  inFlightMrrCents: number
+  lostMrrCents: number
+}
 type Stats = {
   // Spec 41 — same lifetime number applies to both cohorts (cached on the
   // customer row). Surfaced at the top level so the dashboard reads it once.
@@ -67,6 +75,7 @@ type Stats = {
     topReasons: LabelPct[]
     filterCounts: WinBackFilterCounts          // Spec 40 polish
     dailyRecovered: number[]                   // Spec 40 polish — 30d sparkline
+    pipeline30d: Pipeline30d                   // Spec 43
   }
   paymentRecovery: {
     thisMonth: Bucket
@@ -76,6 +85,26 @@ type Stats = {
     topDeclineCodes: LabelPct[]
     filterCounts: PaymentFilterCounts          // Spec 40 polish
     dailyRecovered: number[]                   // Spec 40 polish — 30d sparkline
+    pipeline30d: Pipeline30d                   // Spec 43
+  }
+}
+
+// Spec 43 — Compute the in-flight residual safely. churned − recovered −
+// lost can theoretically go negative under data weirdness; clamp to 0
+// so we never render a negative dollar amount.
+function buildPipeline(
+  churned: unknown,
+  recovered: unknown,
+  lost: unknown,
+): Pipeline30d {
+  const c = Number(churned)
+  const r = Number(recovered)
+  const l = Number(lost)
+  return {
+    churnedMrrCents: c,
+    recoveredMrrCents: r,
+    lostMrrCents: l,
+    inFlightMrrCents: Math.max(0, c - r - l),
   }
 }
 
@@ -297,6 +326,14 @@ export async function GET() {
       // 30-day recovery rate. Anchor on cancelledAt for win-back rows.
       cohort30d: sql<number>`count(*) filter (where ${churnedSubscribers.cancelledAt} >= ${patternWindowStart})::int`.as('cohort_30d'),
       recovered30d: sql<number>`count(*) filter (where ${churnedSubscribers.cancelledAt} >= ${patternWindowStart} and ${churnedSubscribers.status} = 'recovered')::int`.as('recovered_30d'),
+      // Spec 43 — pipeline strip MRR sums (last 30 days). In-flight is
+      // computed in JS (churned − recovered − lost) so the math always
+      // balances. Lost bucket matches Spec 40's "Done" filter chip
+      // semantics (skipped + doNotContact roll up under lost from a
+      // billing-perspective; Winback won't pursue them further).
+      pipelineChurnedMrrCents: sql<number>`coalesce(sum(${churnedSubscribers.mrrCents}) filter (where ${churnedSubscribers.cancelledAt} >= ${patternWindowStart}), 0)::bigint`.as('pipeline_churned_mrr'),
+      pipelineRecoveredMrrCents: sql<number>`coalesce(sum(${churnedSubscribers.mrrCents}) filter (where ${churnedSubscribers.cancelledAt} >= ${patternWindowStart} and ${churnedSubscribers.status} = 'recovered'), 0)::bigint`.as('pipeline_recovered_mrr'),
+      pipelineLostMrrCents: sql<number>`coalesce(sum(${churnedSubscribers.mrrCents}) filter (where ${churnedSubscribers.cancelledAt} >= ${patternWindowStart} and (${churnedSubscribers.status} in ('lost','skipped') or ${churnedSubscribers.doNotContact} = true)), 0)::bigint`.as('pipeline_lost_mrr'),
     })
     .from(churnedSubscribers)
     .where(winBackBaseWhere)
@@ -318,6 +355,11 @@ export async function GET() {
       // first saw the failed-payment webhook).
       cohort30d: sql<number>`count(*) filter (where ${churnedSubscribers.createdAt} >= ${patternWindowStart})::int`.as('cohort_30d'),
       recovered30d: sql<number>`count(*) filter (where ${churnedSubscribers.createdAt} >= ${patternWindowStart} and ${churnedSubscribers.status} = 'recovered')::int`.as('recovered_30d'),
+      // Spec 43 — pipeline strip MRR sums (last 30 days). Lost bucket
+      // matches Spec 40's payment-recovery filter chip semantics.
+      pipelineChurnedMrrCents: sql<number>`coalesce(sum(${churnedSubscribers.mrrCents}) filter (where ${churnedSubscribers.createdAt} >= ${patternWindowStart}), 0)::bigint`.as('pipeline_churned_mrr'),
+      pipelineRecoveredMrrCents: sql<number>`coalesce(sum(${churnedSubscribers.mrrCents}) filter (where ${churnedSubscribers.createdAt} >= ${patternWindowStart} and ${churnedSubscribers.status} = 'recovered'), 0)::bigint`.as('pipeline_recovered_mrr'),
+      pipelineLostMrrCents: sql<number>`coalesce(sum(${churnedSubscribers.mrrCents}) filter (where ${churnedSubscribers.createdAt} >= ${patternWindowStart} and (${churnedSubscribers.dunningState} = 'churned_during_dunning' or ${churnedSubscribers.status} = 'lost')), 0)::bigint`.as('pipeline_lost_mrr'),
     })
     .from(churnedSubscribers)
     .where(paymentBaseWhere)
@@ -380,6 +422,11 @@ export async function GET() {
       topReasons,
       filterCounts: winBackFilterCounts,
       dailyRecovered: winBackDailyRecovered,
+      pipeline30d: buildPipeline(
+        wbCounts.pipelineChurnedMrrCents,
+        wbCounts.pipelineRecoveredMrrCents,
+        wbCounts.pipelineLostMrrCents,
+      ),
     },
     paymentRecovery: {
       thisMonth: thisMonthBuckets.payment,
@@ -395,6 +442,11 @@ export async function GET() {
       topDeclineCodes,
       filterCounts: paymentFilterCounts,
       dailyRecovered: paymentDailyRecovered,
+      pipeline30d: buildPipeline(
+        pCounts.pipelineChurnedMrrCents,
+        pCounts.pipelineRecoveredMrrCents,
+        pCounts.pipelineLostMrrCents,
+      ),
     },
   }
 
