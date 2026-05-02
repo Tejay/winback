@@ -93,6 +93,12 @@ export async function GET() {
 
   const monthStart = startOfMonthUtc()
   const prevMonthStart = startOfPrevMonthUtc()
+  // Spec 40 fix — pattern strips use a rolling 30-day window instead of
+  // the calendar month. Calendar-month scope was misleading on day 1–3
+  // of any month: a 1-row sample would render as "100%" even though the
+  // table below shows a clear mix. Rolling window smooths this out and
+  // matches what merchants mean by "recent patterns."
+  const patternWindowStart = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
 
   // Aggregate recoveries — three queries (this-month / last-month / all-
   // time), each grouped by recoveryType only. Single combined query was
@@ -153,31 +159,11 @@ export async function GET() {
   // 'Payment failed' parameter twice (SELECT alias + GROUP BY) which
   // Postgres rejects as "column must appear in GROUP BY" because the
   // placeholders are syntactically distinct.
-  const [{ count: paymentLostRaw }] = await db
-    .select({ count: sql<number>`count(*)::int`.as('count') })
-    .from(churnedSubscribers)
-    .where(
-      and(
-        eq(churnedSubscribers.customerId, customer.id),
-        eq(churnedSubscribers.status, 'lost'),
-        eq(churnedSubscribers.cancellationReason, DUNNING_REASON),
-      ),
-    )
-  const [{ count: winBackLostRaw }] = await db
-    .select({ count: sql<number>`count(*)::int`.as('count') })
-    .from(churnedSubscribers)
-    .where(
-      and(
-        eq(churnedSubscribers.customerId, customer.id),
-        eq(churnedSubscribers.status, 'lost'),
-        or(
-          ne(churnedSubscribers.cancellationReason, DUNNING_REASON),
-          isNull(churnedSubscribers.cancellationReason),
-        ),
-      ),
-    )
-  const paymentLost = Number(paymentLostRaw)
-  const winBackLost = Number(winBackLostRaw)
+  // Spec 39 amendment (2026-05-02) — recovery rate is now computed as
+  // `recovered_in_30d / cohort_in_30d`, not `recovered / (recovered +
+  // lost)`. The cohort denominator + 30d window are computed inside the
+  // wbCounts/pCounts queries below (cohort30d / recovered30d filter
+  // columns), so no separate "lost" queries are needed.
 
   // Current-state counters (no time window).
   const [{ count: inProgress }] = await db
@@ -225,7 +211,9 @@ export async function GET() {
       ),
     )
 
-  // Spec 40 — Win-back: top cancellation categories this month.
+  // Spec 40 — Win-back: top cancellation categories in the last 30 days.
+  // `minTotal: 3` hides the strip when sample size would make any
+  // percentage misleading (a 1-row sample would otherwise read "100%").
   const winBackReasonRows = await db
     .select({
       label: churnedSubscribers.cancellationCategory,
@@ -235,7 +223,7 @@ export async function GET() {
     .where(
       and(
         eq(churnedSubscribers.customerId, customer.id),
-        gte(churnedSubscribers.cancelledAt, monthStart),
+        gte(churnedSubscribers.cancelledAt, patternWindowStart),
         or(
           ne(churnedSubscribers.cancellationReason, DUNNING_REASON),
           isNull(churnedSubscribers.cancellationReason),
@@ -247,13 +235,14 @@ export async function GET() {
   const topReasons = topNFromCounts(
     winBackReasonRows.map((r) => ({ label: r.label, count: Number(r.count) })),
     4,
+    { minTotal: 3 },
   )
 
-  // Spec 40 — Payment-recovery: top decline codes this month.
+  // Spec 40 — Payment-recovery: top decline codes in the last 30 days.
   // Time anchor is createdAt — payment-recovery rows are inserted by the
   // payment_failed webhook and never have cancelledAt populated (that
   // column is for voluntary-cancel rows). createdAt is the moment we
-  // first saw the failure, which is the right "this month" semantics.
+  // first saw the failure, which is the right "recent" semantics.
   const declineCodeRows = await db
     .select({
       label: churnedSubscribers.lastDeclineCode,
@@ -264,7 +253,7 @@ export async function GET() {
       and(
         eq(churnedSubscribers.customerId, customer.id),
         eq(churnedSubscribers.cancellationReason, DUNNING_REASON),
-        gte(churnedSubscribers.createdAt, monthStart),
+        gte(churnedSubscribers.createdAt, patternWindowStart),
       ),
     )
     .groupBy(churnedSubscribers.lastDeclineCode)
@@ -272,6 +261,7 @@ export async function GET() {
   const topDeclineCodes = topNFromCounts(
     declineCodeRows.map((r) => ({ label: r.label, count: Number(r.count) })),
     4,
+    { minTotal: 3 },
   )
 
   // Spec 40 polish — filter-chip counts. One query per cohort with
@@ -295,6 +285,10 @@ export async function GET() {
       paused: sql<number>`count(*) filter (where ${churnedSubscribers.aiPausedUntil} is not null and ${churnedSubscribers.aiPausedUntil} > now())::int`.as('paused'),
       recovered: sql<number>`count(*) filter (where ${churnedSubscribers.status} = 'recovered')::int`.as('recovered'),
       done: sql<number>`count(*) filter (where ${churnedSubscribers.status} in ('lost','skipped') or ${churnedSubscribers.doNotContact} = true)::int`.as('done'),
+      // Spec 39 amendment — denominator + numerator for the rolling
+      // 30-day recovery rate. Anchor on cancelledAt for win-back rows.
+      cohort30d: sql<number>`count(*) filter (where ${churnedSubscribers.cancelledAt} >= ${patternWindowStart})::int`.as('cohort_30d'),
+      recovered30d: sql<number>`count(*) filter (where ${churnedSubscribers.cancelledAt} >= ${patternWindowStart} and ${churnedSubscribers.status} = 'recovered')::int`.as('recovered_30d'),
     })
     .from(churnedSubscribers)
     .where(winBackBaseWhere)
@@ -310,6 +304,12 @@ export async function GET() {
       finalRetry: sql<number>`count(*) filter (where ${churnedSubscribers.dunningState} = 'final_retry_pending')::int`.as('final_retry'),
       recovered: sql<number>`count(*) filter (where ${churnedSubscribers.status} = 'recovered')::int`.as('recovered'),
       lost: sql<number>`count(*) filter (where ${churnedSubscribers.dunningState} = 'churned_during_dunning' or ${churnedSubscribers.status} = 'lost')::int`.as('lost'),
+      // Spec 39 amendment — denominator + numerator for the rolling
+      // 30-day recovery rate. Payment-recovery rows don't have
+      // cancelledAt populated, so anchor on createdAt (the moment we
+      // first saw the failed-payment webhook).
+      cohort30d: sql<number>`count(*) filter (where ${churnedSubscribers.createdAt} >= ${patternWindowStart})::int`.as('cohort_30d'),
+      recovered30d: sql<number>`count(*) filter (where ${churnedSubscribers.createdAt} >= ${patternWindowStart} and ${churnedSubscribers.status} = 'recovered')::int`.as('recovered_30d'),
     })
     .from(churnedSubscribers)
     .where(paymentBaseWhere)
@@ -358,7 +358,10 @@ export async function GET() {
       lastMonth: lastMonthBuckets.winBack,
       allTime: {
         ...allTimeBuckets.winBack,
-        recoveryRate: recoveryRatePct(allTimeBuckets.winBack.recovered, winBackLost),
+        recoveryRate: recoveryRatePct(
+          Number(wbCounts.recovered30d),
+          Number(wbCounts.cohort30d),
+        ),
       },
       inProgress: Number(inProgress),
       handoffsNeedingAttention: Number(handoffsNeedingAttention),
@@ -371,7 +374,10 @@ export async function GET() {
       lastMonth: lastMonthBuckets.payment,
       allTime: {
         ...allTimeBuckets.payment,
-        recoveryRate: recoveryRatePct(allTimeBuckets.payment.recovered, paymentLost),
+        recoveryRate: recoveryRatePct(
+          Number(pCounts.recovered30d),
+          Number(pCounts.cohort30d),
+        ),
       },
       inDunning: Number(inDunning),
       topDeclineCodes,

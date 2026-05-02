@@ -84,27 +84,33 @@ describe('buildDailySeries', () => {
   })
 })
 
+// Spec 39 amendment (2026-05-02) — second arg changed from `lost` to
+// `cohortTotal`. The rate is now `recovered / cohortTotal`, not
+// `recovered / (recovered + lost)`. The route scopes both to a rolling
+// 30-day window. Tests updated accordingly.
 describe('recoveryRatePct', () => {
-  it('returns null when both numerator and denominator are 0', () => {
+  it('returns null when the cohort is empty (avoids 0% of 0)', () => {
     expect(recoveryRatePct(0, 0)).toBe(null)
   })
 
-  it('returns 100 when nothing has been lost', () => {
-    expect(recoveryRatePct(5, 0)).toBe(100)
-  })
-
-  it('returns 0 when nothing has been recovered', () => {
+  it('returns 0 when no one in the cohort has been recovered yet', () => {
     expect(recoveryRatePct(0, 5)).toBe(0)
   })
 
-  it('rounds to nearest integer', () => {
-    expect(recoveryRatePct(1, 2)).toBe(33)   // 33.33% → 33
-    expect(recoveryRatePct(2, 1)).toBe(67)   // 66.67% → 67
+  it('returns 100 when everyone in the cohort has been recovered', () => {
+    expect(recoveryRatePct(5, 5)).toBe(100)
   })
 
-  it('handles realistic mid-range numbers', () => {
-    expect(recoveryRatePct(24, 51)).toBe(32) // 32% — the worked example
-    expect(recoveryRatePct(89, 11)).toBe(89) // 89% — payment-recovery rate
+  it('rounds to nearest integer', () => {
+    expect(recoveryRatePct(1, 3)).toBe(33)  // 33.33% → 33
+    expect(recoveryRatePct(2, 3)).toBe(67)  // 66.67% → 67
+  })
+
+  // The bug that drove the amendment: 8 recovered out of a 22-row cohort
+  // used to display as 67% (because the old formula divided by
+  // recovered+lost = 12, not by the cohort total of 22).
+  it('produces the cohort recovery rate (8/22 = 36%, not the old 67%)', () => {
+    expect(recoveryRatePct(8, 22)).toBe(36)
   })
 })
 
@@ -291,5 +297,55 @@ describe('topNFromCounts', () => {
     expect(topNFromCounts([{ label: 'OnlyOne', count: 7 }], 4)).toEqual([
       { label: 'OnlyOne', pct: 100 },
     ])
+  })
+
+  // Spec 40 fix — sample-size guard. The pattern strip on the dashboard
+  // was showing "insufficient_funds 100%" on day 2 of a new month
+  // because exactly one row existed in the calendar-month window. The
+  // fix is two-pronged: switch to a rolling 30-day window in /api/stats
+  // (route-level), AND refuse to render percentages on a sample below
+  // some floor (helper-level, here). 3 is the floor: any single
+  // category dominating a ≥3 sample is at least mildly meaningful.
+  describe('minTotal sample-size guard', () => {
+    it('returns [] when total is below minTotal (1 row, minTotal: 3)', () => {
+      expect(
+        topNFromCounts([{ label: 'insufficient_funds', count: 1 }], 4, { minTotal: 3 }),
+      ).toEqual([])
+    })
+
+    it('returns [] when total is below minTotal (2 rows, minTotal: 3)', () => {
+      expect(
+        topNFromCounts(
+          [
+            { label: 'insufficient_funds', count: 1 },
+            { label: 'expired_card', count: 1 },
+          ],
+          4,
+          { minTotal: 3 },
+        ),
+      ).toEqual([])
+    })
+
+    it('returns top-N when total meets minTotal (3 rows, minTotal: 3)', () => {
+      expect(
+        topNFromCounts(
+          [
+            { label: 'insufficient_funds', count: 2 },
+            { label: 'expired_card', count: 1 },
+          ],
+          4,
+          { minTotal: 3 },
+        ),
+      ).toEqual([
+        { label: 'insufficient_funds', pct: 67 },
+        { label: 'expired_card', pct: 33 },
+      ])
+    })
+
+    it('default behaviour unchanged when minTotal is omitted (1-row sample renders 100%)', () => {
+      expect(topNFromCounts([{ label: 'OnlyOne', count: 1 }], 4)).toEqual([
+        { label: 'OnlyOne', pct: 100 },
+      ])
+    })
   })
 })

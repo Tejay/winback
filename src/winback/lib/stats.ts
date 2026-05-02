@@ -62,20 +62,36 @@ export function buildDailySeries(
 }
 
 /**
- * Recovery rate as a 0–100 integer. Returns null when the denominator
- * is zero (avoids the misleading "0% of 0 customers" read).
+ * Recovery rate as a 0–100 integer.
+ *
+ * Spec 39 amendment (2026-05-02) — was `recovered / (recovered + lost)`,
+ * a conversion-rate-among-decided-outcomes. That denominator excluded
+ * in-flight rows and read as broken math against the cohort table
+ * below ("8 recovered out of a 22-row cohort, but rate says 67%?").
+ *
+ * Now: pass the **cohort total** (the actual denominator the merchant
+ * sees in the table) and the recovered count out of that cohort. The
+ * route scopes both to a rolling 30-day window, so the rate is
+ * "of customers who churned in the last 30 days, X% have come back."
+ *
+ * Returns null when the cohort is empty (avoids the "0% of 0
+ * customers" read).
  */
-export function recoveryRatePct(recovered: number, lost: number): number | null {
-  const denom = recovered + lost
-  if (denom === 0) return null
-  return Math.round((recovered / denom) * 100)
+export function recoveryRatePct(
+  recovered: number,
+  cohortTotal: number,
+): number | null {
+  if (cohortTotal === 0) return null
+  return Math.round((recovered / cohortTotal) * 100)
 }
 
 /**
  * Spec 40 — Pattern-strip helper. Given a list of (label, count)
  * pairs, return the top N as percentages of the total.
  *
- * - Returns [] when there are no rows.
+ * - Returns [] when there are no rows, or when the total is below
+ *   `minTotal` (sample-size guard — avoids "100%" claims on a 1-row
+ *   sample when the strip's window is sparse).
  * - Sorts by count DESC, falls back to alphabetical for ties so the
  *   order is deterministic across renders.
  * - Drops null/empty labels (DB rows with no category yet).
@@ -85,9 +101,14 @@ export function recoveryRatePct(recovered: number, lost: number): number | null 
 export type LabelCount = { label: string | null; count: number }
 export type LabelPct = { label: string; pct: number }
 
-export function topNFromCounts(rows: LabelCount[], n: number): LabelPct[] {
+export function topNFromCounts(
+  rows: LabelCount[],
+  n: number,
+  opts: { minTotal?: number } = {},
+): LabelPct[] {
   const total = rows.reduce((s, r) => s + r.count, 0)
-  if (total === 0) return []
+  const minTotal = opts.minTotal ?? 1
+  if (total < minTotal) return []
 
   const cleaned = rows
     .filter((r) => r.label && r.count > 0)

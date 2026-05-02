@@ -529,7 +529,7 @@ export function DashboardClient({
                 accent="blue"
                 icon={<TrendingUp className="w-4 h-4" />}
                 value={stats.winBack.allTime.recoveryRate === null ? '—' : `${stats.winBack.allTime.recoveryRate}%`}
-                label="Recovery rate"
+                label="Recovery rate (30d)"
               />
               <StatCard
                 accent="blue"
@@ -596,7 +596,7 @@ export function DashboardClient({
                 accent="green"
                 icon={<TrendingUp className="w-4 h-4" />}
                 value={stats.paymentRecovery.allTime.recoveryRate === null ? '—' : `${stats.paymentRecovery.allTime.recoveryRate}%`}
-                label="Recovery rate"
+                label="Recovery rate (30d)"
               />
               <StatCard
                 accent="green"
