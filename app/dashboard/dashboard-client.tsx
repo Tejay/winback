@@ -79,6 +79,9 @@ interface PaymentFilterCounts {
   lost: number
 }
 interface Stats {
+  // Spec 41 — same lifetime number on both cohorts (cached on the customer row).
+  cumulativeRevenueSavedCents: number
+  cumulativeRevenueLastComputedAt: string | null
   winBack: {
     thisMonth: Bucket
     lastMonth: Bucket
@@ -102,6 +105,8 @@ interface Stats {
 
 const EMPTY_BUCKET: Bucket = { recovered: 0, mrrRecoveredCents: 0 }
 const EMPTY_STATS: Stats = {
+  cumulativeRevenueSavedCents: 0,
+  cumulativeRevenueLastComputedAt: null,
   winBack: {
     thisMonth: EMPTY_BUCKET,
     lastMonth: EMPTY_BUCKET,
@@ -546,8 +551,9 @@ export function DashboardClient({
               <StatCard
                 accent="blue"
                 icon={<DollarSign className="w-4 h-4" />}
-                value={`$${Math.round(stats.winBack.allTime.mrrRecoveredCents / 100).toLocaleString()}`}
-                label="MRR recovered"
+                value={`$${Math.round(stats.cumulativeRevenueSavedCents / 100).toLocaleString()}`}
+                subValue={`$${Math.round(stats.winBack.allTime.mrrRecoveredCents / 100).toLocaleString()}/mo currently active`}
+                label="Revenue saved · lifetime"
                 delta={formatDelta(
                   stats.winBack.thisMonth.mrrRecoveredCents,
                   stats.winBack.lastMonth.mrrRecoveredCents,
@@ -613,8 +619,9 @@ export function DashboardClient({
               <StatCard
                 accent="green"
                 icon={<DollarSign className="w-4 h-4" />}
-                value={`$${Math.round(stats.paymentRecovery.allTime.mrrRecoveredCents / 100).toLocaleString()}`}
-                label="MRR saved"
+                value={`$${Math.round(stats.cumulativeRevenueSavedCents / 100).toLocaleString()}`}
+                subValue={`$${Math.round(stats.paymentRecovery.allTime.mrrRecoveredCents / 100).toLocaleString()}/mo currently active`}
+                label="Revenue saved · lifetime"
                 delta={formatDelta(
                   stats.paymentRecovery.thisMonth.mrrRecoveredCents,
                   stats.paymentRecovery.lastMonth.mrrRecoveredCents,
@@ -1409,6 +1416,7 @@ function StatCard({
   label,
   delta,
   sparkline,
+  subValue,
 }: {
   accent: 'blue' | 'green' | 'amber'
   icon: React.ReactNode
@@ -1418,6 +1426,8 @@ function StatCard({
   delta?: { text: string; direction: 'up' | 'down' | 'flat' }
   /** Spec 40 polish — 30-day daily series for the sparkline. */
   sparkline?: number[]
+  /** Spec 41 — small line under the big value (e.g. "$480/mo currently active"). */
+  subValue?: string
 }) {
   const accentClass =
     accent === 'blue'
@@ -1444,6 +1454,9 @@ function StatCard({
         )}
       </div>
       <div className="text-2xl sm:text-3xl font-bold text-slate-900 mt-2.5 tabular-nums">{value}</div>
+      {subValue && (
+        <div className="text-xs text-slate-500 tabular-nums mt-0.5">{subValue}</div>
+      )}
       <div className="text-[11px] font-semibold uppercase tracking-widest text-slate-400 mt-0.5">
         {label}
       </div>
