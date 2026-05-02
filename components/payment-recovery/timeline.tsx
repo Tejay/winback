@@ -21,8 +21,14 @@ export function Timeline() {
           <h2 className="mt-3 text-3xl font-bold tracking-tight text-slate-900">
             Three touches, perfectly timed.
           </h2>
-          <p className="mt-4 text-sm text-slate-600">
-            Stripe retries the card four times across ~21 days. We sit ~24 hours ahead of each retry — every one preceded by a nudge.
+          <p className="mt-4 text-sm text-slate-600 leading-relaxed">
+            Stripe retries the card four times across ~21 days. We sit
+            ~24 hours ahead of each retry, sending the customer-facing
+            email Stripe doesn&rsquo;t.{' '}
+            <span className="text-slate-900 font-medium">
+              Stripe handles the retry timing; we handle what the customer
+              reads.
+            </span>
           </p>
         </div>
 
