@@ -333,131 +333,158 @@ const SECTIONS: Section[] = [
   },
   {
     heading: 'Pricing & recovery',
-    items: [
+    subsections: [
       {
-        q: 'How does pricing work?',
-        a: (
-          <>
-            <p>
-              Two fees. A flat <strong>$99/mo platform fee</strong> that
-              includes up to <strong>500 payment recoveries per month</strong>
-              {' '}&mdash; the emails we send when a subscriber&rsquo;s payment
-              fails so they can update their card. And a one-time{' '}
-              <strong>performance fee equal to one month of the
-              subscriber&rsquo;s MRR</strong> when we win back a cancelled
-              subscriber. Charged once per win-back, never recurring.
-            </p>
-            <p className="mt-3">
-              <Link href="/pricing" className="text-blue-600 hover:underline">
-                See full pricing &rarr;
-              </Link>
-            </p>
-          </>
-        ),
+        heading: 'General',
+        items: [
+          {
+            q: 'How does pricing work?',
+            a: (
+              <>
+                <p>
+                  Two fees. A flat <strong>$99/mo platform fee</strong> that
+                  includes up to <strong>500 payment recoveries per month</strong>
+                  {' '}&mdash; the emails we send when a subscriber&rsquo;s payment
+                  fails so they can update their card. And a one-time{' '}
+                  <strong>performance fee equal to one month of the
+                  subscriber&rsquo;s MRR</strong> when we win back a cancelled
+                  subscriber. Charged once per win-back, never recurring.
+                </p>
+                <p className="mt-3">
+                  <Link href="/pricing" className="text-blue-600 hover:underline">
+                    See full pricing &rarr;
+                  </Link>
+                </p>
+              </>
+            ),
+          },
+          {
+            q: 'Do I pay anything at signup?',
+            a: (
+              <p>
+                No card at signup. We ask for a payment method after we deliver
+                your first payment recovery or win-back, whichever comes first.
+                The $99 platform fee starts on that same invoice. If we deliver
+                nothing, you pay nothing.
+              </p>
+            ),
+          },
+        ],
       },
       {
-        q: 'What counts as a win-back?',
-        a: (
-          <>
-            <p>
-              A subscriber comes back after we engaged with them.
-              Specifically, one of:
-            </p>
-            <ul className="mt-3 space-y-2 list-disc pl-5">
-              <li>They clicked our reactivate link.</li>
-              <li>They replied to our email.</li>
-              <li>
-                They came back within 30 days of us escalating to you (a
-                &ldquo;handoff&rdquo;).
-              </li>
-              <li>
-                They came back within 30 days of you pausing our AI for
-                them.
-              </li>
-            </ul>
-            <p className="mt-3">
-              Payment recoveries are billed separately &mdash; covered by
-              the $99/mo platform fee.
-            </p>
-          </>
-        ),
+        heading: 'Win-backs',
+        items: [
+          {
+            q: 'What counts as a win-back?',
+            a: (
+              <>
+                <p>
+                  A subscriber comes back after we engaged with them.
+                  Specifically, one of:
+                </p>
+                <ul className="mt-3 space-y-2 list-disc pl-5">
+                  <li>They clicked our reactivate link.</li>
+                  <li>They replied to our email.</li>
+                  <li>
+                    They came back within 30 days of us escalating to you (a
+                    &ldquo;handoff&rdquo;).
+                  </li>
+                  <li>
+                    They came back within 30 days of you pausing our AI for
+                    them.
+                  </li>
+                </ul>
+                <p className="mt-3">
+                  Payment recoveries are billed separately &mdash; covered by
+                  the $99/mo platform fee.
+                </p>
+              </>
+            ),
+          },
+          {
+            q: 'If I personally write back to a customer Winback handed off to me, who earns the fee?',
+            a: (
+              <>
+                <p>
+                  The fee covers detection and surfacing, not the reply. Our
+                  AI catches the cancellation, classifies why, and gets the
+                  case in front of you fast &mdash; without that, the customer
+                  would&rsquo;ve been just another quiet churn in your Stripe
+                  dashboard. The conversation you have with them is yours;
+                  we&rsquo;re charging for the pipeline that made that
+                  conversation possible.
+                </p>
+                <p className="mt-3">
+                  Same logic when you pause our AI to handle a subscriber
+                  yourself.
+                </p>
+              </>
+            ),
+          },
+          {
+            q: 'What if someone reactivates without us doing anything?',
+            a: (
+              <>
+                <p>No bill if we did nothing. That covers:</p>
+                <ul className="mt-3 space-y-2 list-disc pl-5">
+                  <li>
+                    <strong>Organic</strong> &mdash; they came back on their
+                    own. No email engagement, no handoff, no pause.
+                  </li>
+                  <li>
+                    <strong>Weak</strong> &mdash; we sent an email but they
+                    didn&rsquo;t click, didn&rsquo;t reply, and we didn&rsquo;t
+                    escalate.
+                  </li>
+                </ul>
+                <p className="mt-3">
+                  Both still count as recoveries in your dashboard &mdash;
+                  that&rsquo;s the full picture of what came back. The fee
+                  fires only when we can point to a verifiable trigger
+                  (click, reply, handoff, or pause).
+                </p>
+              </>
+            ),
+          },
+          {
+            q: 'What if a won-back subscriber cancels again?',
+            a: (
+              <p>
+                If they re-cancel within 14 days of the win-back, we refund the
+                entire performance fee. After 14 days, the fee stands &mdash;
+                they had a real period of paid revenue.
+              </p>
+            ),
+          },
+        ],
       },
       {
-        q: 'If I personally write back to a customer Winback handed off to me, who earns the fee?',
-        a: (
-          <>
-            <p>
-              The fee covers detection and surfacing, not the reply. Our
-              AI catches the cancellation, classifies why, and gets the
-              case in front of you fast &mdash; without that, the customer
-              would&rsquo;ve been just another quiet churn in your Stripe
-              dashboard. The conversation you have with them is yours;
-              we&rsquo;re charging for the pipeline that made that
-              conversation possible.
-            </p>
-            <p className="mt-3">
-              Same logic when you pause our AI to handle a subscriber
-              yourself.
-            </p>
-          </>
-        ),
-      },
-      {
-        q: 'What if someone reactivates without us doing anything?',
-        a: (
-          <>
-            <p>No bill if we did nothing. That covers:</p>
-            <ul className="mt-3 space-y-2 list-disc pl-5">
-              <li>
-                <strong>Organic</strong> &mdash; they came back on their
-                own. No email engagement, no handoff, no pause.
-              </li>
-              <li>
-                <strong>Weak</strong> &mdash; we sent an email but they
-                didn&rsquo;t click, didn&rsquo;t reply, and we didn&rsquo;t
-                escalate.
-              </li>
-            </ul>
-            <p className="mt-3">
-              Both still count as recoveries in your dashboard &mdash;
-              that&rsquo;s the full picture of what came back. The fee
-              fires only when we can point to a verifiable trigger
-              (click, reply, handoff, or pause).
-            </p>
-          </>
-        ),
-      },
-      {
-        q: 'What if a won-back subscriber cancels again?',
-        a: (
-          <p>
-            If they re-cancel within 14 days of the win-back, we refund the
-            entire performance fee. After 14 days, the fee stands &mdash;
-            they had a real period of paid revenue.
-          </p>
-        ),
-      },
-      {
-        q: 'What about Stripe\u2019s own retries?',
-        a: (
-          <p>
-            Stripe&rsquo;s Smart Retries already recover a chunk of failed
-            payments on their own. Our payment-recovery emails handle the
-            rest &mdash; the failures Stripe gives up on. Either way, you pay
-            the same $99/mo. No incremental fee per recovery, up to 500/mo.
-          </p>
-        ),
-      },
-      {
-        q: 'Do I pay anything at signup?',
-        a: (
-          <p>
-            No card at signup. We ask for a payment method after we deliver
-            your first payment recovery or win-back, whichever comes first.
-            The $99 platform fee starts on that same invoice. If we deliver
-            nothing, you pay nothing.
-          </p>
-        ),
+        heading: 'Payment recoveries',
+        items: [
+          {
+            q: 'Is there a per-recovery fee for payment recoveries?',
+            a: (
+              <p>
+                No. The $99/mo platform fee covers up to 500 payment
+                recoveries per month &mdash; no per-recovery charge inside
+                that cap.
+              </p>
+            ),
+          },
+          {
+            q: 'Do I pay if Stripe recovers a failed payment on its own?',
+            a: (
+              <p>
+                No extra charge either way. Stripe&rsquo;s Smart Retries
+                silently recover a chunk of failed payments on their own;
+                our payment-recovery emails handle the rest &mdash; the
+                ones Stripe gives up on. The $99/mo platform fee covers up
+                to 500 payment recoveries per month, regardless of which
+                mechanism saved the charge.
+              </p>
+            ),
+          },
+        ],
       },
     ],
   },

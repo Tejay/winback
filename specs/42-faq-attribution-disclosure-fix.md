@@ -59,6 +59,32 @@ describing them honestly.
 
 ## What changes
 
+### 0. Restructure "Pricing & recovery" into three sub-sections
+
+(Added mid-implementation, 2026-05-02 — founder review surfaced
+that the old retries Q was confusing because the section mixed
+win-back and payment-recovery questions in one flat list. Mirrors
+the Dashboard sub-section pattern from Spec 41.)
+
+The "Pricing & recovery" section becomes a `subsections` entry with
+three collapsible sub-sections:
+
+- **General** (cross-cutting):
+  - "How does pricing work?" (existing, unchanged)
+  - "Do I pay anything at signup?" (existing, unchanged)
+- **Win-backs**:
+  - "What counts as a win-back?" (rewritten — see §A)
+  - "If I personally write back to a customer Winback handed off to me, who earns the fee?" (new — see §C)
+  - "What if someone reactivates without us doing anything?" (rewritten — see §B)
+  - "What if a won-back subscriber cancels again?" (existing, unchanged — refund window)
+- **Payment recoveries**:
+  - "Is there a per-recovery fee for payment recoveries?" (**new** — split from the pricing overview to give this side its own anchor)
+  - "Do I pay if Stripe recovers a failed payment on its own?" (rewritten from "What about Stripe's own retries?" — see §D)
+
+Render loop change is zero — Spec 41 already added the
+`subsections` discriminated union and the nested `<details>` UI.
+This just changes the data shape of the existing entry.
+
 ### A. Rewrite "What counts as a win-back?"
 
 Replace the current single-trigger answer:
@@ -108,6 +134,32 @@ fee" — reframed to emphasize the dashboard is the honest tally and
 the fee is the subset Winback drove. Avoids reading like fine
 print.)
 
+### D. Rewrite "What about Stripe's own retries?"
+
+Renamed and rescoped to remove the win-back-vs-payment-recovery
+ambiguity. New Q name explicitly mentions "failed payment" so it
+can't be misread as a win-back question; new answer leads with
+"no extra charge" and stays scoped to payment recoveries.
+
+> **Q:** Do I pay if Stripe recovers a failed payment on its own?
+>
+> No extra charge either way. Stripe's Smart Retries silently
+> recover a chunk of failed payments on their own; our
+> payment-recovery emails handle the rest — the ones Stripe gives
+> up on. The $99/mo platform fee covers up to 500 payment
+> recoveries per month, regardless of which mechanism saved the
+> charge.
+
+### E. New question — "Is there a per-recovery fee for payment recoveries?"
+
+Splits a fact previously buried in the pricing overview into its
+own anchor in the new Payment recoveries sub-section.
+
+> **Q:** Is there a per-recovery fee for payment recoveries?
+>
+> No. The $99/mo platform fee covers up to 500 payment recoveries
+> per month — no per-recovery charge inside that cap.
+
 ### C. Add a new question — "If I personally write back to a customer Winback handed off to me, who earns the fee?"
 
 Insert as a new entry in the "Pricing & recovery" section, right
@@ -133,7 +185,7 @@ surfacing, not the reply" — is the explicit disclaimer.)
 | Path | Change |
 |---|---|
 | `specs/42-faq-attribution-disclosure-fix.md` | **new** (this file) |
-| `app/faq/page.tsx` | Three Q&A edits in the "Pricing & recovery" section (rewrite two existing, add one new) |
+| `app/faq/page.tsx` | (1) Restructure "Pricing & recovery" into three sub-sections (per §0). (2) Rewrite "What counts as a win-back?" (§A). (3) Rewrite "What if someone reactivates without us doing anything?" (§B). (4) Add new "If I personally write back…" Q (§C). (5) Rewrite "Stripe's own retries" Q (§D). (6) Add new "Is there a per-recovery fee?" Q (§E). |
 | `app/refunds/page.tsx` | One paragraph rewritten — the legal-adjacent refunds doc was making the same "clicks the reactivate link" claim and needed the same fix. Found via the grep audit in §Verification. |
 
 No other files. No tests (FAQ is content). No schema. No env vars.
