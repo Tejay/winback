@@ -12,7 +12,158 @@ interface QA {
   a: React.ReactNode
 }
 
-const SECTIONS: Array<{ heading: string; items: QA[] }> = [
+type Section =
+  | { heading: string; items: QA[] }
+  | { heading: string; subsections: Array<{ heading: string; items: QA[] }> }
+
+const SECTIONS: Section[] = [
+  {
+    heading: 'Dashboard',
+    subsections: [
+      {
+        heading: 'Win-backs',
+        items: [
+          {
+            q: 'How is "Recovery rate (30d)" calculated on the Win-backs tab?',
+            a: (
+              <p>
+                The share of recent voluntary cancellations that have been
+                won back. Numerator: customers who cancelled in the last 30
+                days and were later recovered. Denominator: all customers
+                who cancelled in the last 30 days. The window rolls — a
+                brand-new tenant starts seeing meaningful numbers within
+                1&ndash;2 weeks. Failed-payment cancellations are excluded
+                here; they live in the Payment recoveries tab.
+              </p>
+            ),
+          },
+          {
+            q: 'How is "Recovered · lifetime" calculated on the Win-backs tab?',
+            a: (
+              <p>
+                A count of every customer Winback has brought back from a
+                voluntary cancellation since you connected. Lifetime &mdash;
+                only grows. The &ldquo;+N vs last month&rdquo; delta
+                underneath compares this calendar month to the previous one.
+              </p>
+            ),
+          },
+          {
+            q: 'How is "Revenue saved · lifetime" calculated on the Win-backs tab?',
+            a: (
+              <>
+                <p>
+                  For each recovered customer we count whole 30-day months
+                  they&rsquo;ve stayed subscribed since their recovery,
+                  multiply by their MRR at the time of recovery, and sum
+                  across all recoveries. A $20/mo customer recovered six
+                  months ago = $120 saved. If they later re-churned,
+                  retention ends at the re-churn date.
+                </p>
+                <p className="mt-3">
+                  We round down to whole months to be conservative &mdash; a
+                  customer recovered 25 days ago contributes $0 until
+                  they&rsquo;ve actually been billed for a month. The number
+                  is refreshed by a background job daily (so it&rsquo;s at
+                  most 24 hours stale; the dashboard read is instant).
+                </p>
+                <p className="mt-3">
+                  The &ldquo;$X/mo currently active&rdquo; sub-line is the
+                  run-rate: the sum of MRR for recovered win-back
+                  subscribers still subscribed today.
+                </p>
+              </>
+            ),
+          },
+          {
+            q: 'How is "In progress" calculated on the Win-backs tab?',
+            a: (
+              <p>
+                The count of cancelled customers Winback is actively working
+                on &mdash; emails sent, awaiting reply or follow-up.
+                Excludes anyone already recovered, lost, or paused.
+              </p>
+            ),
+          },
+          {
+            q: 'What is the "Top reasons" strip above the Win-backs table?',
+            a: (
+              <p>
+                The four most common cancellation categories from the last
+                30 days, with percentages. Hidden when fewer than three
+                cancellations land in the window &mdash; a one- or two-row
+                sample produces a misleading &ldquo;100%&rdquo; reading, so
+                we wait for real signal before showing it.
+              </p>
+            ),
+          },
+        ],
+      },
+      {
+        heading: 'Payment recoveries',
+        items: [
+          {
+            q: 'How is "Recovery rate (30d)" calculated on the Payment recoveries tab?',
+            a: (
+              <p>
+                The share of recent failed payments that have been resolved.
+                Numerator: failed payments from the last 30 days where the
+                customer updated their card and the charge succeeded.
+                Denominator: all failed payments in the last 30 days.
+                Anchored on the date the failure first arrived (not a
+                cancellation date &mdash; payment-recovery rows
+                don&rsquo;t have one).
+              </p>
+            ),
+          },
+          {
+            q: 'How is "Recovered · lifetime" calculated on the Payment recoveries tab?',
+            a: (
+              <p>
+                A count of every failed payment Winback has ever recovered.
+                Lifetime, with a month-over-month delta underneath.
+              </p>
+            ),
+          },
+          {
+            q: 'How is "Revenue saved · lifetime" calculated on the Payment recoveries tab?',
+            a: (
+              <p>
+                The same calculation and same number as on the Win-backs tab
+                &mdash; we surface saved revenue as a single ROI figure
+                across both recovery types rather than splitting it. The
+                &ldquo;$X/mo currently active&rdquo; sub-line on this tab
+                is the run-rate of recovered failed-payment subscribers
+                still subscribed today.
+              </p>
+            ),
+          },
+          {
+            q: 'How is "In dunning" calculated?',
+            a: (
+              <p>
+                The count of failed-payment subscribers currently in the
+                retry sequence &mdash; either awaiting Stripe&rsquo;s next
+                automatic retry, or on the final retry attempt. Excludes
+                anyone already recovered or churned during dunning.
+              </p>
+            ),
+          },
+          {
+            q: 'What is the "Top decline codes" strip above the Payment recoveries table?',
+            a: (
+              <p>
+                The four most common bank-decline reasons from the last 30
+                days (<code>insufficient_funds</code>, <code>expired_card</code>,
+                <code>do_not_honor</code>, etc.) &mdash; same shape and same
+                3-row floor as the Win-backs &ldquo;Top reasons&rdquo; strip.
+              </p>
+            ),
+          },
+        ],
+      },
+    ],
+  },
   {
     heading: 'Stripe access & your data',
     items: [
@@ -356,21 +507,49 @@ export default function FAQPage() {
             <h2 className="text-xs font-semibold uppercase tracking-widest text-slate-400 pb-3 border-b border-slate-200">
               {section.heading}
             </h2>
-            <div className="divide-y divide-slate-100">
-              {section.items.map(({ q, a }) => (
-                <details key={q} className="group py-4">
-                  <summary className="cursor-pointer list-none flex items-start justify-between gap-4 text-sm font-medium text-slate-900 hover:text-blue-600">
-                    <span>{q}</span>
-                    <span className="text-slate-400 group-open:rotate-45 transition-transform flex-shrink-0">
+            {'subsections' in section ? (
+              section.subsections.map((sub) => (
+                <details key={sub.heading} className="group/sub mt-4">
+                  <summary className="cursor-pointer list-none flex items-center justify-between gap-4 text-sm font-semibold text-slate-900 hover:text-blue-600 py-3 border-b border-slate-100">
+                    <span>{sub.heading}</span>
+                    <span className="text-slate-400 group-open/sub:rotate-45 transition-transform flex-shrink-0">
                       +
                     </span>
                   </summary>
-                  <div className="mt-3 text-sm text-slate-600 leading-relaxed">
-                    {a}
+                  <div className="divide-y divide-slate-100 mt-1 pl-1">
+                    {sub.items.map(({ q, a }) => (
+                      <details key={q} className="group py-4">
+                        <summary className="cursor-pointer list-none flex items-start justify-between gap-4 text-sm font-medium text-slate-900 hover:text-blue-600">
+                          <span>{q}</span>
+                          <span className="text-slate-400 group-open:rotate-45 transition-transform flex-shrink-0">
+                            +
+                          </span>
+                        </summary>
+                        <div className="mt-3 text-sm text-slate-600 leading-relaxed">
+                          {a}
+                        </div>
+                      </details>
+                    ))}
                   </div>
                 </details>
-              ))}
-            </div>
+              ))
+            ) : (
+              <div className="divide-y divide-slate-100">
+                {section.items.map(({ q, a }) => (
+                  <details key={q} className="group py-4">
+                    <summary className="cursor-pointer list-none flex items-start justify-between gap-4 text-sm font-medium text-slate-900 hover:text-blue-600">
+                      <span>{q}</span>
+                      <span className="text-slate-400 group-open:rotate-45 transition-transform flex-shrink-0">
+                        +
+                      </span>
+                    </summary>
+                    <div className="mt-3 text-sm text-slate-600 leading-relaxed">
+                      {a}
+                    </div>
+                  </details>
+                ))}
+              </div>
+            )}
           </section>
         ))}
 

@@ -540,7 +540,7 @@ export function DashboardClient({
                 accent="blue"
                 icon={<CheckCircle className="w-4 h-4" />}
                 value={String(stats.winBack.allTime.recovered)}
-                label="Recovered"
+                label="Recovered · lifetime"
                 delta={formatDelta(
                   stats.winBack.thisMonth.recovered,
                   stats.winBack.lastMonth.recovered,
@@ -608,7 +608,7 @@ export function DashboardClient({
                 accent="green"
                 icon={<CheckCircle className="w-4 h-4" />}
                 value={String(stats.paymentRecovery.allTime.recovered)}
-                label="Recovered"
+                label="Recovered · lifetime"
                 delta={formatDelta(
                   stats.paymentRecovery.thisMonth.recovered,
                   stats.paymentRecovery.lastMonth.recovered,
@@ -1454,12 +1454,12 @@ function StatCard({
         )}
       </div>
       <div className="text-2xl sm:text-3xl font-bold text-slate-900 mt-2.5 tabular-nums">{value}</div>
-      {subValue && (
-        <div className="text-xs text-slate-500 tabular-nums mt-0.5">{subValue}</div>
-      )}
-      <div className="text-[11px] font-semibold uppercase tracking-widest text-slate-400 mt-0.5">
+      <div className="text-[11px] font-semibold uppercase tracking-widest text-slate-400 mt-1">
         {label}
       </div>
+      {subValue && (
+        <div className="text-xs text-slate-500 tabular-nums mt-1.5">{subValue}</div>
+      )}
       {delta && (
         <div className={`text-[11px] font-medium tabular-nums mt-1.5 ${deltaClass}`}>
           {delta.text}
