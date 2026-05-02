@@ -1,8 +1,8 @@
 /**
  * Landing-page replacement for the old static <DashboardProof>. Renders
  * both cohort preview strips (win-back + payment recovery) stacked, with
- * a section header and "click either to explore the live dashboard" hint
- * below.
+ * a section header and a hint line pointing prospects to either full
+ * dashboard preview.
  *
  * Stacks rather than splits side-by-side because each preview strip
  * already has 4 KPI cards in its own grid — putting two of them
@@ -28,8 +28,8 @@ export function LandingDashboardPreview() {
             See where every dollar is &mdash; recovered, in flight, or lost.
           </h2>
           <p className="mt-3 text-sm sm:text-base text-slate-600 max-w-xl mx-auto">
-            Two dashboards, one platform. Click either to explore the live
-            demo with realistic data.
+            Two dashboards, one platform. Click either to explore the
+            full preview with realistic data.
           </p>
         </div>
 

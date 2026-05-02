@@ -18,7 +18,7 @@ export default function WinBackDemoPage() {
       <section className="bg-[#eef2fb] py-14 sm:py-16">
         <div className="max-w-5xl mx-auto px-6">
           <div className="text-xs font-semibold tracking-widest uppercase text-blue-600">
-            Win-backs · Live dashboard demo
+            Win-backs · Dashboard preview
           </div>
           <h1 className="mt-3 text-3xl sm:text-5xl font-bold text-slate-900 tracking-tight leading-[1.1] max-w-3xl">
             Every cancellation. Every chance to win them back.
@@ -95,7 +95,7 @@ export default function WinBackDemoPage() {
               href="/demo/payment-recovery"
               className="text-slate-300 hover:text-white text-sm font-medium px-4 py-3"
             >
-              See payment recovery demo →
+              Explore the payment recovery dashboard →
             </Link>
           </div>
         </div>

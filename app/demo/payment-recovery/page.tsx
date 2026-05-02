@@ -18,7 +18,7 @@ export default function PaymentRecoveryDemoPage() {
       <section className="bg-emerald-50 py-14 sm:py-16">
         <div className="max-w-5xl mx-auto px-6">
           <div className="text-xs font-semibold tracking-widest uppercase text-emerald-700">
-            Payment recovery · Live dashboard demo
+            Payment recovery · Dashboard preview
           </div>
           <h1 className="mt-3 text-3xl sm:text-5xl font-bold text-slate-900 tracking-tight leading-[1.1] max-w-3xl">
             Failed payments don&rsquo;t have to mean lost customers.
@@ -96,7 +96,7 @@ export default function PaymentRecoveryDemoPage() {
               href="/demo/win-back"
               className="text-slate-300 hover:text-white text-sm font-medium px-4 py-3"
             >
-              See win-back demo →
+              Explore the win-back dashboard →
             </Link>
           </div>
         </div>
