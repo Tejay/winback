@@ -59,6 +59,32 @@ describing them honestly.
 
 ## What changes
 
+### 0. Restructure "Pricing & recovery" into three sub-sections
+
+(Added mid-implementation, 2026-05-02 — founder review surfaced
+that the old retries Q was confusing because the section mixed
+win-back and payment-recovery questions in one flat list. Mirrors
+the Dashboard sub-section pattern from Spec 41.)
+
+The "Pricing & recovery" section becomes a `subsections` entry with
+three collapsible sub-sections:
+
+- **General** (cross-cutting):
+  - "How does pricing work?" (existing, unchanged)
+  - "Do I pay anything at signup?" (existing, unchanged)
+- **Win-backs**:
+  - "What counts as a win-back?" (rewritten — see §A)
+  - "If I personally write back to a customer Winback handed off to me, who earns the fee?" (new — see §C)
+  - "What if someone reactivates without us doing anything?" (rewritten — see §B)
+  - "What if a won-back subscriber cancels again?" (existing, unchanged — refund window)
+- **Payment recoveries**:
+  - "Is there a per-recovery fee for payment recoveries?" (**new** — split from the pricing overview to give this side its own anchor)
+  - "Do I pay if Stripe recovers a failed payment on its own?" (rewritten from "What about Stripe's own retries?" — see §D)
+
+Render loop change is zero — Spec 41 already added the
+`subsections` discriminated union and the nested `<details>` UI.
+This just changes the data shape of the existing entry.
+
 ### A. Rewrite "What counts as a win-back?"
 
 Replace the current single-trigger answer:
@@ -69,70 +95,98 @@ Replace the current single-trigger answer:
 > (when we save a failed-payment subscription) are different — those
 > are covered by the platform fee, no separate charge.
 
-with the four-trigger enumeration:
+with a tighter four-trigger enumeration:
 
-> A subscriber Winback brought back through work we did. We bill the
-> performance fee on any one of these triggers:
+> A subscriber comes back after we engaged with them. Specifically,
+> one of:
 >
-> - They clicked the reactivate link in our email.
-> - They replied to our email (we engaged them, even if they didn't click).
-> - They came back within 30 days of us escalating their case to you (a
->   "handoff" — our AI decided your personal touch would be more
->   effective than another automated email).
-> - They came back within 30 days of you pausing our AI for them (you
->   took over the conversation).
+> - They clicked our reactivate link.
+> - They replied to our email.
+> - They came back within 30 days of us escalating to you (a "handoff").
+> - They came back within 30 days of you pausing our AI for them.
 >
-> In all four cases, Winback did the work that led to the recovery —
-> classification, escalation, draft replies, or surfacing the lost
-> customer to your inbox. Payment recoveries (when we save a
-> failed-payment subscription) are different — those are covered by
-> the $99/mo platform fee, no separate charge.
+> Payment recoveries are billed separately — covered by the $99/mo
+> platform fee.
+
+(Earlier draft had a longer intro and an explanatory closing
+paragraph; both dropped per founder review for clarity. The bullet
+text already says enough.)
 
 ### B. Rewrite "What if someone reactivates without clicking our email?"
 
-Replace:
+Replace the existing single-paragraph answer with a positively-framed
+version that splits organic vs weak into bullets and reframes the
+dashboard-vs-billing reconciliation:
 
-> We don't bill for it. Maybe our email nudged them indirectly, maybe
-> not — but "we sent an email and something happened" isn't proof.
-> The win-back fee only fires when there's a tracked click on our
-> reactivation link, so every invoice has a verifiable trigger behind
-> it.
+> No bill if we did nothing. That covers:
+>
+> - **Organic** — they came back on their own. No email engagement,
+>   no handoff, no pause.
+> - **Weak** — we sent an email but they didn't click, didn't reply,
+>   and we didn't escalate.
+>
+> Both still count as recoveries in your dashboard — that's the full
+> picture of what came back. The fee fires only when we can point to
+> a verifiable trigger (click, reply, handoff, or pause).
 
-with:
+(Earlier draft used "show up as recovered but don't trigger the
+fee" — reframed to emphasize the dashboard is the honest tally and
+the fee is the subset Winback drove. Avoids reading like fine
+print.)
 
-> We don't bill for **organic** recoveries — no email engagement, no
-> handoff, no pause, the customer just came back on their own. Same
-> for "weak" cases: we sent an email, the customer didn't click,
-> didn't reply, and we didn't escalate to you. Both show up in your
-> dashboard as "recovered" but don't trigger the performance fee.
-> Every invoice has a verifiable trigger behind it (click, reply,
-> handoff, or pause), so you can always trace back why we billed.
+### D. Rewrite "What about Stripe's own retries?"
+
+Renamed and rescoped to remove the win-back-vs-payment-recovery
+ambiguity. New Q name explicitly mentions "failed payment" so it
+can't be misread as a win-back question; new answer leads with
+"no extra charge" and stays scoped to payment recoveries.
+
+> **Q:** Do I pay if Stripe recovers a failed payment on its own?
+>
+> No extra charge either way. Stripe's Smart Retries silently
+> recover a chunk of failed payments on their own; our
+> payment-recovery emails handle the rest — the ones Stripe gives
+> up on. The $99/mo platform fee covers up to 500 payment
+> recoveries per month, regardless of which mechanism saved the
+> charge.
+
+### E. New question — "Is there a per-recovery fee for payment recoveries?"
+
+Splits a fact previously buried in the pricing overview into its
+own anchor in the new Payment recoveries sub-section.
+
+> **Q:** Is there a per-recovery fee for payment recoveries?
+>
+> No. The $99/mo platform fee covers up to 500 payment recoveries
+> per month — no per-recovery charge inside that cap.
 
 ### C. Add a new question — "If I personally write back to a customer Winback handed off to me, who earns the fee?"
 
 Insert as a new entry in the "Pricing & recovery" section, right
 after "What counts as a win-back?":
 
-> Winback. The handoff itself is the work we charge for — our AI
-> classified the cancellation, decided your personal touch would be
-> more effective than another automated email, and surfaced the
-> customer to your inbox with the context. Without that escalation
-> you might never have known to reach out. The performance fee
-> covers that triage layer. Same when you proactively pause our AI
-> on a subscriber: if they come back within 30 days, that's
-> Winback-attributed.
+> The fee covers detection and surfacing, not the reply. Our AI
+> catches the cancellation, classifies why, and gets the case in
+> front of you fast — without that, the customer would've been just
+> another quiet churn in your Stripe dashboard. The conversation you
+> have with them is yours; we're charging for the pipeline that made
+> that conversation possible.
+>
+> Same logic when you pause our AI to handle a subscriber yourself.
 
-(Note: an earlier draft had a phrase "not the keystrokes of the
-reply you sent" — explicitly dropped per founder review. The
-positive framing of what Winback does is more durable than
-contrasting with what the founder does.)
+(Two earlier-draft phrases dropped per founder review:
+"not the keystrokes of the reply you sent" and "the work we charge
+for is the triage layer." Both edged toward claiming credit for the
+founder's reply. New lead sentence — "covers detection and
+surfacing, not the reply" — is the explicit disclaimer.)
 
 ## Critical files
 
 | Path | Change |
 |---|---|
 | `specs/42-faq-attribution-disclosure-fix.md` | **new** (this file) |
-| `app/faq/page.tsx` | Three Q&A edits in the "Pricing & recovery" section (rewrite two existing, add one new) |
+| `app/faq/page.tsx` | (1) Restructure "Pricing & recovery" into three sub-sections (per §0). (2) Rewrite "What counts as a win-back?" (§A). (3) Rewrite "What if someone reactivates without us doing anything?" (§B). (4) Add new "If I personally write back…" Q (§C). (5) Rewrite "Stripe's own retries" Q (§D). (6) Add new "Is there a per-recovery fee?" Q (§E). |
+| `app/refunds/page.tsx` | One paragraph rewritten — the legal-adjacent refunds doc was making the same "clicks the reactivate link" claim and needed the same fix. Found via the grep audit in §Verification. |
 
 No other files. No tests (FAQ is content). No schema. No env vars.
 

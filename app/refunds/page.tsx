@@ -32,9 +32,12 @@ export default function RefundsPage() {
           <li>
             <strong>Performance fee — one month of the recovered subscriber&rsquo;s
             MRR</strong>, charged once per win-back. A win-back is when a
-            previously-cancelled subscriber clicks the reactivate link in our
-            email and resumes paying you on Stripe. The fee is added as an
-            invoice item to the relevant Stripe Subscription cycle.
+            previously-cancelled subscriber resumes paying you on Stripe through
+            work we did &mdash; specifically: they clicked the reactivate link
+            in our email, replied to our email, came back within 30 days of us
+            escalating their case to you (a handoff), or came back within 30
+            days of you pausing our AI for them. The fee is added as an invoice
+            item to the relevant Stripe Subscription cycle.
           </li>
         </ul>
 
