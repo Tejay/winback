@@ -1,9 +1,7 @@
 import { StickyNav } from '@/components/landing/sticky-nav'
 import { Footer } from '@/components/landing/footer'
 import { Hero } from '@/components/payment-recovery/hero'
-import { Pillars } from '@/components/payment-recovery/pillars'
 import { Timeline } from '@/components/payment-recovery/timeline'
-import { WhyNotStripe } from '@/components/payment-recovery/why-not-stripe'
 import { CheckoutMockup } from '@/components/payment-recovery/checkout-mockup'
 import { EmailComparison } from '@/components/payment-recovery/email-comparison'
 import { Cta } from '@/components/payment-recovery/cta'
@@ -15,19 +13,18 @@ export default function PaymentRecoveryPage() {
       <StickyNav />
 
       {/* Reading order:
-          Hero          — set the stake (5-7% MRR loss)
-          Pillars       — three claims as scan anchors (no body text)
-          Timeline      — proves "we lead Stripe's retries"
-          WhyNotStripe  — head-on objection handling, before the heavy proof
-          CheckoutMockup — proves "Apple Pay / Google Pay / Link" (the page)
-          EmailComparison — proves "decline-aware copy" (the email)
-          Dashboard     — proves it's tracked + measurable
-          Cta           — de-risked ask with pricing/time/no-card
+          Hero            — stake (5-7% MRR loss) + 3 pillar claims in
+                            the hero illustration
+          Timeline        — proves "we lead Stripe's retries" + carries
+                            the "we enhance Stripe, not replace" positioning
+                            in the subhead (no separate Q&A section needed)
+          CheckoutMockup  — proves "Apple Pay / Google Pay / Link"
+          EmailComparison — proves "decline-aware copy"
+          Dashboard       — proves it's tracked + measurable
+          Cta             — de-risked ask with pricing/time/no-card
       */}
       <Hero />
-      <Pillars />
       <Timeline />
-      <WhyNotStripe />
       <CheckoutMockup />
       <EmailComparison />
 
