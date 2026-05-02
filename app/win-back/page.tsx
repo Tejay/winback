@@ -25,8 +25,8 @@ export default function WinBackPage() {
               Every cancellation, classified, scored, and queued for action.
             </h2>
             <p className="mt-3 text-sm text-slate-500 max-w-xl mx-auto">
-              A snapshot below. Click &ldquo;See live demo&rdquo; for the full
-              dashboard with the per-subscriber drawer.
+              A snapshot below. Click &ldquo;Explore the dashboard&rdquo;
+              for the full preview with the per-subscriber drawer.
             </p>
           </div>
           <WinBackPreviewStrip />

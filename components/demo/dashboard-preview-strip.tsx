@@ -1,13 +1,17 @@
 /**
  * Cropped dashboard preview — pipeline strip + KPI band only — designed
  * to embed on marketing pages. Same visual primitives as the full demo
- * dashboard at /demo/{cohort} (which is what the "See live demo →" CTA
- * links to), but stripped to the headline-bearing portion so it fits in
- * the marketing pages' max-w-5xl story rhythm.
+ * dashboard at /demo/{cohort} (which is what the "Explore the dashboard
+ * →" CTA links to), but stripped to the headline-bearing portion so it
+ * fits in the marketing pages' max-w-5xl story rhythm.
  *
  * Two cohort exports + a CTA-link helper. No interactivity (server-
  * component-safe). Reuses the data + primitives exported from
  * components/demo/demo-dashboard.tsx — no duplication.
+ *
+ * Copy: previously "See live demo →", changed because the demo isn't
+ * live data — it's hardcoded illustrative numbers. "Explore" is honest
+ * about being a preview, not a real-time feed.
  */
 
 import Link from 'next/link'
@@ -28,7 +32,7 @@ interface PreviewWrapperProps {
   accent: 'blue' | 'green'
   /** Title shown above the preview, e.g. "Win-backs" / "Payment recoveries". */
   title: string
-  /** Where the "See live demo →" link goes. */
+  /** Where the "Explore the dashboard →" link goes. */
   href: string
   /** Children render the KPI grid + pipeline strip. */
   children: React.ReactNode
@@ -47,7 +51,7 @@ function PreviewWrapper({ accent, title, href, children }: PreviewWrapperProps) 
           href={href}
           className={`text-xs font-medium ${accentText} hover:underline`}
         >
-          See live demo →
+          Explore the dashboard →
         </Link>
       </div>
       {children}

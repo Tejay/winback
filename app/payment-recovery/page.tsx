@@ -43,8 +43,8 @@ export default function PaymentRecoveryPage() {
               tracked in one place.
             </h2>
             <p className="mt-3 text-sm text-slate-500 max-w-xl mx-auto">
-              A snapshot below. Click &ldquo;See live demo&rdquo; for the full
-              dashboard with the per-row retry detail.
+              A snapshot below. Click &ldquo;Explore the dashboard&rdquo;
+              for the full preview with the per-row retry detail.
             </p>
           </div>
           <PaymentRecoveryPreviewStrip />
