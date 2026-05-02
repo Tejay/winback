@@ -72,7 +72,7 @@ interface PaymentRow {
   dunningTouchCount?: number
 }
 
-interface Pipeline30d {
+export interface Pipeline30d {
   churnedMrrCents: number
   recoveredMrrCents: number
   inFlightMrrCents: number
@@ -86,14 +86,14 @@ interface Pipeline30d {
 
 // Win-back at industry-realistic ~20% recovery rate (voluntary cancellations
 // are HARD to recover — customer made a deliberate choice to leave).
-const WINBACK_PIPELINE: Pipeline30d = {
+export const WINBACK_PIPELINE: Pipeline30d = {
   churnedMrrCents:   1000000,  // $10,000
   recoveredMrrCents:  200000,  // $2,000  (20%)
   inFlightMrrCents:   500000,  // $5,000
   lostMrrCents:       300000,  // $3,000
 }
 
-const WINBACK_KPI = {
+export const WINBACK_KPI = {
   recoveryRate30d:        20,
   recoveredLifetime:      35,
   cumulativeRevenueCents: 980000,   // $9,800 lifetime saved
@@ -282,14 +282,14 @@ const WINBACK_SELECTED_ID = 'wb-2'
 // involuntary — the customer wanted to stay, the card just broke.
 // Stripe Smart Retries + a one-click update-payment email together
 // recover the vast majority.
-const PAYMENT_PIPELINE: Pipeline30d = {
+export const PAYMENT_PIPELINE: Pipeline30d = {
   churnedMrrCents:    720000,  // $7,200
   recoveredMrrCents:  580000,  // $5,800  (~80%)
   inFlightMrrCents:   120000,  // $1,200
   lostMrrCents:        20000,  // $200
 }
 
-const PAYMENT_KPI = {
+export const PAYMENT_KPI = {
   recoveryRate30d:        80,
   recoveredLifetime:      124,
   cumulativeRevenueCents: 1950000,  // $19,500 lifetime saved
@@ -374,7 +374,7 @@ function PatternPills({ items }: { items: Array<{ label: string; pct: number }> 
   )
 }
 
-function PipelineStrip({ pipeline }: { pipeline: Pipeline30d }) {
+export function PipelineStrip({ pipeline }: { pipeline: Pipeline30d }) {
   if (pipeline.churnedMrrCents === 0) return null
   const fmt = (cents: number) => `$${Math.round(cents / 100).toLocaleString()}`
   return (
@@ -404,7 +404,7 @@ function PipelineStrip({ pipeline }: { pipeline: Pipeline30d }) {
   )
 }
 
-function StatCard({
+export function StatCard({
   accent, icon, value, label, delta, sparkline, subValue,
 }: {
   accent: 'blue' | 'green' | 'amber'
@@ -494,7 +494,7 @@ function DunningStageBadge({ row }: { row: PaymentRow }) {
   return <span className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium bg-slate-100 text-slate-500 border border-slate-200">{row.dunningState ?? '—'}</span>
 }
 
-function formatDelta(curr: number, prev: number, kind: 'count' | 'money'): { text: string; direction: 'up' | 'down' | 'flat' } {
+export function formatDelta(curr: number, prev: number, kind: 'count' | 'money'): { text: string; direction: 'up' | 'down' | 'flat' } {
   const diff = curr - prev
   if (diff === 0) return { text: '—', direction: 'flat' }
   const sign = diff > 0 ? '+' : '−'
@@ -503,7 +503,7 @@ function formatDelta(curr: number, prev: number, kind: 'count' | 'money'): { tex
   return { text: `${sign}${value}`, direction: diff > 0 ? 'up' : 'down' }
 }
 
-const fmtUsd = (cents: number) => `$${Math.round(cents / 100).toLocaleString()}`
+export const fmtUsd = (cents: number) => `$${Math.round(cents / 100).toLocaleString()}`
 
 // ─────────────────────────────────────────────────────────────────────────
 // Tab strip — matches the live dashboard's pill-button style. The

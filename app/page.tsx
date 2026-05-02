@@ -3,7 +3,7 @@ import { StickyNav } from '@/components/landing/sticky-nav'
 import { FlowIllustration } from '@/components/landing/flow-illustration'
 import { BundleCallout } from '@/components/landing/bundle-callout'
 import { TwoPillarTeaser } from '@/components/landing/two-pillar-teaser'
-import { DashboardProof } from '@/components/landing/dashboard-proof'
+import { LandingDashboardPreview } from '@/components/landing/landing-dashboard-preview'
 import { PricingFormula } from '@/components/landing/pricing-formula'
 import { Footer } from '@/components/landing/footer'
 
@@ -70,7 +70,7 @@ export default function LandingPage() {
 
       <BundleCallout />
       <TwoPillarTeaser />
-      <DashboardProof />
+      <LandingDashboardPreview />
       <PricingFormula />
 
       {/* Footer CTA — kept as a final nudge */}
