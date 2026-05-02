@@ -1433,33 +1433,50 @@ function PatternPills({ items }: { items: Array<{ label: string; pct: number }> 
  * other dashboard surfaces, framed as defense against quantified loss
  * rather than additive savings.
  *
+ * Visual: three labeled $ amounts (subtle color per type) with a
+ * thin proportional bar below showing the split. The bar makes the
+ * loss-framing land viscerally — the eye sees the rose chunk before
+ * reading any number. Tonally muted (200/300-weight colors, no
+ * border) so it stays quieter than the KPI band.
+ *
  * Hidden when the cohort has zero churn in the window (don't render
  * "$0 churned" — looks broken on a brand-new tenant).
  *
  * In-flight comes pre-computed from the API (churned − recovered −
- * lost, clamped ≥0) so the math always balances client-side.
+ * lost, clamped ≥0) so the math always balances client-side. The
+ * proportional bar uses raw cents as flex-grow values so segments
+ * size correctly without explicit percentage math (and the right
+ * edge stays flush — no rounding-induced gaps).
  */
 function PipelineStrip({ pipeline }: { pipeline: Pipeline30d }) {
   if (pipeline.churnedMrrCents === 0) return null
   const fmt = (cents: number) => `$${Math.round(cents / 100).toLocaleString()}`
   return (
-    <div className="mb-4 bg-slate-50 border border-slate-100 rounded-2xl px-5 py-3">
-      <div className="text-sm text-slate-700 tabular-nums">
-        <span className="font-semibold text-slate-900">{fmt(pipeline.churnedMrrCents)}</span>{' '}
-        churned in the last 30 days
+    <div className="mb-4 bg-slate-50 rounded-2xl px-5 py-3.5">
+      <div className="flex flex-wrap items-baseline justify-between gap-y-1 gap-x-4 text-xs tabular-nums mb-2.5">
+        <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+          <span className="text-emerald-700">
+            <span className="font-semibold">{fmt(pipeline.recoveredMrrCents)}</span>
+            {' '}recovered
+          </span>
+          <span className="text-amber-700">
+            <span className="font-semibold">{fmt(pipeline.inFlightMrrCents)}</span>
+            {' '}in flight
+          </span>
+          <span className="text-rose-700">
+            <span className="font-semibold">{fmt(pipeline.lostMrrCents)}</span>
+            {' '}lost
+          </span>
+        </div>
+        <span className="text-slate-500">
+          <span className="font-semibold">{fmt(pipeline.churnedMrrCents)}</span>
+          {' '}· 30d
+        </span>
       </div>
-      <div className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-1 text-xs text-slate-500 tabular-nums">
-        <span>
-          <span className="font-medium text-slate-700">{fmt(pipeline.recoveredMrrCents)}</span> recovered
-        </span>
-        <span className="text-slate-300">·</span>
-        <span>
-          <span className="font-medium text-slate-700">{fmt(pipeline.inFlightMrrCents)}</span> in flight
-        </span>
-        <span className="text-slate-300">·</span>
-        <span>
-          <span className="font-medium text-slate-700">{fmt(pipeline.lostMrrCents)}</span> lost
-        </span>
+      <div className="flex h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+        <div className="bg-emerald-300" style={{ flexGrow: pipeline.recoveredMrrCents }} />
+        <div className="bg-amber-300" style={{ flexGrow: pipeline.inFlightMrrCents }} />
+        <div className="bg-rose-300" style={{ flexGrow: pipeline.lostMrrCents }} />
       </div>
     </div>
   )
