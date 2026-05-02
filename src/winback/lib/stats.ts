@@ -28,14 +28,100 @@ export function startOfMonthUtc(now: Date = new Date()): Date {
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1, 0, 0, 0, 0))
 }
 
+/** Start of the previous month at 00:00:00 UTC. */
+export function startOfPrevMonthUtc(now: Date = new Date()): Date {
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1, 0, 0, 0, 0))
+}
+
 /**
- * Recovery rate as a 0–100 integer. Returns null when the denominator
- * is zero (avoids the misleading "0% of 0 customers" read).
+ * Spec 40 — Build a 30-bucket daily series ending today (UTC).
+ *
+ * Given the raw rows ({ day: 'YYYY-MM-DD', count }) returned from a
+ * date-truncated GROUP BY query, fill in zeros for any missing days so
+ * the sparkline renders a continuous trend with no gaps.
+ *
+ * Returns oldest → newest, length 30. The dashboard SVG sparkline reads
+ * the array in order.
  */
-export function recoveryRatePct(recovered: number, lost: number): number | null {
-  const denom = recovered + lost
-  if (denom === 0) return null
-  return Math.round((recovered / denom) * 100)
+export function buildDailySeries(
+  rows: Array<{ day: string; count: number }>,
+  days: number = 30,
+  now: Date = new Date(),
+): number[] {
+  const byDay = new Map<string, number>()
+  for (const r of rows) byDay.set(r.day, Number(r.count))
+
+  const out: number[] = []
+  const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date(today.getTime() - i * 24 * 60 * 60 * 1000)
+    const key = d.toISOString().slice(0, 10) // YYYY-MM-DD
+    out.push(byDay.get(key) ?? 0)
+  }
+  return out
+}
+
+/**
+ * Recovery rate as a 0–100 integer.
+ *
+ * Spec 39 amendment (2026-05-02) — was `recovered / (recovered + lost)`,
+ * a conversion-rate-among-decided-outcomes. That denominator excluded
+ * in-flight rows and read as broken math against the cohort table
+ * below ("8 recovered out of a 22-row cohort, but rate says 67%?").
+ *
+ * Now: pass the **cohort total** (the actual denominator the merchant
+ * sees in the table) and the recovered count out of that cohort. The
+ * route scopes both to a rolling 30-day window, so the rate is
+ * "of customers who churned in the last 30 days, X% have come back."
+ *
+ * Returns null when the cohort is empty (avoids the "0% of 0
+ * customers" read).
+ */
+export function recoveryRatePct(
+  recovered: number,
+  cohortTotal: number,
+): number | null {
+  if (cohortTotal === 0) return null
+  return Math.round((recovered / cohortTotal) * 100)
+}
+
+/**
+ * Spec 40 — Pattern-strip helper. Given a list of (label, count)
+ * pairs, return the top N as percentages of the total.
+ *
+ * - Returns [] when there are no rows, or when the total is below
+ *   `minTotal` (sample-size guard — avoids "100%" claims on a 1-row
+ *   sample when the strip's window is sparse).
+ * - Sorts by count DESC, falls back to alphabetical for ties so the
+ *   order is deterministic across renders.
+ * - Drops null/empty labels (DB rows with no category yet).
+ * - Percentages are rounded ints; rounding error may push the sum
+ *   off by ±1, which is acceptable for a UI strip.
+ */
+export type LabelCount = { label: string | null; count: number }
+export type LabelPct = { label: string; pct: number }
+
+export function topNFromCounts(
+  rows: LabelCount[],
+  n: number,
+  opts: { minTotal?: number } = {},
+): LabelPct[] {
+  const total = rows.reduce((s, r) => s + r.count, 0)
+  const minTotal = opts.minTotal ?? 1
+  if (total < minTotal) return []
+
+  const cleaned = rows
+    .filter((r) => r.label && r.count > 0)
+    .sort((a, b) => {
+      if (b.count !== a.count) return b.count - a.count
+      return (a.label ?? '').localeCompare(b.label ?? '')
+    })
+    .slice(0, n)
+
+  return cleaned.map((r) => ({
+    label: r.label as string,
+    pct: Math.round((r.count / total) * 100),
+  }))
 }
 
 /**

@@ -8,6 +8,50 @@ populated since Spec 18 (`'win_back'`) and the dunning recovery path
 
 ---
 
+## Amendment 2026-05-02 — recovery rate is now a rolling 30-day cohort
+rate, not lifetime conversion-among-decided-outcomes
+
+The original spec defined recovery rate as `recovered / (recovered +
+lost)` over all time. Two problems surfaced in practice:
+
+1. **Subset-denominator confusion.** A merchant looking at "8
+   recovered" against a cohort table of "All 22" expected 8/22 = 36%
+   but saw 67%, because the formula's denominator was 8+4=12 (in-flight
+   rows excluded). The math was defensible (a conversion rate among
+   settled outcomes) but read as broken.
+2. **Lifetime stale.** All-time numbers smear early product quality
+   into today's rate. Merchants want to know "how am I doing right
+   now," not "how have I done since I signed up."
+
+**New formula** (both win-back and payment-recovery):
+
+```
+recovery_rate = recovered_in_last_30d / cohort_in_last_30d
+```
+
+Anchored on `cancelledAt` for win-back, `createdAt` for payment-recovery
+(payment-recovery rows never have `cancelledAt` populated). Both arms
+use the same `patternWindowStart` constant in `/api/stats` as the
+30-day pattern strips, for consistency.
+
+UI label changes from "Recovery rate" → "Recovery rate (30d)" so
+merchants don't misread it as lifetime. The all-time `recovered` and
+`mrrRecoveredCents` numbers in the same KPI band remain lifetime —
+only the rate is windowed.
+
+**Trade-off accepted:** rows that just entered the cohort haven't had
+time to be recovered, so the rate is biased slightly low for fast-
+arriving cancellations. The "In progress" KPI immediately to the
+right tells the merchant how many denominator rows are still being
+worked. Net: the rate stabilizes after ~2 weeks and accurately tracks
+recent product performance.
+
+The sections below describe the original Spec 39 behavior. Anywhere
+the original text says "all-time recovery rate" or
+"recovered / (recovered + lost)", read it as the new 30-day formula.
+
+---
+
 ## Context
 
 The dashboard today shows a single set of KPIs at the top of the

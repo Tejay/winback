@@ -121,12 +121,17 @@ only when `winBack.handoffsNeedingAttention > 0`.
 
 Always visible; muted small text below the alert.
 
-- Shows top 4 cancellation categories in current month (grouped by
-  `cancellationCategory`), with percentages.
+- Shows top 4 cancellation categories in the **last 30 days** (grouped
+  by `cancellationCategory`), with percentages.
+- Window is rolling 30-day, not calendar-month — calendar-month scope
+  was misleading on day 1–3 of any month (a 1-row sample renders as
+  "100%" while the table below shows a clear mix).
 - Comes from new `/api/stats` field:
   `winBack.topReasons: Array<{ category: string; pct: number }>`.
-- Empty state (no cancellations this month): hide the strip rather
-  than show "Other 100%".
+- Empty / sparse state: **hide the strip when fewer than 3 rows in the
+  window**, not just when zero. A 1- or 2-row sample produces
+  misleading percentages ("100%"), so the API returns `[]` and the UI
+  hides the strip.
 
 #### B.3 Filter chips
 
@@ -200,11 +205,13 @@ Comes from new fields on `/api/stats`:
 #### C.2 Decline-code pattern strip
 
 Same shape as win-back's reason strip but uses `lastDeclineCode`.
+Window is rolling 30-day, not calendar-month (same rationale as §B.2).
 
 Comes from new `/api/stats` field:
 `paymentRecovery.topDeclineCodes: Array<{ code: string; pct: number }>`.
 
-Empty state: hide.
+Empty / sparse state: hide the strip when fewer than 3 rows in the
+window.
 
 #### C.3 Filter chips
 
@@ -296,8 +303,15 @@ topDeclineCodes: Array<{ code: string; pct: number }>, // top 4 this month
 
 The pattern aggregations are simple `GROUP BY ... ORDER BY count
 DESC LIMIT 4` queries on `churnedSubscribers` filtered by the cohort
-+ `cancelledAt >= startOfMonthUtc()`. Reuse the existing
-`startOfMonthUtc` helper from `src/winback/lib/stats.ts`.
++ a rolling 30-day cutoff (`createdAt >= now − 30 days` for
+payment-recovery; `cancelledAt >= now − 30 days` for win-back).
+`startOfMonthUtc` stays in use elsewhere for KPI MoM deltas, where
+calendar-month semantics are correct.
+
+Sample-size guard: the `topNFromCounts` helper accepts a `minTotal`
+option; both call sites pass `{ minTotal: 3 }` so the API returns
+`[]` (and the UI hides the strip) when the window contains fewer
+than 3 rows.
 
 #### D.3 No schema changes
 
@@ -333,7 +347,7 @@ Everything queryable from existing columns. No migration.
 4. **Search active when switching tabs** → reset search on tab switch. Search state lives per-tab.
 5. **"Resend update-payment email" on a payment-recovery row that's already `recovered`** → button hidden. Only render when `dunningState IN ('awaiting_retry', 'final_retry_pending')`.
 6. **Pattern strip with fewer than 4 distinct categories** → render whatever's there. Don't pad with "Other".
-7. **Pattern strip with zero rows this month** → hide the strip entirely (don't show "Top reasons: 0%" — looks broken).
+7. **Pattern strip with fewer than 3 rows in the last 30 days** → hide the strip entirely. Zero rows is the obvious case, but a 1- or 2-row sample also produces misleading percentages ("100%" / "50%" with no real signal). The API returns `[]` via `topNFromCounts(..., { minTotal: 3 })` and the UI hides the strip on an empty array.
 8. **Rate limit on `/api/stats`** — both tabs rely on the same poll. The new aggregations add ~3 lightweight queries; should be fine but add an index check during review (`cancellationCategory`, `lastDeclineCode`, `cancelledAt`).
 9. **A win-back row that recovers but the merchant is currently on the payment-recovery tab** → row only updates on next poll; no special handling needed.
 10. **Tab persistence** — none in v1. Reload starts on win-back. Acceptable trade-off; URL state can be added if user feedback demands.
@@ -348,6 +362,8 @@ test:
 - Single category → 100%.
 - 4+ categories → top 4 only, percentages sum to 100% (within rounding).
 - Tied counts → deterministic ordering (alphabetical fallback).
+- `minTotal: 3` on a 2-row sample → `[]` (sample-size guard hides strip).
+- `minTotal: 3` on a 3-row sample → returns top-N as normal.
 
 ### `/api/subscribers` cohort partitioning
 
@@ -370,14 +386,14 @@ Per verification checklist below.
 - [ ] **Win-back tab:**
   - [ ] Handoff alert shows when count > 0; clicking "Resolve queue" sets the filter chip.
   - [ ] Handoff alert hides when count is 0 (verify by resolving all).
-  - [ ] Pattern strip shows current-month top 4 reasons; hides when no rows this month.
+  - [ ] Pattern strip shows top 4 reasons from the last 30 days; hides when fewer than 3 rows in the window.
   - [ ] "Has reply" chip filters correctly; count badge accurate.
   - [ ] Default-sort surface order: handoffs → replies → recency.
   - [ ] Detail drawer opens on row click; existing functionality intact.
   - [ ] No payment-recovery rows leak into the win-back list.
 - [ ] **Payment recovery tab:**
   - [ ] Summary band shows MRR-at-risk + in-retry + on-final-attempt counts; numbers match a hand-query.
-  - [ ] Top-decline-codes strip shows current-month top 4; hides when none.
+  - [ ] Top-decline-codes strip shows top 4 from the last 30 days; hides when fewer than 3 rows in the window.
   - [ ] Filter chips work (`In retry`, `Final retry`, `Recovered`, `Lost`).
   - [ ] Default sort: most-urgent retry first (rows with the soonest `nextPaymentAttemptAt`).
   - [ ] Clicking row body does NOT open a drawer.

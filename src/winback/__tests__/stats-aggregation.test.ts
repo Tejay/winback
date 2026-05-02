@@ -9,8 +9,11 @@
 import { describe, it, expect } from 'vitest'
 import {
   aggregateRecoveryRows,
+  buildDailySeries,
   recoveryRatePct,
   startOfMonthUtc,
+  startOfPrevMonthUtc,
+  topNFromCounts,
   type RecoveryAggRow,
 } from '../lib/stats'
 
@@ -31,27 +34,83 @@ describe('startOfMonthUtc', () => {
   })
 })
 
+describe('startOfPrevMonthUtc', () => {
+  it('returns 00:00:00 UTC on the 1st of the previous month', () => {
+    const sample = new Date('2026-04-15T13:24:00Z')
+    expect(startOfPrevMonthUtc(sample).toISOString()).toBe('2026-03-01T00:00:00.000Z')
+  })
+
+  it('rolls over the year on January', () => {
+    const sample = new Date('2026-01-15T00:00:00Z')
+    expect(startOfPrevMonthUtc(sample).toISOString()).toBe('2025-12-01T00:00:00.000Z')
+  })
+})
+
+describe('buildDailySeries', () => {
+  it('returns 30 zeros when there are no rows', () => {
+    const result = buildDailySeries([], 30, new Date('2026-04-30T12:00:00Z'))
+    expect(result).toHaveLength(30)
+    expect(result.every((v) => v === 0)).toBe(true)
+  })
+
+  it('places counts on the right day, ascending oldest → newest', () => {
+    const today = new Date('2026-04-30T12:00:00Z')
+    const result = buildDailySeries(
+      [
+        { day: '2026-04-30', count: 5 },
+        { day: '2026-04-28', count: 2 },
+      ],
+      30,
+      today,
+    )
+    expect(result[result.length - 1]).toBe(5) // today
+    expect(result[result.length - 3]).toBe(2) // two days ago
+    expect(result[0]).toBe(0) // 30 days ago
+  })
+
+  it('respects the days argument', () => {
+    const result = buildDailySeries([], 7, new Date('2026-04-30T12:00:00Z'))
+    expect(result).toHaveLength(7)
+  })
+
+  it('drops days that fall outside the window', () => {
+    const today = new Date('2026-04-30T12:00:00Z')
+    const result = buildDailySeries(
+      [{ day: '2026-01-01', count: 100 }], // way outside window
+      30,
+      today,
+    )
+    expect(result.every((v) => v === 0)).toBe(true)
+  })
+})
+
+// Spec 39 amendment (2026-05-02) — second arg changed from `lost` to
+// `cohortTotal`. The rate is now `recovered / cohortTotal`, not
+// `recovered / (recovered + lost)`. The route scopes both to a rolling
+// 30-day window. Tests updated accordingly.
 describe('recoveryRatePct', () => {
-  it('returns null when both numerator and denominator are 0', () => {
+  it('returns null when the cohort is empty (avoids 0% of 0)', () => {
     expect(recoveryRatePct(0, 0)).toBe(null)
   })
 
-  it('returns 100 when nothing has been lost', () => {
-    expect(recoveryRatePct(5, 0)).toBe(100)
-  })
-
-  it('returns 0 when nothing has been recovered', () => {
+  it('returns 0 when no one in the cohort has been recovered yet', () => {
     expect(recoveryRatePct(0, 5)).toBe(0)
   })
 
-  it('rounds to nearest integer', () => {
-    expect(recoveryRatePct(1, 2)).toBe(33)   // 33.33% → 33
-    expect(recoveryRatePct(2, 1)).toBe(67)   // 66.67% → 67
+  it('returns 100 when everyone in the cohort has been recovered', () => {
+    expect(recoveryRatePct(5, 5)).toBe(100)
   })
 
-  it('handles realistic mid-range numbers', () => {
-    expect(recoveryRatePct(24, 51)).toBe(32) // 32% — the worked example
-    expect(recoveryRatePct(89, 11)).toBe(89) // 89% — payment-recovery rate
+  it('rounds to nearest integer', () => {
+    expect(recoveryRatePct(1, 3)).toBe(33)  // 33.33% → 33
+    expect(recoveryRatePct(2, 3)).toBe(67)  // 66.67% → 67
+  })
+
+  // The bug that drove the amendment: 8 recovered out of a 22-row cohort
+  // used to display as 67% (because the old formula divided by
+  // recovered+lost = 12, not by the cohort total of 22).
+  it('produces the cohort recovery rate (8/22 = 36%, not the old 67%)', () => {
+    expect(recoveryRatePct(8, 22)).toBe(36)
   })
 })
 
@@ -130,6 +189,15 @@ describe('aggregateRecoveryRows', () => {
     expect(result.legacyNullCount).toBe(0)
   })
 
+  it('handles unknown but non-null recoveryType (defensive bucketing)', () => {
+    const rows: RecoveryAggRow[] = [
+      { recoveryType: 'mystery', isThisMonth: true, count: 1, mrrCents: 100 },
+    ]
+    const result = aggregateRecoveryRows(rows)
+    expect(result.winBackThisMonth).toEqual({ recovered: 1, mrrRecoveredCents: 100 })
+    expect(result.legacyNullCount).toBe(0)
+  })
+
   it('handles a mix of all four buckets in a single call', () => {
     const rows: RecoveryAggRow[] = [
       { recoveryType: 'win_back', isThisMonth: true, count: 3, mrrCents: 6000 },
@@ -145,5 +213,139 @@ describe('aggregateRecoveryRows', () => {
     expect(result.paymentThisMonth).toEqual({ recovered: 8, mrrRecoveredCents: 25000 })
     expect(result.paymentAllTime).toEqual({ recovered: 89, mrrRecoveredCents: 420000 })
     expect(result.legacyNullCount).toBe(1)
+  })
+})
+
+describe('topNFromCounts', () => {
+  it('returns [] when there are no rows', () => {
+    expect(topNFromCounts([], 4)).toEqual([])
+  })
+
+  it('returns [] when total is 0 (all rows have count 0)', () => {
+    expect(topNFromCounts([{ label: 'Price', count: 0 }], 4)).toEqual([])
+  })
+
+  it('drops rows with null labels', () => {
+    const result = topNFromCounts(
+      [
+        { label: null, count: 5 },
+        { label: 'Price', count: 5 },
+      ],
+      4,
+    )
+    // Even though null is dropped from the output, it still counts toward the
+    // total — so Price is 50% of 10, not 100% of 5.
+    expect(result).toEqual([{ label: 'Price', pct: 50 }])
+  })
+
+  it('returns the top N by count', () => {
+    const result = topNFromCounts(
+      [
+        { label: 'Price', count: 32 },
+        { label: 'Features', count: 24 },
+        { label: 'Switched', count: 18 },
+        { label: 'Other', count: 26 },
+      ],
+      4,
+    )
+    expect(result.map((r) => r.label)).toEqual(['Price', 'Other', 'Features', 'Switched'])
+    expect(result[0]).toEqual({ label: 'Price', pct: 32 })
+    expect(result[1]).toEqual({ label: 'Other', pct: 26 })
+  })
+
+  it('caps results at N when more rows are present', () => {
+    const result = topNFromCounts(
+      [
+        { label: 'A', count: 10 },
+        { label: 'B', count: 8 },
+        { label: 'C', count: 6 },
+        { label: 'D', count: 4 },
+        { label: 'E', count: 2 },
+      ],
+      3,
+    )
+    expect(result.map((r) => r.label)).toEqual(['A', 'B', 'C'])
+  })
+
+  it('sorts ties alphabetically (deterministic across renders)', () => {
+    const result = topNFromCounts(
+      [
+        { label: 'Banana', count: 5 },
+        { label: 'Apple', count: 5 },
+        { label: 'Cherry', count: 5 },
+      ],
+      4,
+    )
+    expect(result.map((r) => r.label)).toEqual(['Apple', 'Banana', 'Cherry'])
+  })
+
+  it('rounds percentages to integers', () => {
+    const result = topNFromCounts(
+      [
+        { label: 'A', count: 1 },
+        { label: 'B', count: 2 },
+      ],
+      4,
+    )
+    expect(result).toEqual([
+      { label: 'B', pct: 67 }, // 2/3 = 66.67% → 67
+      { label: 'A', pct: 33 }, // 1/3 = 33.33% → 33
+    ])
+  })
+
+  it('handles a single category at 100%', () => {
+    expect(topNFromCounts([{ label: 'OnlyOne', count: 7 }], 4)).toEqual([
+      { label: 'OnlyOne', pct: 100 },
+    ])
+  })
+
+  // Spec 40 fix — sample-size guard. The pattern strip on the dashboard
+  // was showing "insufficient_funds 100%" on day 2 of a new month
+  // because exactly one row existed in the calendar-month window. The
+  // fix is two-pronged: switch to a rolling 30-day window in /api/stats
+  // (route-level), AND refuse to render percentages on a sample below
+  // some floor (helper-level, here). 3 is the floor: any single
+  // category dominating a ≥3 sample is at least mildly meaningful.
+  describe('minTotal sample-size guard', () => {
+    it('returns [] when total is below minTotal (1 row, minTotal: 3)', () => {
+      expect(
+        topNFromCounts([{ label: 'insufficient_funds', count: 1 }], 4, { minTotal: 3 }),
+      ).toEqual([])
+    })
+
+    it('returns [] when total is below minTotal (2 rows, minTotal: 3)', () => {
+      expect(
+        topNFromCounts(
+          [
+            { label: 'insufficient_funds', count: 1 },
+            { label: 'expired_card', count: 1 },
+          ],
+          4,
+          { minTotal: 3 },
+        ),
+      ).toEqual([])
+    })
+
+    it('returns top-N when total meets minTotal (3 rows, minTotal: 3)', () => {
+      expect(
+        topNFromCounts(
+          [
+            { label: 'insufficient_funds', count: 2 },
+            { label: 'expired_card', count: 1 },
+          ],
+          4,
+          { minTotal: 3 },
+        ),
+      ).toEqual([
+        { label: 'insufficient_funds', pct: 67 },
+        { label: 'expired_card', pct: 33 },
+      ])
+    })
+
+    it('default behaviour unchanged when minTotal is omitted (1-row sample renders 100%)', () => {
+      expect(topNFromCounts([{ label: 'OnlyOne', count: 1 }], 4)).toEqual([
+        { label: 'OnlyOne', pct: 100 },
+      ])
+    })
   })
 })
