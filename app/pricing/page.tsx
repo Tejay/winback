@@ -41,10 +41,17 @@ export default function PricingPage() {
             <div className="py-4">
               <dt className="text-slate-900 font-medium">What counts as a win-back?</dt>
               <dd className="mt-1 text-slate-600 leading-relaxed">
-                A subscriber who actively cancelled and then reactivated their
-                subscription within our attribution window. Payment recoveries
-                are <em>not</em> win-backs — those are covered by the platform
-                fee (up to 500/month).
+                <p>A cancelled subscriber comes back after we engaged with them. Specifically, one of:</p>
+                <ul className="mt-2 space-y-1.5 list-disc pl-5">
+                  <li>They clicked our reactivate link.</li>
+                  <li>They replied to our email.</li>
+                  <li>They came back within 30 days of us escalating to you (a &ldquo;handoff&rdquo;).</li>
+                  <li>They came back within 30 days of you pausing our AI for them.</li>
+                </ul>
+                <p className="mt-2">
+                  Payment recoveries aren&rsquo;t win-backs &mdash; those are
+                  covered by the $99/mo platform fee (up to 500/month).
+                </p>
               </dd>
             </div>
             <div className="py-4">
