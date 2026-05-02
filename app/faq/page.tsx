@@ -41,7 +41,7 @@ const SECTIONS: Section[] = [
             q: 'How is "Recovered · lifetime" calculated on the Win-backs tab?',
             a: (
               <p>
-                A count of every customer Winback has brought back from a
+                A count of every customer we&rsquo;ve brought back from a
                 voluntary cancellation since you connected. Lifetime &mdash;
                 only grows. The &ldquo;+N vs last month&rdquo; delta
                 underneath compares this calendar month to the previous one.
@@ -79,9 +79,10 @@ const SECTIONS: Section[] = [
             q: 'How is "In progress" calculated on the Win-backs tab?',
             a: (
               <p>
-                The count of cancelled customers Winback is actively working
-                on &mdash; emails sent, awaiting reply or follow-up.
-                Excludes anyone already recovered, lost, or paused.
+                The count of cancelled customers we&rsquo;re actively
+                working on &mdash; emails sent, awaiting reply or
+                follow-up. Excludes anyone already recovered, lost, or
+                paused.
               </p>
             ),
           },
@@ -120,7 +121,7 @@ const SECTIONS: Section[] = [
             q: 'How is "Recovered · lifetime" calculated on the Payment recoveries tab?',
             a: (
               <p>
-                A count of every failed payment Winback has ever recovered.
+                A count of every failed payment we&rsquo;ve ever recovered.
                 Lifetime, with a month-over-month delta underneath.
               </p>
             ),
@@ -249,8 +250,8 @@ const SECTIONS: Section[] = [
           <p>
             It&rsquo;s sent with your name on the &ldquo;From&rdquo; line
             (e.g., <em>Alex Smith &lt;reply+&hellip;@winbackflow.co&gt;</em>)
-            from our sending domain. When a subscriber replies, Winback
-            captures it, re-reads the conversation with the same AI, and
+            from our sending domain. When a subscriber replies, we
+            capture it, re-read the conversation with the same AI, and
             surfaces the reply plus the updated classification in your
             dashboard &mdash; so new context (they changed their mind,
             clarified a reason, pushed back) shapes whatever happens next.
@@ -313,8 +314,8 @@ const SECTIONS: Section[] = [
         a: (
           <>
             <p>
-              Yes. When a subscriber&rsquo;s card fails, Winback emails them
-              a one-click link to update their payment method &mdash; before
+              Yes. When a subscriber&rsquo;s card fails, we email them a
+              one-click link to update their payment method &mdash; before
               Stripe&rsquo;s retries run out and the subscription is cancelled
               for real. This is involuntary churn, and it&rsquo;s roughly half
               the lost revenue most subscription businesses leave on the table.
@@ -402,7 +403,7 @@ const SECTIONS: Section[] = [
             ),
           },
           {
-            q: 'If I personally write back to a customer Winback handed off to me, who earns the fee?',
+            q: 'If I personally reply to a customer our AI handed off to me, who earns the fee?',
             a: (
               <>
                 <p>
@@ -479,8 +480,7 @@ const SECTIONS: Section[] = [
                 silently recover a chunk of failed payments on their own;
                 our payment-recovery emails handle the rest &mdash; the
                 ones Stripe gives up on. The $99/mo platform fee covers up
-                to 500 payment recoveries per month, regardless of which
-                mechanism saved the charge.
+                to 500 payment recoveries per month.
               </p>
             ),
           },
