@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, integer, boolean, decimal, timestamp, jsonb, index } from 'drizzle-orm/pg-core'
+import { pgTable, uuid, text, integer, bigint, boolean, decimal, timestamp, jsonb, index } from 'drizzle-orm/pg-core'
 
 export const users = pgTable('wb_users', {
   id:           uuid('id').primaryKey().defaultRandom(),
@@ -49,6 +49,13 @@ export const customers = pgTable('wb_customers', {
   // bypassed. After expiry, normal billing flows resume on next event.
   pilotUntil:               timestamp('pilot_until'),
   pilotEndingWarnedAt:      timestamp('pilot_ending_warned_at'),
+  // Spec 41 — cumulative lifetime revenue saved across all this customer's
+  // recoveries. Cached value: written daily by /api/cron/cumulative-revenue
+  // and read directly by /api/stats. BIGINT because mrr × months at high
+  // volumes exceeds INT4. Default 0 so existing rows are immediately valid;
+  // first cron run populates real values.
+  cumulativeRevenueSavedCents:      bigint('cumulative_revenue_saved_cents', { mode: 'number' }).notNull().default(0),
+  cumulativeRevenueLastComputedAt:  timestamp('cumulative_revenue_last_computed_at'),
   createdAt:            timestamp('created_at').defaultNow(),
   updatedAt:            timestamp('updated_at').defaultNow(),
 })

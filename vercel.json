@@ -11,6 +11,10 @@
     {
       "path": "/api/cron/dunning-followup",
       "schedule": "0 8 * * *"
+    },
+    {
+      "path": "/api/cron/cumulative-revenue",
+      "schedule": "0 3 * * *"
     }
   ]
 }

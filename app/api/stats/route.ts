@@ -54,6 +54,10 @@ type PaymentFilterCounts = {
   lost: number
 }
 type Stats = {
+  // Spec 41 — same lifetime number applies to both cohorts (cached on the
+  // customer row). Surfaced at the top level so the dashboard reads it once.
+  cumulativeRevenueSavedCents: number
+  cumulativeRevenueLastComputedAt: string | null
   winBack: {
     thisMonth: Bucket
     lastMonth: Bucket                          // Spec 40 polish — month delta
@@ -82,7 +86,11 @@ export async function GET() {
   }
 
   const [customer] = await db
-    .select({ id: customers.id })
+    .select({
+      id: customers.id,
+      cumulativeRevenueSavedCents: customers.cumulativeRevenueSavedCents,
+      cumulativeRevenueLastComputedAt: customers.cumulativeRevenueLastComputedAt,
+    })
     .from(customers)
     .where(eq(customers.userId, session.user.id))
     .limit(1)
@@ -353,6 +361,10 @@ export async function GET() {
   const paymentDailyRecovered = buildDailySeries(paymentDailyRaw, 30)
 
   const stats: Stats = {
+    // Spec 41 — cached lifetime revenue saved (cron-populated, ≤24h stale).
+    cumulativeRevenueSavedCents: Number(customer.cumulativeRevenueSavedCents),
+    cumulativeRevenueLastComputedAt:
+      customer.cumulativeRevenueLastComputedAt?.toISOString() ?? null,
     winBack: {
       thisMonth: thisMonthBuckets.winBack,
       lastMonth: lastMonthBuckets.winBack,
