@@ -28,9 +28,12 @@ export default function PaymentRecoveryDemoPage() {
             let us nudge customers to update their card before Stripe gives up.
           </p>
           <p className="mt-3 text-sm text-slate-500 max-w-2xl">
-            This is what your dashboard looks like a few weeks in. Stripe
-            recovers some failed payments on its own; we recover the rest
-            &mdash; silently, in the background, no per-recovery fee.
+            Stripe recovers some failed payments on its own; we recover the
+            rest &mdash; silently, in the background, no per-recovery fee.
+          </p>
+          <p className="mt-2 text-xs text-slate-400 italic max-w-2xl">
+            Numbers shown are illustrative. Your actual results will depend on
+            your business, your customers, and your traffic.
           </p>
         </div>
       </section>
@@ -50,11 +53,11 @@ export default function PaymentRecoveryDemoPage() {
           </div>
           <ul className="space-y-3 text-sm text-slate-600 leading-relaxed">
             <li>
-              <strong className="text-slate-900">Pipeline strip</strong> (top): of $7,200 in failed payments this
-              month, $5,800 already saved &mdash; ~80% recovery is typical
-              for involuntary churn (the customer wanted to stay, the card
-              just broke). The remaining $1,200 is still in active retry;
-              most resolve within two weeks.
+              <strong className="text-slate-900">Pipeline strip</strong> (top): see total failed-payment MRR in the
+              last 30 days, how much has already been saved, how much is in
+              active retry, and how much was lost. Failed payments are
+              involuntary &mdash; the customer wanted to stay, their card
+              just broke &mdash; so most can be recovered.
             </li>
             <li>
               <strong className="text-slate-900">Decline codes</strong> (pattern strip): the top reasons cards fail in

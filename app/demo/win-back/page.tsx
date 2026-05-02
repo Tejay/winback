@@ -30,8 +30,11 @@ export default function WinBackDemoPage() {
           </p>
           <p className="mt-3 text-sm text-slate-500 max-w-2xl">
             This is the dashboard you&rsquo;ll see five minutes after
-            connecting Stripe. Realistic data shown &mdash; your numbers will
-            look like this within your first month.
+            connecting Stripe.
+          </p>
+          <p className="mt-2 text-xs text-slate-400 italic max-w-2xl">
+            Numbers shown are illustrative. Your actual results will depend on
+            your business, your customers, and your traffic.
           </p>
         </div>
       </section>
@@ -51,17 +54,16 @@ export default function WinBackDemoPage() {
           </div>
           <ul className="space-y-3 text-sm text-slate-600 leading-relaxed">
             <li>
-              <strong className="text-slate-900">Pipeline strip</strong> (top): of the $10,000 in monthly
-              cancellations, $2,000 already recovered, $5,000 still in
-              play, $3,000 lost. Voluntary win-back is hard &mdash; ~20%
-              recovery is industry-standard, and the in-flight number
-              tells you what&rsquo;s still possible.
+              <strong className="text-slate-900">Pipeline strip</strong> (top): see how much MRR is at risk in
+              the last 30 days, how much is already recovered, how much is
+              still in play, and how much is gone. The in-flight number is
+              what&rsquo;s still possible.
             </li>
             <li>
               <strong className="text-slate-900">Drawer</strong> (right): every cancellation is classified by reason,
-              scored for recovery likelihood, and surfaced with a draft
-              response &mdash; you act, we don&rsquo;t pretend the AI is the
-              founder.
+              scored for recovery likelihood, and surfaced with the
+              customer&rsquo;s actual words and the AI&rsquo;s reasoning side
+              by side &mdash; so you can decide what to do.
             </li>
             <li>
               <strong className="text-slate-900">Handoff alert</strong> (top, amber): when AI decides your personal
