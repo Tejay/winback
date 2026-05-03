@@ -31,6 +31,12 @@ export function StickyNav() {
         <Logo />
         <div className="flex items-center gap-6">
           <Link
+            href="/"
+            className="hidden sm:inline text-slate-600 text-sm hover:text-slate-900"
+          >
+            Home
+          </Link>
+          <Link
             href="/payment-recovery"
             className="hidden sm:inline text-slate-600 text-sm hover:text-slate-900"
           >

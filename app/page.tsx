@@ -49,7 +49,7 @@ export default function LandingPage() {
           <p className="mt-6 text-base sm:text-lg text-slate-600 max-w-2xl text-center leading-relaxed">
             Payment failures and deliberate cancellations are the two ways subscription customers slip away. Winback is{' '}
             <span className="text-slate-900 font-medium">one platform that catches both</span>{' '}
-            — always-on payment recovery, AI-drafted win-back emails. Two kinds of lost revenue, one Stripe connection.
+            &mdash; always-on payment recovery for failed cards, AI-drafted win-back emails for cancelled customers. Two kinds of lost revenue, one Stripe connection.
           </p>
 
           <div className="flex flex-col items-center gap-2 mt-8">

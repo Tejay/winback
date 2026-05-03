@@ -74,10 +74,10 @@ export default function PricingPage() {
             Ready to start?
           </div>
           <h2 className="text-3xl sm:text-4xl font-bold text-slate-900 mt-3">
-            Free until your first recovery.
+            Free until we deliver a payment recovery or win-back a cancelled customer.
           </h2>
           <p className="mt-4 text-sm text-slate-600 max-w-xl mx-auto">
-            Connect Stripe in 60 seconds. We don&apos;t bill the platform fee until we&apos;ve actually saved you a dollar — and the performance fee only earns when we recover a cancelled customer.
+            Connect Stripe in 60 seconds. We don&apos;t bill the platform fee until we&apos;ve actually saved you a dollar &mdash; and the performance fee only earns when we win back a cancelled customer.
           </p>
           <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
             <Link
