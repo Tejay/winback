@@ -1,4 +1,5 @@
 import { SUBPROCESSORS } from '@/src/winback/lib/subprocessors'
+import { StickyNav } from '@/components/landing/sticky-nav'
 import { Footer } from '@/components/landing/footer'
 
 export const metadata = { title: 'Subprocessors — Winback' }
@@ -6,6 +7,7 @@ export const metadata = { title: 'Subprocessors — Winback' }
 export default function SubprocessorsPage() {
   return (
     <div className="min-h-screen bg-[#f5f5f5]">
+    <StickyNav />
     <main className="py-12 px-6">
       <div className="max-w-3xl mx-auto bg-white rounded-2xl shadow-sm border border-slate-100 p-8">
         <div className="text-xs font-semibold uppercase tracking-widest text-blue-600 mb-3">

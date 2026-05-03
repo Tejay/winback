@@ -1,8 +1,13 @@
+import { StickyNav } from '@/components/landing/sticky-nav'
+import { Footer } from '@/components/landing/footer'
+
 export const metadata = { title: 'Contact — Winback' }
 
 export default function ContactPage() {
   return (
-    <main className="min-h-screen bg-[#f5f5f5] py-12 px-6">
+    <div className="min-h-screen bg-[#f5f5f5]">
+    <StickyNav />
+    <main className="py-12 px-6">
       <div className="max-w-3xl mx-auto bg-white rounded-2xl shadow-sm border border-slate-100 p-8">
         <h1 className="text-xs font-semibold uppercase tracking-widest text-blue-600 mb-8">
           Contact
@@ -51,6 +56,8 @@ export default function ContactPage() {
         </p>
       </div>
     </main>
+    <Footer />
+    </div>
   )
 }
 
