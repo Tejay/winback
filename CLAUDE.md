@@ -267,7 +267,8 @@ The flow for any feature, bugfix, or non-trivial change:
    merge, explicitly:
    ```bash
    git push origin --delete <branch-name>   # remote
-   git branch -d <branch-name>              # local
+   git branch -D <branch-name>              # local (capital D — squash-merge
+                                            # makes -d refuse with "not fully merged")
    git fetch --prune origin                 # confirm + clean stale refs
    ```
    Verify with `git branch -a | grep <branch-name>` — should return nothing.
