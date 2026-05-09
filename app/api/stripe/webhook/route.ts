@@ -84,15 +84,31 @@ export async function POST(req: Request) {
   const rawBody = Buffer.from(await req.arrayBuffer())
   const sig = req.headers.get('stripe-signature') ?? ''
 
-  let event: Stripe.Event
-  try {
-    event = getStripe().webhooks.constructEvent(
-      rawBody,
-      sig,
-      process.env.STRIPE_WEBHOOK_SECRET!
-    )
-  } catch (err) {
-    console.error('Webhook signature failed:', err)
+  // Spec 47 — accept events from either the Connect webhook destination
+  // (events from connected merchant accounts) or the platform webhook
+  // destination (events on Winback's own account: $99/mo subscription
+  // billing, platform card capture). Each destination has its own secret;
+  // we try them in order and accept whichever verifies.
+  let event: Stripe.Event | undefined
+  let lastErr: unknown = null
+
+  const secrets = [
+    process.env.STRIPE_WEBHOOK_SECRET,
+    process.env.STRIPE_PLATFORM_WEBHOOK_SECRET,
+  ].filter((s): s is string => !!s)
+
+  for (const secret of secrets) {
+    try {
+      event = getStripe().webhooks.constructEvent(rawBody, sig, secret)
+      lastErr = null
+      break
+    } catch (err) {
+      lastErr = err
+    }
+  }
+
+  if (!event) {
+    console.error('Webhook signature failed:', lastErr)
     // Spec 26 — observability: emit so the overview's Errors counter
     // catches webhook-secret rotations and impersonation attempts. Source
     // IP helps distinguish "we rotated the secret" from real bad-actor.
@@ -100,7 +116,7 @@ export async function POST(req: Request) {
       name: 'webhook_signature_invalid',
       properties: {
         sourceIp: req.headers.get('x-forwarded-for') ?? req.headers.get('x-real-ip') ?? null,
-        errorMessage: err instanceof Error ? err.message : String(err),
+        errorMessage: lastErr instanceof Error ? lastErr.message : String(lastErr),
       },
     })
     return new Response('Invalid signature', { status: 400 })
