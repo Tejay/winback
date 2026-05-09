@@ -261,7 +261,16 @@ The flow for any feature, bugfix, or non-trivial change:
          on the new column/table.
 4. **Open a PR**, even for solo work — it's the audit trail. Use `gh pr create`.
 5. **Merge only after the human says "merge"** — Claude never self-merges.
-6. **Delete the branch locally + remotely after merge.**
+6. **Delete the branch locally + remotely after merge.** Don't trust
+   `gh pr merge --delete-branch` — it silently no-ops when the repo's
+   auto-delete-branch setting is off (which it is here). After every
+   merge, explicitly:
+   ```bash
+   git push origin --delete <branch-name>   # remote
+   git branch -d <branch-name>              # local
+   git fetch --prune origin                 # confirm + clean stale refs
+   ```
+   Verify with `git branch -a | grep <branch-name>` — should return nothing.
 
 Exceptions — changes that may go direct to `main` without a branch:
 - Docs-only edits (README, CLAUDE.md, TASKS.md, specs/*.md)
