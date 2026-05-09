@@ -52,11 +52,44 @@ export async function GET(req: NextRequest) {
   })
 
   if (!tokenRes.ok) {
+    // Spec 48 — capture Stripe's response detail so /admin/events shows
+    // the real cause (invalid_grant, related-account block, expired
+    // code, etc.) instead of just "token_exchange_failed".
+    const httpStatus = tokenRes.status
+    const rawText = await tokenRes.text().catch(() => '')
+    let stripeError: string | null = null
+    let stripeErrorDescription: string | null = null
+    let stripeMessage: string | null = null
+    let parsedJson: unknown = null
+    try {
+      parsedJson = JSON.parse(rawText)
+    } catch {
+      // Non-JSON response (HTML error page, empty, etc.) — responseSnippet
+      // below carries the raw text instead.
+    }
+    if (parsedJson && typeof parsedJson === 'object') {
+      const j = parsedJson as Record<string, unknown>
+      stripeError = typeof j.error === 'string' ? j.error : null
+      stripeErrorDescription = typeof j.error_description === 'string' ? j.error_description : null
+      if (!stripeError && j.error && typeof j.error === 'object') {
+        const nested = j.error as Record<string, unknown>
+        stripeMessage = typeof nested.message === 'string' ? nested.message : null
+        stripeError = typeof nested.type === 'string' ? nested.type : null
+      }
+    }
+
     await logEvent({
       name: 'oauth_error',
       customerId: customer.id,
       userId: customer.userId,
-      properties: { errorType: 'token_exchange_failed' },
+      properties: {
+        errorType: 'token_exchange_failed',
+        httpStatus,
+        stripeError,
+        stripeErrorDescription,
+        stripeMessage,
+        responseSnippet: rawText.slice(0, 500),
+      },
     })
     return NextResponse.redirect(`${baseUrl()}/onboarding/stripe?error=token_exchange_failed`)
   }
