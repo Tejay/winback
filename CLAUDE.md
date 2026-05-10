@@ -344,6 +344,95 @@ that didn't account for the file containing live credentials. Treat
 secret-bearing files as if every line is `sk-ant-api03-PROD_KEY`. They
 are, until proven otherwise.
 
+#### Process logs and error streams are also a leak vector
+
+Files aren't the only place secrets live. **Application errors routinely
+embed full connection strings, API keys, and headers in their output.**
+Modern frameworks all do this by design:
+
+- **Next.js / Drizzle / `@neondatabase/serverless`**: a malformed or
+  unauthenticated DB URL produces `Error: Database connection string
+  provided to neon() is not a valid URL. Connection string: "postgres://USER:PASSWORD@HOST/db?...`
+- **Stripe SDK** errors include the full request, sometimes with
+  Authorization headers
+- **`fetch` / `undici` errors** include the full request URL, which may
+  contain query-param tokens
+- **`vercel logs`** streams production stdout/stderr — error events
+  written by your app reach you verbatim
+
+**Forbidden patterns** when secrets may pass through:
+
+- `tail -f <dev-server-output>` with a broad grep filter that doesn't
+  account for URLs in error messages (the Monitor tool — `tail -f
+  app.log | grep --line-buffered "Error|FAILED|..."` — this is exactly
+  the pattern that leaked the dev-branch URL on 2026-05-10)
+- `vercel logs --prod` without filters narrow enough to exclude
+  connection strings / auth headers
+- `cat`/`tail`-ing background-task output files (`/private/tmp/.../*.output`)
+  for processes that touch DB / call external APIs
+
+**The Monitor leak path** (2026-05-10): I set up a persistent monitor
+`tail -f dev.log | grep "Error|FAILED|..."` to surface DB errors. The
+first time the dev server failed on a malformed URL, the whole URL
+(with password) streamed back to chat as a notification. The grep
+filter let it through because URLs aren't part of the
+"Error/FAILED/etc." patterns — they're inside the matching lines.
+
+**Approved patterns** for inspecting running-process state:
+
+```bash
+# HTTP status only — never read response body for routes that may echo errors
+curl -s -o /dev/null -w "%{http_code}\n" http://localhost:3000/api/stats
+
+# Tail with a mask sed applied at write time, not at read time
+tail -f app.log | sed -E 's|postgresql://[^"]+|postgresql://<MASKED>|g' \
+                | sed -E 's|password=[^ &]+|password=<MASKED>|g'
+
+# Read app log into a temp file, mask, then page through the masked copy
+cp app.log /tmp/safe.log && \
+  sed -i -E 's|postgresql://[^"]+|postgresql://<MASKED>|g' /tmp/safe.log && \
+  less /tmp/safe.log
+
+# Health-check via the app's own admin events table (no secrets in there
+# — only event names, customer IDs, error codes)
+psql_via_secret_stash "SELECT name, count(*) FROM wb_events
+                       WHERE created_at > NOW() - INTERVAL '1 hour'
+                       GROUP BY name"
+```
+
+**Production logs are higher-risk than dev logs**:
+
+- Real customer data flows through prod; PII is in there
+- API keys / OAuth tokens appear in headers of failed requests
+- Connection strings appear in DB-connection error paths
+- An incident-related log dump shared with the wrong audience leaks customer data
+
+For production-log inspection, default to: don't stream raw to chat.
+Use `vercel logs --prod --since 1h --json` and pipe through a mask
+script before any output reaches the conversation. Better yet: query
+the app's structured event log (`wb_events`), which is sanitized by
+construction.
+
+#### Commands that put secrets in argv
+
+`psql "postgresql://user:password@host/db"` is forbidden — even if the
+connection string is "already public," running it puts the password in
+`ps aux` output, the shell history file, the audit log, and sometimes
+the kernel's process listing. `psql` reads `PGPASSWORD` from env if set,
+or use `.pgpass` file at `~/.pgpass` (mode 0600). Same rule for
+`curl -u user:pass`, `mysql -p PASS`, etc.
+
+```bash
+# WRONG — password in argv, visible in ps + history
+psql "postgresql://user:secret@host/db" -c "SELECT 1"
+
+# RIGHT — password in env, not argv
+PGPASSWORD=secret psql -h host -U user -d db -c "SELECT 1"
+
+# RIGHTER — read from .pgpass or prompt
+psql -h host -U user -d db -c "SELECT 1"   # prompts for password
+```
+
 ### ⛔ Always stop and ask before:
 1. Running database migrations — show full SQL, wait for "yes"
 2. Any live Anthropic API call — state cost (~$0.003), wait for "yes"
