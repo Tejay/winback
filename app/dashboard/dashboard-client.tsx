@@ -167,6 +167,14 @@ interface DashboardClientProps {
   /** Spec 50 — used as the signature in the pre-filled body of the
    *  external-contact compose helper. Falls back to "The team". */
   founderName?: string | null
+  /** Spec 51 — count of recoverable subscribers (high/medium likelihood,
+   *  not yet recovered) for the ROI-framed banner. */
+  atRiskCount?: number
+  /** Spec 51 — sum of mrr_cents × 12 across those at-risk subs. */
+  atRiskMrrAnnualizedCents?: number
+  /** Spec 51 — ISO of customer.activated_at; non-null means first
+   *  recovery delivered. Drives the persistent paused-state UI. */
+  activatedAtIso?: string | null
 }
 
 export function DashboardClient({
@@ -175,6 +183,9 @@ export function DashboardClient({
   firstRecovery,
   pilotUntilIso = null,
   founderName = null,
+  atRiskCount = 0,
+  atRiskMrrAnnualizedCents = 0,
+  activatedAtIso = null,
 }: DashboardClientProps) {
   const [stats, setStats] = useState<Stats>(EMPTY_STATS)
   const [subscribers, setSubscribers] = useState<Subscriber[]>([])
@@ -202,14 +213,19 @@ export function DashboardClient({
   }, [selected?.id])
   const [changelogOpen, setChangelogOpen] = useState(false)
   const [changelogText, setChangelogText] = useState(changelog)
-  const [bannerDismissed, setBannerDismissed] = useState(false)
+  // Spec 51 — bannerDismissed removed. Banner visibility is now derived
+  // purely from server state (activatedAt + stripeSubscriptionId). No more
+  // localStorage-driven indefinite dismissal.
   const [backfill, setBackfill] = useState<BackfillStatus | null>(null)
   const [backfillBannerDismissed, setBackfillBannerDismissed] = useState(false)
   const [changelogNudgeDismissed, setChangelogNudgeDismissed] = useState(false)
 
   useEffect(() => {
-    const dismissed = localStorage.getItem('winback_banner_dismissed')
-    if (dismissed) setBannerDismissed(true)
+    // Spec 51 — winback_banner_dismissed key removed. Clean up any stale
+    // value left over from before the rewrite so it doesn't linger.
+    if (localStorage.getItem('winback_banner_dismissed')) {
+      localStorage.removeItem('winback_banner_dismissed')
+    }
     const bfDismissed = localStorage.getItem('winback_backfill_dismissed')
     if (bfDismissed) setBackfillBannerDismissed(true)
     const clDismissed = localStorage.getItem('winback_changelog_nudge_dismissed')
@@ -297,10 +313,8 @@ export function DashboardClient({
     setSelected(null)
   }, [tab])
 
-  function dismissBanner() {
-    setBannerDismissed(true)
-    localStorage.setItem('winback_banner_dismissed', 'true')
-  }
+  // Spec 51 — dismissBanner removed. Banner is server-derived; no
+  // localStorage dismissal. Merchant subscribes or stays paused.
 
   async function saveChangelog() {
     await fetch('/api/changelog', {
@@ -406,10 +420,35 @@ export function DashboardClient({
   const pilotDaysLeft = pilotEndsOn
     ? Math.max(0, Math.ceil((pilotEndsOn.getTime() - Date.now()) / (1000 * 60 * 60 * 24)))
     : 0
-  const showBanner = !onPilot && isTrial && firstRecovery && !bannerDismissed
+  // Spec 51 — banner shows whenever the customer is in post-trial paused
+  // state: first recovery delivered (activatedAt set) AND no subscription
+  // AND not on pilot. Server-derived; no localStorage dismissal.
+  const isPaused = !onPilot && isTrial && !!activatedAtIso
+  const showBanner = isPaused && !!firstRecovery
 
   return (
     <>
+      {/* Spec 51 — persistent paused status bar. Shows whenever the customer
+          is in post-trial paused state and the main ROI banner isn't visible
+          (the main banner is more prominent and already communicates state). */}
+      {isPaused && !showBanner && (
+        <div className="bg-amber-100 border border-amber-300 rounded-2xl px-5 py-3 mb-4 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5 text-sm text-amber-900">
+            <span className="text-base leading-none">⏸</span>
+            <span>
+              <strong className="font-semibold">Winback is paused</strong>{' '}
+              — recoveries won't send until you subscribe.
+            </span>
+          </div>
+          <a
+            href="/settings#billing"
+            className="bg-amber-900 text-amber-50 rounded-full px-4 py-1.5 text-xs font-medium hover:bg-amber-800 flex-shrink-0"
+          >
+            Subscribe to resume →
+          </a>
+        </div>
+      )}
+
       {/* Page header */}
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 sm:gap-4 mb-6">
         <div>
@@ -447,14 +486,14 @@ export function DashboardClient({
         </div>
       )}
 
-      {/* Billing alert — Spec 40 polish: slide-in animation + CSS confetti
-          burst the first time it mounts. Only fires for trial accounts on
-          first-recovery; after that the user dismisses it and never sees
-          it again (localStorage-gated). */}
+      {/* Spec 51 — ROI-framed billing banner. Server-rendered visibility
+          (no localStorage dismissal). Shows whenever the customer is in
+          the post-trial paused state. */}
       {showBanner && (
         <FirstRecoveryBanner
           firstRecovery={firstRecovery!}
-          onDismiss={dismissBanner}
+          atRiskCount={atRiskCount}
+          atRiskMrrAnnualizedCents={atRiskMrrAnnualizedCents}
         />
       )}
 
@@ -1452,38 +1491,29 @@ function DunningStageBadge({ sub }: { sub: Subscriber }) {
  */
 function FirstRecoveryBanner({
   firstRecovery,
-  onDismiss,
+  atRiskCount,
+  atRiskMrrAnnualizedCents,
 }: {
   firstRecovery: { name: string | null; mrrCents: number }
-  onDismiss: () => void
+  atRiskCount: number
+  atRiskMrrAnnualizedCents: number
 }) {
+  // Spec 51 — ROI-framed billing banner with red border to pull attention.
+  // Soft blue→white→emerald gradient hero, dark CTA, no "Not now" dismiss.
+  const recoveredName = firstRecovery.name ?? 'Your first subscriber'
+  const recoveredMrrUsd = (firstRecovery.mrrCents / 100).toFixed(0)
+  const recoveredAnnualUsd = ((firstRecovery.mrrCents * 12) / 100).toFixed(0)
+  const atRiskAnnualUsd = Math.round(atRiskMrrAnnualizedCents / 100).toLocaleString()
+
   return (
     <div
-      className="relative overflow-hidden bg-white border border-blue-100 rounded-2xl p-5 mb-6 flex items-start justify-between gap-4"
+      className="relative overflow-hidden bg-gradient-to-br from-blue-50 via-white to-emerald-50 border-2 border-red-400 rounded-2xl p-7 mb-6 shadow-sm"
       style={{ animation: 'wb-slide-in 420ms cubic-bezier(0.2, 0.9, 0.32, 1.12) both' }}
     >
-      {/* Confetti burst — 12 particles in a half-arc, CSS keyframes only */}
-      <div aria-hidden className="pointer-events-none absolute inset-0">
-        {Array.from({ length: 12 }).map((_, i) => {
-          const colors = ['#3b82f6', '#22c55e', '#f59e0b', '#ec4899', '#8b5cf6', '#06b6d4']
-          const c = colors[i % colors.length]
-          const angle = (i / 12) * Math.PI - Math.PI / 2 // -90..+90
-          const dx = Math.cos(angle) * 80
-          const dy = Math.sin(angle) * 60 - 30
-          return (
-            <span
-              key={i}
-              className="absolute left-12 top-9 block w-1.5 h-1.5 rounded-sm"
-              style={{
-                background: c,
-                animation: `wb-confetti 900ms ease-out both`,
-                animationDelay: `${50 + i * 18}ms`,
-                ['--dx' as string]: `${dx}px`,
-                ['--dy' as string]: `${dy}px`,
-              } as React.CSSProperties}
-            />
-          )
-        })}
+      {/* Subtle decorative glows */}
+      <div aria-hidden className="pointer-events-none">
+        <div className="absolute -top-16 -right-16 w-56 h-56 bg-blue-200/30 rounded-full blur-3xl"></div>
+        <div className="absolute -bottom-16 -left-16 w-40 h-40 bg-emerald-200/30 rounded-full blur-3xl"></div>
       </div>
 
       <style>{`
@@ -1491,37 +1521,50 @@ function FirstRecoveryBanner({
           from { opacity: 0; transform: translateY(-8px); }
           to   { opacity: 1; transform: translateY(0); }
         }
-        @keyframes wb-confetti {
-          from { opacity: 1; transform: translate(0, 0) rotate(0deg); }
-          to   { opacity: 0; transform: translate(var(--dx), var(--dy)) rotate(220deg); }
-        }
       `}</style>
 
-      <div className="flex items-start gap-4 relative z-10">
-        <div className="bg-blue-50 rounded-full p-2 flex-shrink-0">
-          <Sparkles className="w-4 h-4 text-blue-600" />
-        </div>
-        <div>
-          <p className="text-sm font-medium text-slate-900">
-            🎉 Your first recovery is in{firstRecovery.name ? ` — ${firstRecovery.name} is back` : ''} at ${(firstRecovery.mrrCents / 100).toFixed(0)}/mo.
-          </p>
-          <p className="text-sm text-slate-600 mt-1">
-            Add a payment method to start your $99/mo subscription —
-            covers up to 500 payment recoveries/month, plus a one-time
-            fee of <strong>1× MRR</strong> per win-back (refundable for
-            14 days).
-          </p>
-          <div className="mt-3 flex flex-wrap items-center gap-3 sm:gap-4">
-            <a href="/settings#billing" className="bg-[#0f172a] text-white rounded-full px-5 py-2 text-sm font-medium hover:bg-[#1e293b]">
-              Add billing to keep recovering
-            </a>
-            <button onClick={onDismiss} className="text-sm text-slate-400 hover:text-slate-600">Not now</button>
+      <div className="relative">
+        <div className="flex items-start gap-3 mb-5">
+          <span className="text-2xl leading-none flex-shrink-0">🎉</span>
+          <div>
+            <h2 className="text-xl font-bold text-slate-900 leading-tight">
+              {recoveredName} is back at <span className="text-emerald-600">${recoveredMrrUsd}/mo</span>
+            </h2>
+            <p className="text-sm text-slate-600 mt-1">
+              That&apos;s ${recoveredAnnualUsd}/yr in recovered revenue from one customer.
+            </p>
           </div>
         </div>
+
+        {atRiskCount > 0 && (
+          <div className="bg-white rounded-xl p-4 mb-5 border border-slate-200 shadow-sm">
+            <p className="text-sm text-slate-700 leading-relaxed">
+              You currently have <strong className="text-slate-900">{atRiskCount} more</strong> cancelled
+              or failed-payment subscriber{atRiskCount === 1 ? '' : 's'} in your dashboard worth approximately{' '}
+              <strong className="text-amber-700">${atRiskAnnualUsd}/yr</strong> in MRR-at-risk.
+            </p>
+          </div>
+        )}
+
+        <p className="text-sm text-slate-600 leading-relaxed mb-5">
+          Subscribe to start working them — <strong className="text-slate-900">$99/mo</strong> +{' '}
+          <strong className="text-slate-900">1× MRR per recovery</strong> (refundable for 14 days if they
+          re-cancel).
+        </p>
+
+        <div className="flex flex-wrap items-center gap-4">
+          <a
+            href="/settings#billing"
+            className="bg-[#0f172a] text-white rounded-full px-6 py-2.5 text-sm font-semibold hover:bg-[#1e293b] inline-flex items-center gap-2 shadow-md"
+          >
+            Subscribe via Stripe
+            <span>→</span>
+          </a>
+          <span className="text-xs text-slate-500">
+            Opens Stripe Checkout · 14-day refund window
+          </span>
+        </div>
       </div>
-      <button onClick={onDismiss} className="text-slate-400 hover:text-slate-600 relative z-10">
-        <X className="w-4 h-4" />
-      </button>
     </div>
   )
 }

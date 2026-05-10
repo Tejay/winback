@@ -140,7 +140,9 @@ describe('sendDunningFollowupEmail — fallbacks', () => {
 function setLastDeclineCode(code: string | null) {
   let selectCallCount = 0
   mockSelect.mockImplementation(() => {
-    const isDeclineLookup = selectCallCount === 3 // 0=DNC, 1=pause, 2=ai-pause, 3=decline
+    // Spec 51 — gates added isCustomerPausedForBilling between customer-pause and ai-pause.
+    // New order: 0=DNC, 1=customer-pause, 2=billing-pause, 3=ai-pause, 4=decline.
+    const isDeclineLookup = selectCallCount === 4
     selectCallCount++
     return {
       from: vi.fn().mockReturnValue({
@@ -153,7 +155,14 @@ function setLastDeclineCode(code: string | null) {
         }),
         innerJoin: vi.fn().mockReturnValue({
           where: vi.fn().mockReturnValue({
-            limit: vi.fn().mockResolvedValue([{ pausedAt: null }]),
+            // innerJoin returns null-state row for both isCustomerPausedForSubscriber
+            // and isCustomerPausedForBilling — neither short-circuits when these are null.
+            limit: vi.fn().mockResolvedValue([{
+              pausedAt: null,
+              activatedAt: null,
+              stripeSubscriptionId: null,
+              pilotUntil: null,
+            }]),
           }),
         }),
       }),

@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Spec 51 preview — paused-state UX</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto; background: #f5f5f5; }
+  .section-label { font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.1em; color: #2563eb; }
+</style>
+</head>
+<body class="text-slate-900">
+
+  <!-- ─────────────── PERSISTENT PAUSED STATUS BAR (Layer 2) — more present ─────────────── -->
+  <div class="bg-amber-100 border-b-2 border-amber-300">
+    <div class="max-w-5xl mx-auto px-6 py-3 flex items-center justify-between gap-3">
+      <div class="flex items-center gap-2.5 text-sm text-amber-900">
+        <span class="text-lg leading-none">⏸</span>
+        <span><strong class="font-semibold">Winback is paused</strong> — recoveries won't send until you subscribe.</span>
+      </div>
+      <button class="bg-amber-900 text-amber-50 rounded-full px-4 py-1.5 text-xs font-medium hover:bg-amber-800">
+        Subscribe to resume →
+      </button>
+    </div>
+  </div>
+
+  <!-- ─────────────── TOP NAV ─────────────── -->
+  <nav class="bg-white border-b border-slate-100 sticky top-0 z-10">
+    <div class="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between">
+      <div class="flex items-center gap-2.5">
+        <div class="w-8 h-8 bg-blue-500 rounded-xl flex items-center justify-center">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="white"><path d="M13 0L0 13h7l-4 11L24 9h-9L19 0z"/></svg>
+        </div>
+        <span class="font-semibold text-slate-900">Winback</span>
+      </div>
+      <div class="flex items-center gap-6 text-sm text-slate-600">
+        <span>Dashboard</span>
+        <span>Settings</span>
+        <span class="text-slate-400">testfounder@…</span>
+      </div>
+    </div>
+  </nav>
+
+  <main class="max-w-5xl mx-auto px-6 py-8">
+
+    <!-- ─────────────── PAGE HEADER ─────────────── -->
+    <div class="flex items-center justify-between mb-6">
+      <div>
+        <h1 class="text-4xl font-bold text-slate-900">Dashboard.</h1>
+        <p class="text-sm text-slate-500 mt-1">Your recoveries, classifications, and at-risk subscribers.</p>
+      </div>
+      <button class="border border-slate-200 bg-white text-slate-700 rounded-full px-5 py-2 text-sm font-medium">
+        Update changelog
+      </button>
+    </div>
+
+    <!-- ─────────────── ROI-FRAMED BANNER (Layer 1) — soft blue hero, red border ─────────────── -->
+    <div class="bg-gradient-to-br from-blue-50 via-white to-emerald-50 rounded-2xl p-8 mb-8 relative overflow-hidden border-2 border-red-400 shadow-sm">
+      <!-- subtle decorative shapes -->
+      <div class="absolute -top-16 -right-16 w-56 h-56 bg-blue-200/30 rounded-full blur-3xl pointer-events-none"></div>
+      <div class="absolute -bottom-16 -left-16 w-40 h-40 bg-emerald-200/30 rounded-full blur-3xl pointer-events-none"></div>
+
+      <div class="relative">
+        <div class="flex items-start gap-3 mb-5">
+          <span class="text-3xl leading-none">🎉</span>
+          <div>
+            <h2 class="text-2xl font-bold text-slate-900 leading-tight">
+              Sarah Lee is back at <span class="text-emerald-600">$50/mo</span>
+            </h2>
+            <p class="text-sm text-slate-600 mt-1">
+              That's $600/yr in recovered revenue from one customer.
+            </p>
+          </div>
+        </div>
+
+        <div class="bg-white rounded-xl p-5 mb-6 border border-slate-200 shadow-sm">
+          <p class="text-sm text-slate-700 leading-relaxed">
+            You currently have <strong class="text-slate-900">4 more</strong> cancelled or
+            failed-payment subscribers in your dashboard worth approximately
+            <strong class="text-amber-700">$2,100/yr</strong> in MRR-at-risk.
+          </p>
+        </div>
+
+        <p class="text-sm text-slate-600 leading-relaxed mb-6">
+          Subscribe to start working them — <strong class="text-slate-900">$99/mo</strong> + <strong class="text-slate-900">1× MRR per recovery</strong>
+          (refundable for 14 days if they re-cancel).
+        </p>
+
+        <div class="flex items-center gap-4 flex-wrap">
+          <button class="bg-[#0f172a] text-white rounded-full px-6 py-3 text-sm font-semibold hover:bg-[#1e293b] inline-flex items-center gap-2 shadow-md">
+            Subscribe via Stripe
+            <span>→</span>
+          </button>
+          <span class="text-xs text-slate-500">
+            Opens Stripe Checkout · 14-day refund window
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ─────────────── STAT CARDS WITH COUNTERFACTUAL — color-coded by state ─────────────── -->
+    <div class="grid grid-cols-4 gap-4 mb-8">
+
+      <!-- amber tint: at-risk -->
+      <div class="bg-amber-50 rounded-2xl border border-amber-200 p-5">
+        <div class="text-xs font-semibold uppercase tracking-widest text-amber-700 mb-1.5">This month</div>
+        <div class="text-2xl font-bold text-slate-900">8</div>
+        <div class="text-xs text-slate-600 mt-0.5">cancellations</div>
+        <div class="mt-3 pt-3 border-t border-amber-200">
+          <div class="text-xs text-amber-800 font-medium">
+            ⏸ 3 high-likelihood
+          </div>
+          <div class="text-xs text-amber-700 mt-0.5">
+            paused — would recover
+          </div>
+        </div>
+      </div>
+
+      <!-- rose-50 tint: MRR-at-risk (loss feel) -->
+      <div class="bg-rose-50 rounded-2xl border border-rose-200 p-5">
+        <div class="text-xs font-semibold uppercase tracking-widest text-rose-700 mb-1.5">MRR at risk</div>
+        <div class="text-2xl font-bold text-slate-900">$175</div>
+        <div class="text-xs text-slate-600 mt-0.5">/mo across paused</div>
+        <div class="mt-3 pt-3 border-t border-rose-200">
+          <div class="text-xs text-rose-800 font-medium">
+            ⏸ $2,100/yr annualized
+          </div>
+          <div class="text-xs text-rose-700 mt-0.5">
+            paused — needs subscription
+          </div>
+        </div>
+      </div>
+
+      <!-- green tint: recovered (win) -->
+      <div class="bg-green-50 rounded-2xl border border-green-200 p-5">
+        <div class="text-xs font-semibold uppercase tracking-widest text-green-700 mb-1.5">Recovered</div>
+        <div class="text-2xl font-bold text-slate-900">1</div>
+        <div class="text-xs text-slate-600 mt-0.5">this month</div>
+        <div class="mt-3 pt-3 border-t border-green-200">
+          <div class="text-xs text-green-800 font-medium">
+            ✓ $50/mo recovered
+          </div>
+          <div class="text-xs text-green-700 mt-0.5">
+            Sarah Lee — trial recovery
+          </div>
+        </div>
+      </div>
+
+      <!-- amber tint: paused work -->
+      <div class="bg-amber-50 rounded-2xl border border-amber-200 p-5">
+        <div class="text-xs font-semibold uppercase tracking-widest text-amber-700 mb-1.5">Win-backs sent</div>
+        <div class="text-2xl font-bold text-slate-900">0</div>
+        <div class="text-xs text-slate-600 mt-0.5">this month</div>
+        <div class="mt-3 pt-3 border-t border-amber-200">
+          <div class="text-xs text-amber-800 font-medium">
+            ⏸ Paused
+          </div>
+          <div class="text-xs text-amber-700 mt-0.5">
+            subscribe to resume sending
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ─────────────── SUBSCRIBER TABLE (with per-row paused badges, Layer 3) ─────────────── -->
+    <div class="bg-white rounded-2xl border border-slate-200 overflow-hidden mb-8">
+      <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+        <h2 class="text-sm font-semibold text-slate-900">Subscribers</h2>
+        <div class="flex items-center gap-2">
+          <button class="text-xs text-slate-600 px-3 py-1.5 rounded-full hover:bg-slate-50">All</button>
+          <button class="text-xs bg-amber-100 text-amber-800 px-3 py-1.5 rounded-full font-medium border border-amber-200">⏸ Paused (3)</button>
+          <button class="text-xs text-slate-600 px-3 py-1.5 rounded-full hover:bg-slate-50">Recovered</button>
+        </div>
+      </div>
+      <table class="w-full">
+        <thead>
+          <tr class="text-xs font-semibold uppercase tracking-wide text-slate-400 border-b border-slate-100">
+            <th class="px-6 py-3 text-left">Subscriber</th>
+            <th class="px-6 py-3 text-left">Status</th>
+            <th class="px-6 py-3 text-left">Cancellation reason</th>
+            <th class="px-6 py-3 text-right">MRR</th>
+            <th class="px-6 py-3 text-right">Cancelled</th>
+          </tr>
+        </thead>
+        <tbody class="text-sm">
+
+          <!-- recovered row (Sarah) — green tint -->
+          <tr class="border-b border-slate-100 bg-green-50/40">
+            <td class="px-6 py-4">
+              <div class="text-slate-900 font-medium">Sarah Lee</div>
+              <div class="text-xs text-slate-500">sarah@acmestudio.com</div>
+            </td>
+            <td class="px-6 py-4">
+              <span class="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium bg-green-100 text-green-800 border border-green-300">
+                ✓ Recovered
+              </span>
+            </td>
+            <td class="px-6 py-4 text-slate-600">too_expensive</td>
+            <td class="px-6 py-4 text-right text-slate-900 font-medium">$50</td>
+            <td class="px-6 py-4 text-right text-slate-500">May 9</td>
+          </tr>
+
+          <!-- skipped — paused (came in AFTER first recovery) — amber tint -->
+          <tr class="border-b border-slate-100 bg-amber-50/50 hover:bg-amber-100/40 group">
+            <td class="px-6 py-4">
+              <div class="text-slate-900 font-medium">John Doe</div>
+              <div class="text-xs text-slate-500">john@beta-corp.io</div>
+            </td>
+            <td class="px-6 py-4">
+              <span class="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium bg-amber-100 text-amber-800 border border-amber-300 cursor-help" title="Winback didn't send because no active subscription. Subscribe to start working subscribers again.">
+                ⏸ Skipped — paused
+              </span>
+            </td>
+            <td class="px-6 py-4 text-slate-600">missing_features</td>
+            <td class="px-6 py-4 text-right text-slate-900 font-medium">$99</td>
+            <td class="px-6 py-4 text-right text-slate-500">May 11</td>
+          </tr>
+
+          <!-- skipped — paused — amber tint -->
+          <tr class="border-b border-slate-100 bg-amber-50/50 hover:bg-amber-100/40 group">
+            <td class="px-6 py-4">
+              <div class="text-slate-900 font-medium">Priya K.</div>
+              <div class="text-xs text-slate-500">priya@nexcorp.com</div>
+            </td>
+            <td class="px-6 py-4">
+              <span class="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium bg-amber-100 text-amber-800 border border-amber-300">
+                ⏸ Skipped — paused
+              </span>
+            </td>
+            <td class="px-6 py-4 text-slate-600">switched_service</td>
+            <td class="px-6 py-4 text-right text-slate-900 font-medium">$35</td>
+            <td class="px-6 py-4 text-right text-slate-500">May 12</td>
+          </tr>
+
+          <!-- skipped — paused (payment recovery) — amber tint -->
+          <tr class="border-b border-slate-100 bg-amber-50/50 hover:bg-amber-100/40 group">
+            <td class="px-6 py-4">
+              <div class="text-slate-900 font-medium">Marcus T.</div>
+              <div class="text-xs text-slate-500">marcus@beta.dev</div>
+            </td>
+            <td class="px-6 py-4">
+              <span class="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium bg-amber-100 text-amber-800 border border-amber-300">
+                ⏸ Recovery skipped — paused
+              </span>
+            </td>
+            <td class="px-6 py-4 text-slate-600">card_declined</td>
+            <td class="px-6 py-4 text-right text-slate-900 font-medium">$25</td>
+            <td class="px-6 py-4 text-right text-slate-500">May 12</td>
+          </tr>
+
+          <!-- low-likelihood: still white -->
+          <tr class="border-b border-slate-100">
+            <td class="px-6 py-4">
+              <div class="text-slate-900 font-medium">C2</div>
+              <div class="text-xs text-slate-500">testfounder.winback@…</div>
+            </td>
+            <td class="px-6 py-4">
+              <span class="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium bg-slate-100 text-slate-500 border border-slate-200">
+                × Lost
+              </span>
+            </td>
+            <td class="px-6 py-4 text-slate-600 italic text-xs">Suppressed (no signal)</td>
+            <td class="px-6 py-4 text-right text-slate-500">$0</td>
+            <td class="px-6 py-4 text-right text-slate-500">May 9</td>
+          </tr>
+
+        </tbody>
+      </table>
+    </div>
+
+    <!-- ─────────────── "AFTER SUBSCRIBE" PREVIEW STRIP ─────────────── -->
+    <div class="bg-gradient-to-r from-slate-50 to-blue-50 rounded-2xl border border-slate-200 p-5 mb-8">
+      <details>
+        <summary class="cursor-pointer text-sm font-semibold text-slate-700">
+          ▸ Preview: what changes after subscribing
+        </summary>
+        <div class="text-sm text-slate-600 mt-4 leading-relaxed">
+          <ul class="list-disc list-inside space-y-1">
+            <li>Amber paused status bar disappears</li>
+            <li>Dark navy banner disappears</li>
+            <li>"At-risk" stat cards lose the amber/rose tint → return to white</li>
+            <li>"Skipped — paused" rows: AI retroactively processes the queued cancellations; status flips to "Contacted" within minutes</li>
+            <li>"Recovery skipped — paused" rows: dunning email goes out within the hour</li>
+          </ul>
+        </div>
+      </details>
+    </div>
+
+    <!-- ─────────────── EMAIL PREVIEW ─────────────── -->
+    <div class="bg-white rounded-2xl border border-slate-200 p-6 mb-8">
+      <div class="section-label mb-3">Email examples</div>
+      <h3 class="text-lg font-bold text-slate-900 mb-4">Transactional + nudge emails</h3>
+
+      <div class="space-y-4">
+
+        <div class="border border-slate-200 rounded-xl p-5 bg-slate-50/50">
+          <div class="text-xs text-slate-400 mb-2">Trigger: first recovery delivered · sent once</div>
+          <div class="text-sm font-semibold text-slate-900 mb-3">🎉 Sarah Lee is back — trial complete</div>
+          <pre class="text-xs text-slate-600 whitespace-pre-wrap font-sans leading-relaxed">Your first recovery just delivered.
+
+Going forward, Winback is paused until you subscribe:
+  · No more win-back emails will be sent
+  · No more payment recovery emails will be sent
+  · You can still see all cancellations + failed payments in your dashboard
+
+Subscribe to resume: winbackflow.co/dashboard?subscribe=1
+Or disconnect from /settings if Winback isn't right for you.
+
+— The Winback team</pre>
+        </div>
+
+        <div class="border border-slate-200 rounded-xl p-5 bg-slate-50/50">
+          <div class="text-xs text-slate-400 mb-2">Trigger: 7 days after first recovery, still no subscription · sent once</div>
+          <div class="text-sm font-semibold text-slate-900 mb-3">Quick check-in on your Winback account</div>
+          <pre class="text-xs text-slate-600 whitespace-pre-wrap font-sans leading-relaxed">Hey,
+
+You paused Winback a week ago. Since then:
+  · 3 cancellations
+  · 2 failed payments
+slipped past without recovery attempts.
+
+Resume: winbackflow.co/dashboard?subscribe=1
+
+If Winback isn't right for you, disconnect Stripe via /settings.</pre>
+        </div>
+
+        <div class="border border-slate-200 rounded-xl p-5 bg-slate-50/50">
+          <div class="text-xs text-slate-400 mb-2">Trigger: every 28 days after day-30, until subscribe / disconnect / opt-out</div>
+          <div class="text-sm font-semibold text-slate-900 mb-3">Your June churn report</div>
+          <pre class="text-xs text-slate-600 whitespace-pre-wrap font-sans leading-relaxed">Hey,
+
+Here's what happened on your Winback account in June:
+
+  · 12 cancellations
+  · 4 failed payments
+  · 7 subscribers classified as recoverable
+  · ~$3,400/yr in MRR that Winback would have worked
+
+Resume: winbackflow.co/dashboard?subscribe=1
+
+Don't want these monthly reports? Unsubscribe</pre>
+        </div>
+
+      </div>
+    </div>
+
+  </main>
+
+  <footer class="max-w-5xl mx-auto px-6 py-8 text-xs text-slate-400">
+    Spec 51 design preview · this is a static mockup, not the live app
+  </footer>
+
+</body>
+</html>

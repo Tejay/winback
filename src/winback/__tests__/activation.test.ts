@@ -10,12 +10,16 @@ vi.mock('@/lib/db', () => ({
 vi.mock('@/lib/schema', () => ({
   customers: 'wb_customers',
   recoveries: 'wb_recoveries',
+  // Spec 51 — activation now joins recoveries with churned_subscribers
+  // to pull the recovered subscriber's name for the trial-complete email.
+  churnedSubscribers: 'wb_churned_subscribers',
 }))
 
 vi.mock('drizzle-orm', () => ({
   eq: vi.fn((a, b) => ({ op: 'eq', a, b })),
   and: vi.fn((...args: unknown[]) => ({ op: 'and', args })),
   isNull: vi.fn((a) => ({ op: 'isNull', a })),
+  desc: vi.fn((a) => ({ op: 'desc', a })),
 }))
 
 const mockGetOrCreatePlatformCustomer = vi.hoisted(() =>
@@ -51,6 +55,12 @@ vi.mock('../lib/pilot', () => ({
   getPilotUntil:     vi.fn().mockResolvedValue(null),
 }))
 
+// Spec 51 — activation now sends a trial-complete email when activatedAt
+// is first set. Stub the sender as a no-op for these tests.
+vi.mock('../lib/billing-notifications', () => ({
+  sendPlatformTrialCompleteEmail: vi.fn().mockResolvedValue(undefined),
+}))
+
 import { ensureActivation } from '../lib/activation'
 
 interface CustRow {
@@ -77,6 +87,15 @@ function setupReads(opts: {
         return {
           where: () => ({
             limit: () => (opts.hasDelivery ? [{ id: 'rec_x' }] : []),
+          }),
+          // Spec 51 — activation joins recoveries → churned_subscribers
+          // to pull the recovered subscriber's name for the trial-complete email.
+          innerJoin: () => ({
+            where: () => ({
+              orderBy: () => ({
+                limit: () => (opts.hasDelivery ? [{ name: 'Sarah Lee', mrrCents: 5000 }] : []),
+              }),
+            }),
           }),
         }
       }
