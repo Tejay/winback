@@ -279,6 +279,71 @@ Exceptions — changes that may go direct to `main` without a branch:
 
 If it touches runtime code, a schema, an API, or UI: **branch**.
 
+### 🔒 NEVER, under any circumstances — secret-leakage prevention
+
+**This is a hard rule. Violated twice in 2026-05-10 session: an Anthropic
+API key leaked via `head -2 .env.production.tmp` and three Neon DB
+credentials leaked via `grep '^DATABASE_URL' .env.local`. Both incidents
+forced credential rotation. Don't do it again.**
+
+**Definition: a "secret-bearing file" is anything that contains an
+unredacted credential.** Includes but is not limited to:
+- `.env*` files (`.env`, `.env.local`, `.env.production.tmp`, etc.)
+- The output of `vercel env pull ...`
+- `~/Library/Application Support/com.vercel.cli/auth.json` and similar tool credential stores
+- `~/.aws/credentials`, `~/.ssh/id_*`, `~/.netrc`
+- Any file the user produced via `vercel env pull`, `kubectl get secret -o yaml`, `gh auth token`, etc.
+- Any `.bak` / `.old` copy of the above
+
+**NEVER pipe a secret-bearing file's contents to a tool that returns
+output to the conversation.** The Bash tool's stdout becomes chat
+content. Specifically forbidden, even with intent to "just check
+something":
+- `cat .env.local`, `head .env.local`, `tail .env.local`, `less .env.local`
+- `grep ANYTHING .env.local` (even patterns that "shouldn't" match secrets — use `grep -c` to count lines if you must, never raw `grep` that prints them)
+- `awk '...' .env.local`, `sed '...' .env.local`, `cut ... .env.local`
+- `python3 -c "print(open('.env.local').read())"` and equivalents
+- `diff .env.local .env.local.bak` — both files leak in the diff output
+- Any output redirection that lets stdout reach the user via tool result, including `2>&1` of a tool that includes file contents in its error messages
+- `vercel env pull` followed by ANY inspection of the resulting file in chat
+
+**Approved patterns** when you genuinely need to interact with a
+secret-bearing file:
+
+```bash
+# Check existence / size only — no contents
+ls -la .env.local && wc -l .env.local
+
+# Check whether a key exists, without printing its value:
+grep -c '^DATABASE_URL=' .env.local        # prints 0 or 1; safe
+test -s .env.local && echo "non-empty"     # boolean-only; safe
+
+# Mask values when you must see structure:
+sed -E 's/=.*/=<redacted>/' .env.local     # keys visible, values hidden
+awk -F= '{print $1"=<redacted>"}' .env.local
+
+# Pass values to other tools without echoing:
+read -rs val < .env.value-file && curl -H "Authorization: Bearer $val" ...
+```
+
+**If you don't know whether the masking is sufficient, default to NOT
+running the command.** Ask the user to inspect the file themselves.
+The cost of asking is one round-trip; the cost of leaking is rotation
+of credentials + a permanent record of the secret in chat history.
+
+**The Anthropic key leak path** (2026-05-10): I ran `head -2
+.env.production.tmp` to "just see the file format." The second line was
+`ANTHROPIC_API_KEY="sk-ant-api03-..."`. Output went straight to chat.
+
+**The DB password leak path** (2026-05-10): I ran
+`grep '^DATABASE_URL' .env.local /Users/tejay/.../bak` "to compare the
+two." Both files printed in full, including the `npg_...` password.
+
+The pattern in both cases: a "harmless-looking" file inspection command
+that didn't account for the file containing live credentials. Treat
+secret-bearing files as if every line is `sk-ant-api03-PROD_KEY`. They
+are, until proven otherwise.
+
 ### ⛔ Always stop and ask before:
 1. Running database migrations — show full SQL, wait for "yes"
 2. Any live Anthropic API call — state cost (~$0.003), wait for "yes"
