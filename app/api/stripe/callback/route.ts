@@ -98,29 +98,41 @@ export async function GET(req: NextRequest) {
   const accessToken = tokenData.access_token
   const newAccountId = tokenData.stripe_user_id
 
-  // Handle reconnect: keep original account ID if one exists
-  const accountIdToSave = customer.stripeAccountId ?? newAccountId
-  if (customer.stripeAccountId && customer.stripeAccountId !== newAccountId) {
+  // Spec 49 — always trust OAuth's response. The previous "keep original
+  // ID" path silently dropped webhooks when a merchant reconnected to a
+  // different Stripe account.
+  const previousAccountId = customer.stripeAccountId
+  const accountChanged = previousAccountId !== null && previousAccountId !== newAccountId
+  const firstConnect = !previousAccountId
+  const needsBackfill = firstConnect || accountChanged
+
+  if (accountChanged) {
     console.warn(
-      `Stripe reconnect: user ${customer.id} had account ${customer.stripeAccountId}, ` +
-      `OAuth returned ${newAccountId}. Keeping original account ID.`
+      `Stripe reconnect: user ${customer.id} switched from account ${previousAccountId} ` +
+      `to ${newAccountId}. Backfilling against the new account; old churned_subscribers rows ` +
+      `(tied to ${previousAccountId}) remain in DB.`
     )
+    await logEvent({
+      name: 'oauth_account_changed',
+      customerId: customer.id,
+      userId: customer.userId,
+      properties: { previousAccountId, newAccountId },
+    })
   }
 
   await db
     .update(customers)
     .set({
-      stripeAccountId: accountIdToSave,
+      stripeAccountId: newAccountId,
       stripeAccessToken: encrypt(accessToken),
       onboardingComplete: true,
       updatedAt: new Date(),
     })
     .where(eq(customers.id, state))
 
-  const firstConnect = !customer.stripeAccountId
-
-  // Trigger historical backfill on first connect (fire-and-forget via internal API)
-  if (firstConnect) {
+  // Trigger historical backfill on first connect or when the account changed
+  // (fire-and-forget via internal API).
+  if (needsBackfill) {
     const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? baseUrl()
     fetch(`${appUrl}/api/backfill/start`, {
       method: 'POST',
@@ -139,7 +151,7 @@ export async function GET(req: NextRequest) {
     name: 'oauth_completed',
     customerId: customer.id,
     userId: customer.userId,
-    properties: { stripeAccountId: accountIdToSave, firstConnect },
+    properties: { stripeAccountId: newAccountId, firstConnect },
   })
 
   return NextResponse.redirect(`${baseUrl()}/dashboard`)
