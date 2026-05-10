@@ -39,10 +39,14 @@ button — pause is implicit in "not subscribed".**
 
 ## Goals
 
-- After first delivered recovery (`activatedAt` set), AI sending pauses
-  for merchants without an active platform subscription. New
-  cancellations + failed payments still appear in the dashboard, but no
-  win-back emails or payment-recovery emails are sent.
+- After **first delivered recovery of either type** — win-back
+  (Connect `customer.subscription.created` after a churn) OR payment
+  recovery (failed payment → updated card → `invoice.payment_succeeded`)
+  — `activatedAt` is set and AI sending pauses for merchants without an
+  active platform subscription. Whichever recovery type happens first
+  triggers the billing event; subsequent recoveries of either type are
+  also paused. New cancellations + failed payments still appear in the
+  dashboard, but no win-back emails or payment-recovery emails are sent.
 - Banner uses ROI framing: real customer name + MRR recovered, real
   count of currently-at-risk subscribers + annualized MRR-at-risk.
 - Single primary CTA — Subscribe via Stripe → Stripe Checkout subscription
@@ -51,7 +55,13 @@ button — pause is implicit in "not subscribed".**
   strip, per-row "skipped — paused" badges, counterfactual stat cards.
 - One transactional email at the trigger moment (rules announcement).
 - Two scheduled re-engagement emails (day-7 + day-30 since
-  `activatedAt`), idempotent via timestamp columns. Then silence.
+  `activatedAt`), idempotent via timestamp columns.
+- **Ongoing monthly churn report email** after day-30, sent to paused
+  merchants on a monthly cadence. One-line factual summary of what
+  happened that month (cancellations, failed payments, estimated MRR at
+  risk that Winback would have worked). Single CTA — Subscribe. Opt-out
+  link in every email. Stops automatically if merchant subscribes or
+  disconnects.
 - Merchant can resume any time by subscribing. They can exit cleanly
   by disconnecting Stripe via `/settings` (existing path, unchanged).
 
@@ -66,9 +76,13 @@ button — pause is implicit in "not subscribed".**
 - **No "free goodwill recovery" / "graduated commitment" / "perf-fee-only
   trial mode"**. Earlier drafts explored these; rejected for complexity.
   Single subscription tier, single trigger, single nudge cadence.
-- **No monthly drip after day-30**. After two nudges, silence
-  indefinitely. Dashboard remains visible (free-tier monitoring is
-  intentional brand position).
+- **No daily/weekly drips**. Re-engagement cadence is: day-7 nudge,
+  day-30 nudge, then monthly churn-report emails thereafter. Three
+  touches in the first month, then one-per-month forever (or until
+  subscribe / disconnect / opt-out). Monthly cadence ensures the
+  merchant stays aware of value-at-risk without becoming annoying.
+  Dashboard remains visible always (free-tier monitoring is intentional
+  brand position).
 - **No card-capture UI inside Winback.** Subscribe button → Stripe
   Checkout subscription mode → returns to `/dashboard`. Stripe handles
   card entry, 3DS, Apple Pay, address fields, receipts.
@@ -88,11 +102,22 @@ button — pause is implicit in "not subscribed".**
 ```sql
 ALTER TABLE wb_customers
   ADD COLUMN IF NOT EXISTS billing_nudge_day7_sent_at TIMESTAMP,
-  ADD COLUMN IF NOT EXISTS billing_nudge_day30_sent_at TIMESTAMP;
+  ADD COLUMN IF NOT EXISTS billing_nudge_day30_sent_at TIMESTAMP,
+  ADD COLUMN IF NOT EXISTS billing_monthly_report_last_sent_at TIMESTAMP,
+  ADD COLUMN IF NOT EXISTS billing_emails_opted_out_at TIMESTAMP;
 ```
 
-Two timestamp columns for cron idempotency. No new columns for the
-paused state itself — it's derived from existing
+Four timestamp columns:
+- `billing_nudge_day7_sent_at`: idempotency for day-7 nudge (set once)
+- `billing_nudge_day30_sent_at`: idempotency for day-30 nudge (set once)
+- `billing_monthly_report_last_sent_at`: last-sent timestamp for the
+  recurring monthly report (updated each send; new monthly send only
+  fires if it's been ≥28 days since last)
+- `billing_emails_opted_out_at`: merchant clicked "stop these reports"
+  in a monthly email; suppresses all future billing-related nudges +
+  monthly reports
+
+No new columns for the paused state itself — derived from
 `activatedAt` + `stripeSubscriptionId`.
 
 ## Code paths touched
@@ -248,6 +273,61 @@ Or if Winback isn't the right fit, disconnect via /settings — clean exit, no c
 The `{N}` and `{M}` counts come from `wb_churned_subscribers` filtered
 by customer + status + date.
 
+### 3b. Monthly churn-report cron
+
+Same `app/api/cron/billing-nudge/route.ts` file handles a third pass:
+monthly report. Runs daily but only fires for a given customer if it's
+been ≥28 days since `billing_monthly_report_last_sent_at` (or since
+`billing_nudge_day30_sent_at` if monthly never sent).
+
+Query:
+
+```sql
+SELECT id, ... FROM wb_customers
+WHERE activatedAt IS NOT NULL
+  AND stripeSubscriptionId IS NULL
+  AND billing_nudge_day30_sent_at IS NOT NULL
+  AND billing_emails_opted_out_at IS NULL
+  AND (
+    billing_monthly_report_last_sent_at IS NULL
+      AND billing_nudge_day30_sent_at < NOW() - INTERVAL '28 days'
+    OR
+    billing_monthly_report_last_sent_at < NOW() - INTERVAL '28 days'
+  )
+```
+
+For each: compute the last-30-day churn numbers from
+`wb_churned_subscribers`, send the monthly report email, update
+`billing_monthly_report_last_sent_at = NOW()`.
+
+**Monthly report template:**
+
+```
+Subject: Your {Month} churn report
+
+Hey,
+
+Here's what happened on your Winback account in {Month}:
+
+  · {N} cancellations
+  · {M} failed payments
+  · {K} subscribers classified as recoverable
+  · ~${X}/yr in MRR that Winback would have worked
+
+Resume: {appUrl}/dashboard?subscribe=1
+
+Don't want these monthly reports? [Unsubscribe]({appUrl}/api/billing/opt-out?t={signedToken})
+
+— The Winback team
+```
+
+The opt-out link is a signed token (same pattern as the existing
+unsubscribe URL for subscribers) that hits a new endpoint
+`/api/billing/opt-out` which sets `billing_emails_opted_out_at = NOW()`
+on the customer. After opt-out: no more billing-related emails ever
+(but dashboard banner still shows when they visit, and disconnecting
+Stripe is still always available).
+
 ### 4. Dashboard banner — ROI framing
 
 [app/dashboard/dashboard-client.tsx](../app/dashboard/dashboard-client.tsx)
@@ -317,7 +397,10 @@ that endpoint. Returns to `/dashboard?subscribe=success` on success.
 | Merchant subscribes, then cancels subscription | `stripeSubscriptionId` cleared via `processPlatformSubscriptionDeleted` (spec 23). Falls back into paused state. Banner returns. |
 | Day-7 nudge cron fires while merchant is in process of subscribing | Cron checks `stripeSubscriptionId IS NULL` at query time. If they subscribed minutes earlier, no nudge sent. |
 | Cron retries (Vercel timeout, etc.) | `billing_nudge_day7_sent_at` idempotency column ensures no duplicate emails. |
-| Merchant subscribed → banner dismissed → unsubscribed → re-pauses | Banner returns. Day-7/30 nudges *don't* re-fire (timestamp columns are set-once). Acceptable; this is a rare repeat-pause case and not worth the schema cost of resetting on re-pause. |
+| Merchant subscribed → banner dismissed → unsubscribed → re-pauses | Banner returns. Day-7/30 nudges *don't* re-fire (timestamp columns are set-once). Monthly reports DO continue (cadence-based, not single-fire). Acceptable; rare repeat-pause case. |
+| Merchant clicks "Unsubscribe" in a monthly report email | `billing_emails_opted_out_at` set. All future billing-related emails (nudges + monthly reports) suppressed. Dashboard banner unaffected — they can still subscribe in-app any time. |
+| Win-back recovery triggers `activatedAt` first, then a payment recovery delivers next | Only the FIRST recovery triggers `activatedAt` + the trial-complete email. Subsequent recoveries (of either type) are silently paused; they appear in dashboard with `Skipped — paused` status. |
+| Customer disconnects Stripe while paused | `stripeAccessToken` cleared. Cron's WHERE clause should also exclude disconnected customers (`stripeAccessToken IS NOT NULL`) — add that filter to all three nudge queries. |
 | AI suppression returns `suppress: true` for a cancellation during pause | Already early-returns from classifier suppression (existing behavior). The pause early-return runs first and short-circuits anyway. |
 | `activatedAt` set but recovery row doesn't exist (data corruption) | Banner has no `firstRecovery` data — falls back to a generic ROI ask without the specific name. UI handles `firstRecovery: null` gracefully. |
 
@@ -361,16 +444,19 @@ that endpoint. Returns to `/dashboard?subscribe=success` on success.
 
 **New:**
 - `src/winback/migrations/032_billing_nudge_columns.sql`
-- `app/api/cron/billing-nudge/route.ts`
+- `app/api/cron/billing-nudge/route.ts` (handles day-7 + day-30 + monthly)
+- `app/api/billing/opt-out/route.ts` (signed-token endpoint for "stop monthly reports")
 - `src/winback/__tests__/billing-pause-gate.test.ts`
 - `src/winback/__tests__/billing-nudge-cron.test.ts`
+- `src/winback/__tests__/billing-opt-out.test.ts`
 
 **Modified:**
-- `lib/schema.ts` (add 2 timestamp columns to `customers`)
+- `lib/schema.ts` (add 4 timestamp columns to `customers`)
 - `src/winback/lib/email.ts` (add `isCustomerPausedForBilling`, gate
   `scheduleExitEmail` + `sendDunningEmail` + dunning followup)
 - `src/winback/lib/billing-notifications.ts` (add
-  `sendPlatformTrialCompleteEmail`, day-7 + day-30 nudge sender helpers)
+  `sendPlatformTrialCompleteEmail`, day-7 + day-30 nudge sender helpers,
+  monthly-report sender)
 - `app/api/stripe/webhook/route.ts` (trigger trial-complete email when
   `activatedAt` is first set inside `triggerActivation`)
 - `app/dashboard/page.tsx` (compute MRR-at-risk numbers + atRiskCount)
@@ -380,9 +466,9 @@ that endpoint. Returns to `/dashboard?subscribe=success` on success.
   cards)
 - `vercel.json` (register billing-nudge cron at 10am UTC daily)
 
-**Total estimate:** ~250 lines added / ~50 lines removed (the existing
-banner implementation), 2 new test files (~80 lines each), 1 migration.
-~1 day of focused work.
+**Total estimate:** ~350 lines added / ~50 lines removed (the existing
+banner implementation), 3 new test files (~80 lines each), 1 migration.
+~1.5 days of focused work.
 
 ## Out of scope (post-launch follow-ups)
 
