@@ -115,7 +115,7 @@ If you'd rather not hear from us, unsubscribe: ${unsubscribeUrl(subscriberId)}`
 /**
  * Returns true if the subscriber has opted out. Callers must skip sending.
  */
-async function isDoNotContact(subscriberId: string): Promise<boolean> {
+export async function isDoNotContact(subscriberId: string): Promise<boolean> {
   const [row] = await db
     .select({ dnc: churnedSubscribers.doNotContact })
     .from(churnedSubscribers)

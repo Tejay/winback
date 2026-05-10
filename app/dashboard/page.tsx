@@ -58,6 +58,7 @@ export default async function DashboardPage() {
             isTrial={!billingActive}
             firstRecovery={firstRecovery}
             pilotUntilIso={pilotUntil ? pilotUntil.toISOString() : null}
+            founderName={customer?.founderName ?? session.user.name ?? null}
           />
         </div>
       </main>
