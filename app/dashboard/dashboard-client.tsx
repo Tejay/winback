@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, Fragment } from 'react'
 import { StatusBadge } from '@/components/status-badge'
 import { AiStateBadge } from '@/components/ai-state-badge'
-import { TrendingUp, CheckCircle, DollarSign, Users, Search, Zap, X, RotateCcw, Check, Loader2, Sparkles, MessageSquare, CreditCard } from 'lucide-react'
+import { TrendingUp, CheckCircle, DollarSign, Users, Search, Zap, X, RotateCcw, Check, Loader2, Sparkles, MessageSquare, CreditCard, ChevronRight, ChevronDown, Copy, Mail } from 'lucide-react'
 
 interface Subscriber {
   id: string
@@ -164,6 +164,9 @@ interface DashboardClientProps {
    *  pilot, null otherwise. Drives the pilot banner that replaces the
    *  generic "billing inactive" prompt. */
   pilotUntilIso?: string | null
+  /** Spec 50 — used as the signature in the pre-filled body of the
+   *  external-contact compose helper. Falls back to "The team". */
+  founderName?: string | null
 }
 
 export function DashboardClient({
@@ -171,6 +174,7 @@ export function DashboardClient({
   isTrial,
   firstRecovery,
   pilotUntilIso = null,
+  founderName = null,
 }: DashboardClientProps) {
   const [stats, setStats] = useState<Stats>(EMPTY_STATS)
   const [subscribers, setSubscribers] = useState<Subscriber[]>([])
@@ -187,6 +191,15 @@ export function DashboardClient({
   const search = tab === 'winback' ? winbackSearch : paymentSearch
   const setSearch = tab === 'winback' ? setWinbackSearch : setPaymentSearch
   const [selected, setSelected] = useState<Subscriber | null>(null)
+  // Spec 50 — collapsible "email them yourself" section in the suppressed
+  // subscriber drawer. State is keyed nowhere because we only show the
+  // section for one subscriber at a time (the selected one).
+  const [externalContactOpen, setExternalContactOpen] = useState(false)
+  const [copyFeedback, setCopyFeedback] = useState<string | null>(null)
+  useEffect(() => {
+    // Reset on subscriber change so a new drawer always starts collapsed.
+    setExternalContactOpen(false)
+  }, [selected?.id])
   const [changelogOpen, setChangelogOpen] = useState(false)
   const [changelogText, setChangelogText] = useState(changelog)
   const [bannerDismissed, setBannerDismissed] = useState(false)
@@ -302,6 +315,34 @@ export function DashboardClient({
     await fetch(`/api/subscribers/${id}/${action}`, { method: 'POST' })
     setSelected(null)
     fetchData()
+  }
+
+  // Spec 50 — register an external contact (merchant emailed from their
+  // own client). Inserts a stub emails_sent row + flips lost → contacted.
+  async function handleExternalContact(id: string) {
+    await fetch(`/api/subscribers/${id}/external-contact`, { method: 'POST' })
+    setSelected(null)
+    fetchData()
+  }
+
+  // Spec 50 — fire-and-forget version: mark + open the compose URL in
+  // a new tab. Used by the Gmail/Outlook/mailto launch buttons.
+  function fireAndOpen(id: string, composeUrl: string) {
+    fetch(`/api/subscribers/${id}/external-contact`, { method: 'POST' }).catch(() => {})
+    window.open(composeUrl, '_blank', 'noopener,noreferrer')
+    setSelected(null)
+    fetchData()
+  }
+
+  // Spec 50 — clipboard copy with brief "Copied!" feedback.
+  async function copyToClipboard(text: string, label: string) {
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopyFeedback(label)
+      setTimeout(() => setCopyFeedback(null), 2000)
+    } catch {
+      // No-op if clipboard API blocked. Merchant can always select+copy manually.
+    }
   }
 
   // Spec 21c — legacy snooze/resolve (handoff-specific buttons on amber banner)
@@ -1043,6 +1084,120 @@ export function DashboardClient({
                   </button>
                 </div>
               )}
+
+              {/* Spec 50 — collapsible "email them yourself" helper for suppressed subs.
+                  AI's suppression is final from our side; this lets the merchant pick up
+                  the conversation in their own inbox using the signed reactivate URL. */}
+              {selected.status === 'lost' && selected.email && !selected.doNotContact && (() => {
+                const appUrl =
+                  (typeof window !== 'undefined' ? window.location.origin : '') ||
+                  process.env.NEXT_PUBLIC_APP_URL || 'https://winbackflow.co'
+                const reactivateUrl = `${appUrl}/api/reactivate/${selected.id}`
+                const firstName = selected.name?.split(' ')[0] ?? 'there'
+                const fromName = founderName ?? 'The team'
+                const subject = `Following up on your cancellation`
+                const body =
+                  `Hi ${firstName},\n\n` +
+                  `Saw you cancelled — wanted to reach out personally.\n\n` +
+                  `[your message here]\n\n` +
+                  `When you're ready, here's a one-click link to restart:\n` +
+                  `→ ${reactivateUrl}\n\n` +
+                  `– ${fromName}`
+                const enc = encodeURIComponent
+                const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${enc(selected.email)}&su=${enc(subject)}&body=${enc(body)}`
+                const outlookUrl = `https://outlook.live.com/mail/0/deeplink/compose?to=${enc(selected.email)}&subject=${enc(subject)}&body=${enc(body)}`
+                const mailtoUrl = `mailto:${enc(selected.email)}?subject=${enc(subject)}&body=${enc(body)}`
+
+                return (
+                  <div className="border-t border-slate-100 pt-3">
+                    <button
+                      onClick={() => setExternalContactOpen((v) => !v)}
+                      className="w-full flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-500 hover:text-slate-700"
+                    >
+                      {externalContactOpen ? (
+                        <ChevronDown className="w-3.5 h-3.5" />
+                      ) : (
+                        <ChevronRight className="w-3.5 h-3.5" />
+                      )}
+                      Email them yourself
+                    </button>
+
+                    {externalContactOpen && (
+                      <div className="mt-3 space-y-3">
+                        <p className="text-xs text-slate-500 leading-relaxed">
+                          Have context the AI didn&apos;t? Email from your own inbox.
+                        </p>
+
+                        <div>
+                          <div className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">
+                            To
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm text-slate-700 truncate flex-1">{selected.email}</span>
+                            <button
+                              onClick={() => copyToClipboard(selected.email!, 'email')}
+                              className="border border-slate-200 bg-white text-slate-600 rounded-full px-2.5 py-0.5 text-xs font-medium hover:bg-slate-50 inline-flex items-center gap-1"
+                            >
+                              <Copy className="w-3 h-3" />
+                              {copyFeedback === 'email' ? 'Copied!' : 'Copy'}
+                            </button>
+                          </div>
+                        </div>
+
+                        <div>
+                          <div className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">
+                            Reactivate link
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-slate-600 truncate flex-1 font-mono">{reactivateUrl}</span>
+                            <button
+                              onClick={() => copyToClipboard(reactivateUrl, 'link')}
+                              className="border border-slate-200 bg-white text-slate-600 rounded-full px-2.5 py-0.5 text-xs font-medium hover:bg-slate-50 inline-flex items-center gap-1"
+                            >
+                              <Copy className="w-3 h-3" />
+                              {copyFeedback === 'link' ? 'Copied!' : 'Copy'}
+                            </button>
+                          </div>
+                          <p className="text-xs text-slate-400 mt-1 leading-relaxed">
+                            Including this link lets us credit the recovery if they come back.
+                          </p>
+                        </div>
+
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            onClick={() => fireAndOpen(selected.id, gmailUrl)}
+                            className="border border-slate-200 bg-white text-slate-700 rounded-full px-3 py-1.5 text-xs font-medium hover:bg-slate-50 inline-flex items-center gap-1.5"
+                          >
+                            <Mail className="w-3 h-3" /> Open in Gmail
+                          </button>
+                          <button
+                            onClick={() => fireAndOpen(selected.id, outlookUrl)}
+                            className="border border-slate-200 bg-white text-slate-700 rounded-full px-3 py-1.5 text-xs font-medium hover:bg-slate-50 inline-flex items-center gap-1.5"
+                          >
+                            <Mail className="w-3 h-3" /> Open in Outlook
+                          </button>
+                          <button
+                            onClick={() => fireAndOpen(selected.id, mailtoUrl)}
+                            className="border border-slate-200 bg-white text-slate-700 rounded-full px-3 py-1.5 text-xs font-medium hover:bg-slate-50 inline-flex items-center gap-1.5"
+                          >
+                            <Mail className="w-3 h-3" /> Open in mail app
+                          </button>
+                        </div>
+
+                        <div className="pt-2 border-t border-slate-100">
+                          <p className="text-xs text-slate-500 mb-2">Used a different tool?</p>
+                          <button
+                            onClick={() => handleExternalContact(selected.id)}
+                            className="border border-slate-200 bg-white text-slate-700 rounded-full px-3 py-1.5 text-xs font-medium hover:bg-slate-50 inline-flex items-center gap-1.5"
+                          >
+                            <Check className="w-3 h-3" /> Mark as contacted
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )
+              })()}
 
               {/* Spec 22a — Pause AI dropdown (any non-paused, non-handoff, non-terminal sub) */}
               {selected.status !== 'recovered' && selected.status !== 'lost' &&
