@@ -348,6 +348,30 @@ export function DashboardClient({
     fetchData()
   }
 
+  // Spec 51 — Subscribe button on the banner. Opens Stripe Checkout
+  // directly (setup-intent flow). Used by both the main banner and the
+  // persistent paused status bar. Failures bubble up to a small inline
+  // error message on the banner.
+  const [subscribeError, setSubscribeError] = useState<string | null>(null)
+  const [subscribing, setSubscribing] = useState(false)
+  async function handleSubscribe() {
+    setSubscribeError(null)
+    setSubscribing(true)
+    try {
+      const res = await fetch('/api/billing/setup-intent', { method: 'POST' })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.error ?? `Failed (${res.status})`)
+      }
+      const { url } = await res.json()
+      if (!url) throw new Error('No checkout URL returned')
+      window.location.href = url
+    } catch (e) {
+      setSubscribeError(e instanceof Error ? e.message : String(e))
+      setSubscribing(false)
+    }
+  }
+
   // Spec 50 — clipboard copy with brief "Copied!" feedback.
   async function copyToClipboard(text: string, label: string) {
     try {
@@ -440,12 +464,13 @@ export function DashboardClient({
               — recoveries won't send until you subscribe.
             </span>
           </div>
-          <a
-            href="/settings#billing"
-            className="bg-amber-900 text-amber-50 rounded-full px-4 py-1.5 text-xs font-medium hover:bg-amber-800 flex-shrink-0"
+          <button
+            onClick={handleSubscribe}
+            disabled={subscribing}
+            className="bg-amber-900 text-amber-50 rounded-full px-4 py-1.5 text-xs font-medium hover:bg-amber-800 flex-shrink-0 disabled:opacity-60"
           >
-            Subscribe to resume →
-          </a>
+            {subscribing ? 'Opening Stripe…' : 'Subscribe to resume →'}
+          </button>
         </div>
       )}
 
@@ -494,6 +519,9 @@ export function DashboardClient({
           firstRecovery={firstRecovery!}
           atRiskCount={atRiskCount}
           atRiskMrrAnnualizedCents={atRiskMrrAnnualizedCents}
+          onSubscribe={handleSubscribe}
+          subscribing={subscribing}
+          error={subscribeError}
         />
       )}
 
@@ -1493,10 +1521,16 @@ function FirstRecoveryBanner({
   firstRecovery,
   atRiskCount,
   atRiskMrrAnnualizedCents,
+  onSubscribe,
+  subscribing,
+  error,
 }: {
   firstRecovery: { name: string | null; mrrCents: number }
   atRiskCount: number
   atRiskMrrAnnualizedCents: number
+  onSubscribe: () => void
+  subscribing: boolean
+  error: string | null
 }) {
   // Spec 51 — ROI-framed billing banner with red border to pull attention.
   // Soft blue→white→emerald gradient hero, dark CTA, no "Not now" dismiss.
@@ -1553,17 +1587,23 @@ function FirstRecoveryBanner({
         </p>
 
         <div className="flex flex-wrap items-center gap-4">
-          <a
-            href="/settings#billing"
-            className="bg-[#0f172a] text-white rounded-full px-6 py-2.5 text-sm font-semibold hover:bg-[#1e293b] inline-flex items-center gap-2 shadow-md"
+          <button
+            onClick={onSubscribe}
+            disabled={subscribing}
+            className="bg-[#0f172a] text-white rounded-full px-6 py-2.5 text-sm font-semibold hover:bg-[#1e293b] inline-flex items-center gap-2 shadow-md disabled:opacity-60 disabled:cursor-not-allowed"
           >
-            Subscribe via Stripe
-            <span>→</span>
-          </a>
+            {subscribing ? 'Opening Stripe…' : 'Subscribe via Stripe'}
+            {!subscribing && <span>→</span>}
+          </button>
           <span className="text-xs text-slate-500">
             Opens Stripe Checkout · 14-day refund window
           </span>
         </div>
+        {error && (
+          <p className="text-xs text-red-600 mt-3">
+            Couldn&apos;t open Stripe Checkout: {error}. Try again, or contact support if it persists.
+          </p>
+        )}
       </div>
     </div>
   )

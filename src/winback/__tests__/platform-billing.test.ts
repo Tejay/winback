@@ -61,7 +61,7 @@ beforeEach(() => {
 // ─── Tests ─────────────────────────────────────────────────────────────────
 
 describe('getOrCreatePlatformCustomer (spec 23)', () => {
-  it('returns existing ID without hitting Stripe when already populated', async () => {
+  it('returns existing ID after verifying it still exists on Stripe', async () => {
     mockDbSelect.mockReturnValue({
       from: vi.fn().mockReturnValue({
         where: vi.fn().mockReturnValue({
@@ -71,10 +71,106 @@ describe('getOrCreatePlatformCustomer (spec 23)', () => {
         }),
       }),
     })
+    // Spec 51 — defensive verify call. Returns a non-deleted customer.
+    mockStripeCustomersRetrieve.mockResolvedValueOnce({ id: 'cus_existing', email: 'a@b.co' })
 
     const { getOrCreatePlatformCustomer } = await import('../lib/platform-billing')
     const id = await getOrCreatePlatformCustomer('wb-1')
     expect(id).toBe('cus_existing')
+    expect(mockStripeCustomersRetrieve).toHaveBeenCalledWith('cus_existing')
+    expect(mockStripeCustomersCreate).not.toHaveBeenCalled()
+  })
+
+  it('Spec 51 — recovers from stale ID (No such customer) by recreating', async () => {
+    // First select: wb customer lookup with stale stored ID
+    const selectChain = vi.fn()
+      .mockReturnValueOnce({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            limit: vi.fn().mockResolvedValue([
+              { id: 'wb-1', userId: 'user-1', founderName: 'Tej', stripePlatformCustomerId: 'cus_stale' },
+            ]),
+          }),
+        }),
+      })
+      // Second select: user email lookup (for fresh-customer creation)
+      .mockReturnValueOnce({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            limit: vi.fn().mockResolvedValue([{ email: 'tej@example.com' }]),
+          }),
+        }),
+      })
+    mockDbSelect.mockImplementation(selectChain)
+    mockDbUpdate.mockReturnValue({
+      set: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
+    })
+
+    // Stripe says no such customer
+    const err = new Error('No such customer: cus_stale')
+    ;(err as { type?: string }).type = 'StripeInvalidRequestError'
+    mockStripeCustomersRetrieve.mockRejectedValueOnce(err)
+    // Then we create a fresh one
+    mockStripeCustomersCreate.mockResolvedValueOnce({ id: 'cus_fresh' })
+
+    const { getOrCreatePlatformCustomer } = await import('../lib/platform-billing')
+    const id = await getOrCreatePlatformCustomer('wb-1')
+    expect(id).toBe('cus_fresh')
+    expect(mockStripeCustomersRetrieve).toHaveBeenCalledWith('cus_stale')
+    expect(mockStripeCustomersCreate).toHaveBeenCalledTimes(1)
+    expect(mockDbUpdate).toHaveBeenCalled()
+  })
+
+  it('Spec 51 — recovers from soft-deleted customer (deleted: true) by recreating', async () => {
+    const selectChain = vi.fn()
+      .mockReturnValueOnce({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            limit: vi.fn().mockResolvedValue([
+              { id: 'wb-1', userId: 'user-1', founderName: 'Tej', stripePlatformCustomerId: 'cus_deleted' },
+            ]),
+          }),
+        }),
+      })
+      .mockReturnValueOnce({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            limit: vi.fn().mockResolvedValue([{ email: 'tej@example.com' }]),
+          }),
+        }),
+      })
+    mockDbSelect.mockImplementation(selectChain)
+    mockDbUpdate.mockReturnValue({
+      set: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
+    })
+
+    // Stripe returns deleted: true
+    mockStripeCustomersRetrieve.mockResolvedValueOnce({ id: 'cus_deleted', deleted: true })
+    mockStripeCustomersCreate.mockResolvedValueOnce({ id: 'cus_fresh' })
+
+    const { getOrCreatePlatformCustomer } = await import('../lib/platform-billing')
+    const id = await getOrCreatePlatformCustomer('wb-1')
+    expect(id).toBe('cus_fresh')
+    expect(mockStripeCustomersCreate).toHaveBeenCalledTimes(1)
+  })
+
+  it('Spec 51 — non-recovery errors from retrieve are NOT swallowed', async () => {
+    mockDbSelect.mockReturnValue({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockReturnValue({
+          limit: vi.fn().mockResolvedValue([
+            { id: 'wb-1', userId: 'user-1', founderName: 'Tej', stripePlatformCustomerId: 'cus_x' },
+          ]),
+        }),
+      }),
+    })
+
+    const err = new Error('API rate limit exceeded')
+    ;(err as { type?: string }).type = 'StripeRateLimitError'
+    mockStripeCustomersRetrieve.mockRejectedValueOnce(err)
+
+    const { getOrCreatePlatformCustomer } = await import('../lib/platform-billing')
+    await expect(getOrCreatePlatformCustomer('wb-1')).rejects.toThrow(/rate limit/i)
     expect(mockStripeCustomersCreate).not.toHaveBeenCalled()
   })
 
