@@ -11,7 +11,7 @@
 // Run: npx tsx --env-file=.env.local scripts/billing-test-tier1-real-webhook.ts
 
 import { db } from '../lib/db'
-import { customers, churnedSubscribers, recoveries, users } from '../lib/schema'
+import { customers, churnedSubscribers, recoveries, users, emailsSent } from '../lib/schema'
 import { eq, and } from 'drizzle-orm'
 import { decrypt } from '../src/winback/lib/encryption'
 import Stripe from 'stripe'
@@ -117,6 +117,25 @@ async function main() {
   console.log(`    cancellationReason=${churnRow.cancellationReason ?? '(awaiting classifier)'}`)
   console.log(`    mrrCents=${churnRow.mrrCents} status=${churnRow.status}`)
 
+  // Recovery attribution gate (`app/api/stripe/webhook/route.ts:403`)
+  // requires at least one wb_emails_sent row for the churned subscriber —
+  // otherwise the resubscribe is "they came back on their own". And to
+  // get `attributionType='strong'` (the only path that triggers
+  // ensureActivation — line 495), we also need a signal like
+  // `repliedAt` set. The classifier + email-send paths are covered by
+  // their own vitests; Tier 1 specifically exercises the recovery +
+  // activation chain that follows.
+  console.log('\n[4.5/6] Inject synthetic wb_emails_sent (with repliedAt) → strong attribution')
+  const [emailRow] = await db.insert(emailsSent).values({
+    subscriberId: churnRow.id,
+    type: 'exit',
+    subject: '(Tier 1 test) synthetic exit email',
+    bodyText: '(Tier 1 test) synthetic body — bypasses classifier suppression for the test seed.',
+    sentAt: new Date(Date.now() - 60_000), // 1 min ago — fresh
+    repliedAt: new Date(), // → attributionType='strong' → triggerActivation fires
+  }).returning({ id: emailsSent.id })
+  console.log(`    emails_sent id=${emailRow.id}`)
+
   // 5) Re-subscribe → fires customer.subscription.created → processRecovery
   console.log('\n[5/6] Re-create subscription → expect processRecovery webhook')
   const sub2 = await connect.subscriptions.create({
@@ -144,12 +163,18 @@ async function main() {
   console.log(`    perfFeeStripeItemId=${recRow.perfFeeStripeItemId ?? 'NULL (expected pre-subscribe)'}`)
   console.log(`    perfFeeChargedAt=${recRow.perfFeeChargedAt?.toISOString() ?? 'NULL (expected pre-subscribe)'}`)
 
-  // 6) Verify customer state
-  console.log('\n[6/6] Verify customer billing state')
-  const [after] = await db.select().from(customers).where(eq(customers.id, c.id)).limit(1)
-  console.log(`    activatedAt=${after.activatedAt?.toISOString() ?? 'NULL ❌ expected non-null'}`)
-  console.log(`    stripeSubscriptionId=${after.stripeSubscriptionId ?? 'NULL (expected — not yet subscribed)'}`)
-  console.log(`    pilotUntil=${after.pilotUntil?.toISOString() ?? 'NULL (expected — not on pilot)'}`)
+  // 6) Verify customer state — poll for activatedAt because ensureActivation
+  // runs *after* the recovery row insert inside the same webhook handler,
+  // and we may have observed the row before activation finished.
+  console.log('\n[6/6] Verify customer billing state (polling for activatedAt)')
+  const activatedRow = await poll('customers.activatedAt populated', async () => {
+    const [row] = await db.select().from(customers).where(eq(customers.id, c.id)).limit(1)
+    return row?.activatedAt ? row : null
+  })
+  console.log(`    activatedAt=${activatedRow.activatedAt?.toISOString()} ✓`)
+  console.log(`    stripeSubscriptionId=${activatedRow.stripeSubscriptionId ?? 'NULL (expected — not yet subscribed)'}`)
+  console.log(`    stripePlatformCustomerId=${activatedRow.stripePlatformCustomerId ?? 'NULL'}`)
+  console.log(`    pilotUntil=${activatedRow.pilotUntil?.toISOString() ?? 'NULL (expected — not on pilot)'}`)
 
   console.log('\n=== Now ===')
   console.log(`Open  http://localhost:3000/dashboard  (logged in as ${TARGET_EMAIL})`)
