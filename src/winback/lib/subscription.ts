@@ -1,7 +1,7 @@
 import type Stripe from 'stripe'
 import { db } from '@/lib/db'
 import { customers } from '@/lib/schema'
-import { eq } from 'drizzle-orm'
+import { eq, and, isNull, or, lt } from 'drizzle-orm'
 import { getPlatformStripe } from './platform-stripe'
 import { getOrCreatePlatformCustomer } from './platform-billing'
 
@@ -79,6 +79,18 @@ export type SubscriptionStatus =
  * `charge_automatically`. Treat the throw as expected if you call this
  * without verifying card presence first.
  */
+// Spec 52 — TTL on the creation lock. A claim older than this (i.e., a
+// crashed claimer) can be reclaimed by the next caller. 30s is wide
+// enough to comfortably cover one Stripe subscriptions.create call
+// (~500ms typical, sometimes much longer under back-pressure) plus the
+// subsequent UPDATE.
+const SUBSCRIPTION_CREATION_LOCK_TTL_MS = 30_000
+
+// Spec 52 — how long the lock-loser waits before re-reading to see the
+// winner's subscription_id. Generous enough that any successful create
+// call has had time to complete its post-Stripe UPDATE.
+const SUBSCRIPTION_CREATION_RACE_WAIT_MS = 1_000
+
 export async function ensurePlatformSubscription(
   wbCustomerId: string,
 ): Promise<{ subscriptionId: string; created: boolean }> {
@@ -107,24 +119,82 @@ export async function ensurePlatformSubscription(
     }
   }
 
+  // Spec 52 — race fence. /billing/success and the
+  // checkout.session.completed webhook both reach here in parallel on a
+  // normal Subscribe completion. Without this claim, both would pass the
+  // pre-check above and both would call stripe.subscriptions.create,
+  // producing an orphan subscription that bills the customer with no DB
+  // record. The conditional UPDATE is atomic — only one caller's
+  // .returning() is non-empty.
+  const claimedAt = new Date()
+  const claimStaleCutoff = new Date(
+    claimedAt.getTime() - SUBSCRIPTION_CREATION_LOCK_TTL_MS,
+  )
+  const claimed = await db
+    .update(customers)
+    .set({ stripeSubscriptionCreatingAt: claimedAt, updatedAt: claimedAt })
+    .where(
+      and(
+        eq(customers.id, wbCustomerId),
+        isNull(customers.stripeSubscriptionId),
+        or(
+          isNull(customers.stripeSubscriptionCreatingAt),
+          lt(customers.stripeSubscriptionCreatingAt, claimStaleCutoff),
+        ),
+      ),
+    )
+    .returning({ id: customers.id })
+
+  if (claimed.length === 0) {
+    // We lost the race. Wait for the winner to finish, then return their sub.
+    await new Promise((resolve) => setTimeout(resolve, SUBSCRIPTION_CREATION_RACE_WAIT_MS))
+    const [after] = await db
+      .select({ stripeSubscriptionId: customers.stripeSubscriptionId })
+      .from(customers)
+      .where(eq(customers.id, wbCustomerId))
+      .limit(1)
+    if (after?.stripeSubscriptionId) {
+      return { subscriptionId: after.stripeSubscriptionId, created: false }
+    }
+    // The other claimer is still in flight beyond our wait window, or
+    // crashed. The caller can retry — by then either the row will have
+    // a subscription_id (this branch returns it) or the lock will be
+    // past TTL (next attempt successfully claims).
+    throw new Error(
+      `ensurePlatformSubscription: subscription_creation_in_progress for ${wbCustomerId}`,
+    )
+  }
+
+  // We hold the claim. From here, only one process is calling Stripe.
   const platformCustomerId =
     row.stripePlatformCustomerId ?? (await getOrCreatePlatformCustomer(wbCustomerId))
 
   const stripe = getPlatformStripe()
   const priceId = await getOrCreatePlatformPriceId(stripe)
 
-  const subscription = await stripe.subscriptions.create({
-    customer: platformCustomerId,
-    items: [{ price: priceId }],
-    proration_behavior: 'create_prorations',
-    collection_method: 'charge_automatically',
-    metadata: { winback_customer_id: wbCustomerId },
-  })
+  let subscription: Stripe.Subscription
+  try {
+    subscription = await stripe.subscriptions.create({
+      customer: platformCustomerId,
+      items: [{ price: priceId }],
+      proration_behavior: 'create_prorations',
+      collection_method: 'charge_automatically',
+      metadata: { winback_customer_id: wbCustomerId },
+    })
+  } catch (err) {
+    // Release the claim so a retry can proceed without waiting for TTL.
+    await db
+      .update(customers)
+      .set({ stripeSubscriptionCreatingAt: null, updatedAt: new Date() })
+      .where(eq(customers.id, wbCustomerId))
+    throw err
+  }
 
   await db
     .update(customers)
     .set({
       stripeSubscriptionId: subscription.id,
+      stripeSubscriptionCreatingAt: null,
       activatedAt: new Date(),
       updatedAt: new Date(),
     })

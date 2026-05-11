@@ -186,7 +186,92 @@ success path, so we fix it here.
 The empty state still appears correctly once data has loaded and the
 table is genuinely empty (new merchant, never had a cancellation).
 
-### Change 4 — No change to webhook handler
+### Change 4 — DB-level race fence in `ensurePlatformSubscription`
+
+**Critical bug surfaced by live testing:** spec 52's whole design rests
+on two parallel triggers both calling `ensureActivation`. But
+`ensurePlatformSubscription` (called from inside `ensureActivation`)
+has a classic TOCTOU race:
+
+```
+1. SELECT customer; stripeSubscriptionId is NULL              ← both callers see NULL here
+2. stripe.subscriptions.create({...})                          ← both call this, ~500ms each
+3. UPDATE customer SET stripeSubscriptionId = newSub.id       ← second UPDATE overwrites first
+```
+
+In live testing, a single Subscribe action produced TWO active
+subscriptions on the Stripe customer:
+
+```
+sub_1TVhm5At1bwzP4uUvBm44AJQ  (active)
+sub_1TVhm1At1bwzP4uUMLke5YEH  (active, orphan — not in our DB)
+```
+
+The orphan subscription continues to invoice the customer with no
+record on our side. In production this would double-bill every
+merchant who subscribes. **Without this fix, spec 52 is a regression
+from the pre-spec-52 webhook-only state, not an improvement.**
+
+#### The fix — claim-create-release with a TTL'd creation lock
+
+Schema (migration 033):
+
+```sql
+ALTER TABLE wb_customers
+ADD COLUMN IF NOT EXISTS stripe_subscription_creating_at TIMESTAMP;
+```
+
+`ensurePlatformSubscription` becomes:
+
+1. **Pre-check** (unchanged): if `stripeSubscriptionId` already points
+   at an active sub on Stripe, return it.
+2. **Claim**: conditional UPDATE that sets
+   `stripeSubscriptionCreatingAt = now()` only if (a)
+   `stripeSubscriptionId IS NULL` and (b) no existing
+   `stripeSubscriptionCreatingAt` newer than `now() - 30s` (so a
+   crashed/aborted prior claimer can be reclaimed after 30s).
+   `.returning()` tells us whether we won the claim.
+3. **Lost the claim**: another caller is in flight. Wait ~1s and
+   re-read; if `stripeSubscriptionId` is now set, return it. If still
+   NULL after the wait, throw `subscription_creation_in_progress` —
+   caller retries.
+4. **Won the claim**: call `stripe.subscriptions.create`. Then write
+   `stripeSubscriptionId = newSub.id` AND clear
+   `stripeSubscriptionCreatingAt` in a single UPDATE.
+
+Why this works:
+- The claim is a single atomic UPDATE statement — only one of N
+  concurrent callers gets a non-empty `returning()`.
+- The 30s TTL handles the failure mode where the claim-winner crashes
+  between claim and create — a later retry will reclaim the lock.
+- Stripe is called by exactly one caller per attempt, so no orphan
+  subscriptions are ever created.
+- The conditional UPDATE doesn't require a transaction (which the
+  current `neon-http` driver doesn't support cleanly). Single-statement
+  atomicity is enough.
+
+#### What about `ensureActivation` being called from elsewhere?
+
+`ensureActivation` is also called by win-back/payment-recovery
+webhook handlers, not just spec 52's two paths. Same race could occur
+there if multiple recoveries deliver concurrently for the same
+just-activated customer. So the fix lives in
+`ensurePlatformSubscription` itself, not on the spec 52 callers —
+benefits everyone.
+
+#### Edge cases handled
+
+- **Caller A crashes between claim and Stripe create** → claim sits
+  with `creating_at` set, `subscription_id` NULL. After 30s, any
+  retry can reclaim.
+- **Stripe call succeeds but our UPDATE fails** → claim sits past
+  TTL, retry reclaims. The orphan sub on Stripe is rare but visible
+  in admin events; manual cleanup if it happens. (Could be improved
+  with idempotency keys; out of scope here.)
+- **Two retries land within the 30s TTL** → one waits, then re-reads,
+  sees the winner's `subscription_id`, returns it. No third create.
+
+### Change 5 — No change to webhook handler
 
 `processPlatformCardCapture` in `app/api/stripe/webhook/route.ts`
 already does the exact same two operations (`setDefaultPaymentMethod`
@@ -209,7 +294,14 @@ canonical "card captured" event per Checkout completion.)
 
 ## Schema
 
-No schema changes.
+Migration 033 — adds the creation-lock column:
+
+```sql
+ALTER TABLE wb_customers
+ADD COLUMN IF NOT EXISTS stripe_subscription_creating_at TIMESTAMP;
+```
+
+No backfill needed; NULL is the natural "not currently creating" state.
 
 ## Code paths touched
 
@@ -218,6 +310,9 @@ No schema changes.
 | `app/api/billing/setup-intent/route.ts` | Change `success_url` |
 | `app/billing/success/page.tsx` | **new** server component |
 | `app/dashboard/dashboard-client.tsx` | loading-state gating (Change 3) |
+| `src/winback/lib/subscription.ts` | claim-create-release fence (Change 4) |
+| `lib/schema.ts` | add `stripeSubscriptionCreatingAt` column |
+| `src/winback/migrations/033_subscription_creating_lock.sql` | **new** migration |
 | `app/api/stripe/webhook/route.ts` | no change |
 | `src/winback/lib/platform-billing.ts` | no change |
 | `src/winback/lib/activation.ts` | no change |
