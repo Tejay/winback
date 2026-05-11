@@ -188,7 +188,12 @@ export function DashboardClient({
   activatedAtIso = null,
 }: DashboardClientProps) {
   const [stats, setStats] = useState<Stats>(EMPTY_STATS)
-  const [subscribers, setSubscribers] = useState<Subscriber[]>([])
+  // Spec 52 — `null` means "first fetch hasn't completed yet"; `[]` means
+  // "loaded and empty". Lets the table avoid flashing the "No win-backs yet"
+  // empty state during initial mount (most visible when navigating back from
+  // /billing/success after Subscribe completes).
+  const [subscribers, setSubscribers] = useState<Subscriber[] | null>(null)
+  const [statsLoaded, setStatsLoaded] = useState(false)
   // Spec 40 — independent filter/search state per cohort tab.
   type Cohort = 'winback' | 'paymentRecovery'
   const [tab, setTab] = useState<Cohort>('winback')
@@ -289,7 +294,12 @@ export function DashboardClient({
   }, [])
 
   const fetchData = useCallback(() => {
-    fetch('/api/stats').then((r) => r.json()).then(setStats)
+    fetch('/api/stats')
+      .then((r) => r.json())
+      .then((data) => {
+        setStats(data)
+        setStatsLoaded(true)
+      })
     const params = new URLSearchParams()
     // Spec 40 — partition by cohort. The "Has reply" chip is win-back-only
     // and serialised to ?hasReply=true rather than the filter slot so the
@@ -588,7 +598,7 @@ export function DashboardClient({
       )}
 
       {/* Changelog empty-state nudge */}
-      {!changelogText.trim() && subscribers.length > 0 && !changelogNudgeDismissed && (
+      {!changelogText.trim() && (subscribers?.length ?? 0) > 0 && !changelogNudgeDismissed && (
         <div className="bg-white border border-slate-200 rounded-2xl p-5 mb-6 flex items-start justify-between gap-4">
           <div className="flex items-start gap-4">
             <div className="bg-blue-50 rounded-full p-2 flex-shrink-0">
@@ -677,12 +687,14 @@ export function DashboardClient({
           <section className="rounded-3xl bg-blue-100 border border-blue-200 p-3 mb-7">
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
               <StatCard
+                loading={!statsLoaded}
                 accent="blue"
                 icon={<TrendingUp className="w-4 h-4" />}
                 value={stats.winBack.allTime.recoveryRate === null ? '—' : `${stats.winBack.allTime.recoveryRate}%`}
                 label="Recovery rate (30d)"
               />
               <StatCard
+                loading={!statsLoaded}
                 accent="blue"
                 icon={<CheckCircle className="w-4 h-4" />}
                 value={String(stats.winBack.allTime.recovered)}
@@ -695,6 +707,7 @@ export function DashboardClient({
                 sparkline={stats.winBack.dailyRecovered}
               />
               <StatCard
+                loading={!statsLoaded}
                 accent="blue"
                 icon={<DollarSign className="w-4 h-4" />}
                 value={`$${Math.round(stats.cumulativeRevenueSavedCents / 100).toLocaleString()}`}
@@ -707,6 +720,7 @@ export function DashboardClient({
                 )}
               />
               <StatCard
+                loading={!statsLoaded}
                 accent="amber"
                 icon={<Users className="w-4 h-4" />}
                 value={String(stats.winBack.inProgress)}
@@ -729,12 +743,14 @@ export function DashboardClient({
           <section className="rounded-3xl bg-green-100 border border-green-200 p-3 mb-7">
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
               <StatCard
+                loading={!statsLoaded}
                 accent="green"
                 icon={<TrendingUp className="w-4 h-4" />}
                 value={stats.paymentRecovery.allTime.recoveryRate === null ? '—' : `${stats.paymentRecovery.allTime.recoveryRate}%`}
                 label="Recovery rate (30d)"
               />
               <StatCard
+                loading={!statsLoaded}
                 accent="green"
                 icon={<CheckCircle className="w-4 h-4" />}
                 value={String(stats.paymentRecovery.allTime.recovered)}
@@ -747,6 +763,7 @@ export function DashboardClient({
                 sparkline={stats.paymentRecovery.dailyRecovered}
               />
               <StatCard
+                loading={!statsLoaded}
                 accent="green"
                 icon={<DollarSign className="w-4 h-4" />}
                 value={`$${Math.round(stats.cumulativeRevenueSavedCents / 100).toLocaleString()}`}
@@ -759,6 +776,7 @@ export function DashboardClient({
                 )}
               />
               <StatCard
+                loading={!statsLoaded}
                 accent="amber"
                 icon={<Users className="w-4 h-4" />}
                 value={String(stats.paymentRecovery.inDunning)}
@@ -835,7 +853,7 @@ export function DashboardClient({
               </tr>
             </thead>
             <tbody>
-              {subscribers.map((sub) => (
+              {(subscribers ?? []).map((sub) => (
                 <tr
                   key={sub.id}
                   onClick={() => setSelected(sub)}
@@ -864,7 +882,7 @@ export function DashboardClient({
                   </td>
                 </tr>
               ))}
-              {subscribers.length === 0 && (
+              {subscribers !== null && subscribers.length === 0 && (
                 <tr>
                   <td colSpan={6} className="text-center py-12 text-sm text-slate-400">
                     No win-backs yet. Cancellations land here as they come in from Stripe.
@@ -1385,11 +1403,19 @@ function PaymentRecoveryTable({
   onToggleExpand,
   onResendDunning,
 }: {
-  rows: Subscriber[]
+  // null = first fetch not yet completed; [] = loaded and empty.
+  rows: Subscriber[] | null
   expandedRowId: string | null
   onToggleExpand: (id: string) => void
   onResendDunning: (id: string) => void
 }) {
+  // Spec 52 — don't render the empty state until we know the table is
+  // genuinely empty (not just mid-fetch). Avoids the brief flash of
+  // "No payment recoveries yet" on initial mount, which is now reachable
+  // every time a merchant clicks "Back to dashboard" from /billing/success.
+  if (rows === null) {
+    return <div className="bg-white rounded-2xl border border-slate-100 px-6 py-12" aria-hidden />
+  }
   if (rows.length === 0) {
     return (
       <div className="bg-white rounded-2xl border border-slate-100 px-6 py-12 text-center text-sm text-slate-400">
@@ -1733,6 +1759,7 @@ function StatCard({
   delta,
   sparkline,
   subValue,
+  loading,
 }: {
   accent: 'blue' | 'green' | 'amber'
   icon: React.ReactNode
@@ -1744,7 +1771,17 @@ function StatCard({
   sparkline?: number[]
   /** Spec 41 — small line under the big value (e.g. "$480/mo currently active"). */
   subValue?: string
+  /** Spec 52 — true while the first /api/stats fetch is in flight. Shows a
+   *  placeholder so we don't flash "0" / "$0" the moment after Subscribe
+   *  redirects the merchant back to the dashboard. */
+  loading?: boolean
 }) {
+  if (loading) {
+    value = '—'
+    delta = undefined
+    sparkline = undefined
+    subValue = undefined
+  }
   const accentClass =
     accent === 'blue'
       ? 'bg-blue-50 text-blue-600'

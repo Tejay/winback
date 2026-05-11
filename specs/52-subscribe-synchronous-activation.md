@@ -156,7 +156,37 @@ icon (lucide `CheckCircle2`, `text-green-500 h-12 w-12`), title
 "You're subscribed.", subtitle (one short paragraph), single primary
 button.
 
-### Change 3 — No change to webhook handler
+### Change 3 — Dashboard loading-state, so `/billing/success → Back to dashboard` doesn't flash an empty state
+
+Surfaced while testing the live flow: clicking "Back to dashboard" from
+`/billing/success` mounts a fresh `DashboardClient` with `subscribers
+= []` and `stats = EMPTY_STATS` as initial state. There's a ~100–500ms
+window before the first `fetchData()` completes during which the table
+renders **"No win-backs yet"** and the KPIs render **0 / $0 / 0**.
+Merchants who just paid look at this and panic — exactly the wrong UX
+for the moment immediately after subscribing.
+
+Pre-existing bug, but spec 52 makes it reachable on every Subscribe
+success path, so we fix it here.
+
+`app/dashboard/dashboard-client.tsx`:
+
+- `subscribers` state becomes `Subscriber[] | null` (initial `null` =
+  "first fetch not done yet"; `[]` = "loaded and empty"). Empty-state
+  row + table renders gate on `subscribers !== null`.
+- New `statsLoaded: boolean` state, flipped to `true` after the first
+  `/api/stats` response.
+- `StatCard` accepts a `loading?: boolean` prop. When loading, value
+  becomes `'—'`; delta / sparkline / subValue are suppressed. Every
+  caller passes `loading={!statsLoaded}`.
+- `PaymentRecoveryTable` accepts `rows: Subscriber[] | null`. When
+  `null`, renders a same-size blank card so the layout doesn't shift
+  before data arrives.
+
+The empty state still appears correctly once data has loaded and the
+table is genuinely empty (new merchant, never had a cancellation).
+
+### Change 4 — No change to webhook handler
 
 `processPlatformCardCapture` in `app/api/stripe/webhook/route.ts`
 already does the exact same two operations (`setDefaultPaymentMethod`
@@ -187,6 +217,7 @@ No schema changes.
 |---|---|
 | `app/api/billing/setup-intent/route.ts` | Change `success_url` |
 | `app/billing/success/page.tsx` | **new** server component |
+| `app/dashboard/dashboard-client.tsx` | loading-state gating (Change 3) |
 | `app/api/stripe/webhook/route.ts` | no change |
 | `src/winback/lib/platform-billing.ts` | no change |
 | `src/winback/lib/activation.ts` | no change |
