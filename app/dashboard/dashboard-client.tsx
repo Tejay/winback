@@ -182,6 +182,12 @@ interface DashboardClientProps {
   /** Spec 51 — ISO of customer.activated_at; non-null means first
    *  recovery delivered. Drives the persistent paused-state UI. */
   activatedAtIso?: string | null
+  /** Whether this customer has ever had a platform subscription that
+   *  was later canceled. When true, the paused-state banner reads
+   *  "Your subscription ended" instead of "Your trial ended on your
+   *  first recovery" — the same paused state, but different cause
+   *  and so different copy. */
+  everSubscribed?: boolean
 }
 
 export function DashboardClient({
@@ -195,6 +201,7 @@ export function DashboardClient({
   atRiskCancellationsCount = 0,
   atRiskPaymentRecoveriesCount = 0,
   activatedAtIso = null,
+  everSubscribed = false,
 }: DashboardClientProps) {
   const [stats, setStats] = useState<Stats>(EMPTY_STATS)
   // Spec 52 — `null` means "first fetch hasn't completed yet"; `[]` means
@@ -568,6 +575,7 @@ export function DashboardClient({
           atRiskMrrAnnualizedCents={atRiskMrrAnnualizedCents}
           atRiskCancellationsCount={atRiskCancellationsCount}
           atRiskPaymentRecoveriesCount={atRiskPaymentRecoveriesCount}
+          everSubscribed={everSubscribed}
           onSubscribe={handleSubscribe}
           subscribing={subscribing}
           error={subscribeError}
@@ -1599,6 +1607,7 @@ function FirstRecoveryBanner({
   atRiskMrrAnnualizedCents,
   atRiskCancellationsCount,
   atRiskPaymentRecoveriesCount,
+  everSubscribed,
   onSubscribe,
   subscribing,
   error,
@@ -1608,6 +1617,7 @@ function FirstRecoveryBanner({
   atRiskMrrAnnualizedCents: number
   atRiskCancellationsCount: number
   atRiskPaymentRecoveriesCount: number
+  everSubscribed: boolean
   onSubscribe: () => void
   subscribing: boolean
   error: string | null
@@ -1617,10 +1627,24 @@ function FirstRecoveryBanner({
   // clear narrative: trial ended on first recovery → AI paused →
   // subscribe to resume. Inner celebration strip is conditional on the
   // first recovery having actual revenue.
-  const showCelebration = firstRecovery.mrrCents > 0
+  //
+  // Follow-up to spec 54 — branch the copy for re-pausers (customers who
+  // had a subscription, cancelled it, and the cycle expired). They're in
+  // the same paused state as a first-time pauser, but reading "Your trial
+  // ended" is wrong for someone who was paying. Detected via the
+  // platform_subscription_canceled event in wb_events.
+  const showCelebration = !everSubscribed && firstRecovery.mrrCents > 0
   const recoveredName = firstRecovery.name ?? 'Your first subscriber'
   const recoveredMrrUsd = (firstRecovery.mrrCents / 100).toFixed(0)
   const atRiskAnnualUsd = Math.round(atRiskMrrAnnualizedCents / 100).toLocaleString()
+
+  const headline = everSubscribed
+    ? 'Your subscription ended.'
+    : 'Your trial ended on your first recovery.'
+  const subhead = everSubscribed
+    ? 'The AI has paused new sends until you re-subscribe.'
+    : 'The AI has paused new sends until you subscribe.'
+  const ctaLabel = everSubscribed ? 'Re-subscribe via Stripe' : 'Subscribe via Stripe'
 
   // Cohort breakdown line — only render if we actually have a split to show.
   const cohortParts: string[] = []
@@ -1659,10 +1683,10 @@ function FirstRecoveryBanner({
           <span className="text-2xl leading-none flex-shrink-0">⏸</span>
           <div>
             <h2 className="text-xl font-bold text-slate-900 leading-tight">
-              Your trial ended on your first recovery.
+              {headline}
             </h2>
             <p className="text-sm text-slate-600 mt-1">
-              The AI has paused new sends until you subscribe.
+              {subhead}
             </p>
           </div>
         </div>
@@ -1691,7 +1715,7 @@ function FirstRecoveryBanner({
             disabled={subscribing}
             className="bg-[#0f172a] text-white rounded-full px-6 py-2.5 text-sm font-semibold hover:bg-[#1e293b] inline-flex items-center gap-2 shadow-md disabled:opacity-60 disabled:cursor-not-allowed"
           >
-            {subscribing ? 'Opening Stripe…' : 'Subscribe via Stripe'}
+            {subscribing ? 'Opening Stripe…' : ctaLabel}
             {!subscribing && <span>→</span>}
           </button>
           <span className="text-xs text-slate-500">

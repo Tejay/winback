@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation'
 import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
-import { customers, recoveries, churnedSubscribers } from '@/lib/schema'
+import { customers, recoveries, churnedSubscribers, wbEvents } from '@/lib/schema'
 import { eq, and, ne, or, isNull, inArray, sql } from 'drizzle-orm'
 import { TopNav } from '@/components/top-nav'
 import { DashboardClient } from './dashboard-client'
@@ -97,6 +97,25 @@ export default async function DashboardPage() {
     atRiskMrrAnnualizedCents = totalMrrCents * 12
   }
 
+  // Has this customer ever had a platform subscription that was later
+  // canceled? Used to distinguish:
+  //   - "Your trial ended on your first recovery."   (first-time paused)
+  //   - "Your subscription ended."                   (re-paused after cancel)
+  // Single cheap event lookup; we don't need the row data, just existence.
+  // Spec — see follow-up to spec 53/54.
+  let everSubscribed = false
+  if (customer && !billingActive) {
+    const cancelEvents = await db
+      .select({ id: wbEvents.id })
+      .from(wbEvents)
+      .where(and(
+        eq(wbEvents.customerId, customer.id),
+        eq(wbEvents.name, 'platform_subscription_canceled'),
+      ))
+      .limit(1)
+    everSubscribed = cancelEvents.length > 0
+  }
+
   // Spec 31 — pilot status. If pilot_until is in the future, the dashboard
   // shows a "🚀 Pilot — until {date}" banner instead of the "your $99/mo
   // subscription will start when…" prompt (which would be wrong copy for
@@ -123,6 +142,7 @@ export default async function DashboardPage() {
             atRiskCancellationsCount={atRiskCancellationsCount}
             atRiskPaymentRecoveriesCount={atRiskPaymentRecoveriesCount}
             activatedAtIso={customer?.activatedAt ? customer.activatedAt.toISOString() : null}
+            everSubscribed={everSubscribed}
           />
         </div>
       </main>
