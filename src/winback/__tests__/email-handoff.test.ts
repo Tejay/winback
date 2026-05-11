@@ -154,6 +154,7 @@ describe('sendReplyEmail — AI decides to hand off', () => {
     // Gates: not DNC, not customer-paused, not ai-paused.
     enqueueSelect([{ dnc: false }])                                   // isDoNotContact
     enqueueSelect([{ pausedAt: null }])                               // isCustomerPausedForSubscriber
+    enqueueSelect([{ activatedAt: null, stripeSubscriptionId: null, pilotUntil: null }]) // isCustomerPausedForBilling (Spec 53)
     enqueueSelect([{ aiPausedUntil: null }])                          // isAiPaused
     // triggerFounderHandoff: full subscriber row, then recipient lookup.
     enqueueSelect([subscriberRow])                                    // SELECT * FROM churnedSubscribers
@@ -195,6 +196,7 @@ describe('sendReplyEmail — AI says no hand-off, budget remaining', () => {
   it('sends the AI follow-up and persists reasoning + likelihood', async () => {
     enqueueSelect([{ dnc: false }])                // isDoNotContact
     enqueueSelect([{ pausedAt: null }])            // isCustomerPausedForSubscriber
+    enqueueSelect([{ activatedAt: null, stripeSubscriptionId: null, pilotUntil: null }]) // isCustomerPausedForBilling (Spec 53)
     enqueueSelect([{ aiPausedUntil: null }])       // isAiPaused
     enqueueSelect([{ total: 1 }])                  // followup count — 1 sent, 1 remaining
     enqueueSelect([{ messageId: 'msg_orig' }])     // originalEmail lookup
@@ -235,6 +237,7 @@ describe('sendReplyEmail — AI says no hand-off, budget exhausted', () => {
   it('silently closes as lost and does NOT notify the founder', async () => {
     enqueueSelect([{ dnc: false }])                // isDoNotContact
     enqueueSelect([{ pausedAt: null }])            // isCustomerPausedForSubscriber
+    enqueueSelect([{ activatedAt: null, stripeSubscriptionId: null, pilotUntil: null }]) // isCustomerPausedForBilling (Spec 53)
     enqueueSelect([{ aiPausedUntil: null }])       // isAiPaused
     enqueueSelect([{ total: 2 }])                  // followup count — already at cap
 

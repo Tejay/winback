@@ -3,7 +3,11 @@ import { db } from '@/lib/db'
 import { churnedSubscribers, customers, emailsSent } from '@/lib/schema'
 import { eq, and, lt, lte, isNotNull, isNull, inArray, sql } from 'drizzle-orm'
 import { classifySubscriber } from '@/src/winback/lib/classifier'
-import { sendEmail, isCustomerPausedForSubscriber } from '@/src/winback/lib/email'
+import {
+  sendEmail,
+  isCustomerPausedForSubscriber,
+  isCustomerPausedForBillingByCustomerId,
+} from '@/src/winback/lib/email'
 import { SubscriberSignals } from '@/src/winback/lib/types'
 import { logEvent } from '@/src/winback/lib/events'
 
@@ -76,6 +80,35 @@ export async function GET(req: NextRequest) {
     )
     .limit(20)
 
+  // Spec 53 — batch-level pre-filter for billing-paused customers.
+  // Without this, every paused customer's subscribers would still hit
+  // classifySubscriber (LLM ~$0.003 each) before the in-send gate
+  // short-circuited. Group candidates by customerId, check each
+  // customer's billing-paused state once, skip all their candidates
+  // and emit a single send_skipped_billing_pause event per customer.
+  const uniqueCustomerIds = new Set<string>()
+  for (const sub of eligible) uniqueCustomerIds.add(sub.customerId)
+  for (const sub of engagedNudgeCandidates) uniqueCustomerIds.add(sub.customerId)
+
+  const pausedCustomers = new Set<string>()
+  for (const customerId of uniqueCustomerIds) {
+    if (await isCustomerPausedForBillingByCustomerId(customerId)) {
+      pausedCustomers.add(customerId)
+    }
+  }
+  if (pausedCustomers.size > 0) {
+    for (const customerId of pausedCustomers) {
+      const subscriberCount =
+        eligible.filter(s => s.customerId === customerId).length +
+        engagedNudgeCandidates.filter(s => s.customerId === customerId).length
+      await logEvent({
+        name: 'send_skipped_billing_pause',
+        customerId,
+        properties: { emailType: 'reengagement_cron', subscriberCount },
+      })
+    }
+  }
+
   let sent = 0
   let suppressed = 0
   let skipped = 0
@@ -83,6 +116,13 @@ export async function GET(req: NextRequest) {
 
   for (const sub of eligible) {
     try {
+      // Spec 53 — pre-filter paused customers at customer level (saves
+      // the classifySubscriber LLM cost for every paused-customer
+      // subscriber)
+      if (pausedCustomers.has(sub.customerId)) {
+        skipped++
+        continue
+      }
       // Skip if the customer has paused sending
       if (await isCustomerPausedForSubscriber(sub.id)) {
         skipped++
@@ -227,6 +267,11 @@ export async function GET(req: NextRequest) {
 
   for (const sub of engagedNudgeCandidates) {
     try {
+      // Spec 53 — same batch pre-filter as the eligible loop above
+      if (pausedCustomers.has(sub.customerId)) {
+        nudgeSkipped++
+        continue
+      }
       if (await isCustomerPausedForSubscriber(sub.id)) {
         nudgeSkipped++
         continue

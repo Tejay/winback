@@ -2,9 +2,11 @@ import { redirect } from 'next/navigation'
 import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { customers, recoveries, churnedSubscribers } from '@/lib/schema'
-import { eq, and, ne, inArray, sql } from 'drizzle-orm'
+import { eq, and, ne, or, isNull, inArray, sql } from 'drizzle-orm'
 import { TopNav } from '@/components/top-nav'
 import { DashboardClient } from './dashboard-client'
+
+const DUNNING_REASON = 'Payment failed'
 
 export default async function DashboardPage() {
   const session = await auth()
@@ -26,10 +28,13 @@ export default async function DashboardPage() {
   // signal (the Phase A `plan === 'trial'` field is legacy and stale).
   const billingActive = !!customer?.stripeSubscriptionId
   let firstRecovery: { name: string | null; mrrCents: number } | null = null
-  // Spec 51 — additional ROI-framing data for the banner: at-risk count +
-  // annualized MRR-at-risk across unrecovered, recoverable subscribers.
+  // Spec 51 + spec 53 — ROI/at-risk framing data for the banner.
+  // Spec 53 extends the at-risk math to BOTH cohorts (cancellations +
+  // failed payments) so the banner reflects what's actually paused.
   let atRiskCount = 0
   let atRiskMrrAnnualizedCents = 0
+  let atRiskCancellationsCount = 0
+  let atRiskPaymentRecoveriesCount = 0
   if (customer && !billingActive) {
     // Spec 51 — join recoveries with churned_subscribers so we can show
     // the recovered subscriber's name, not just a generic "first recovery".
@@ -47,8 +52,15 @@ export default async function DashboardPage() {
       firstRecovery = { name: recs[0].name, mrrCents: recs[0].mrrCents }
     }
 
-    // At-risk subscribers: classified as recoverable, not yet recovered.
-    const [atRisk] = await db
+    // Spec 53 — At-risk math split by cohort, summed for the banner total.
+    //
+    // Cancellations cohort: high/medium-likelihood, not yet recovered,
+    //   cancellation_reason is NOT 'Payment failed' (i.e., voluntary cancel
+    //   or no reason captured yet).
+    // Payment-recovery cohort: cancellation_reason = 'Payment failed' AND
+    //   dunning_state IN ('awaiting_retry','final_retry_pending') — the
+    //   in-flight dunning states that map to the new "Trial ended" row badge.
+    const [cancRow] = await db
       .select({
         count: sql<number>`COUNT(*)::int`,
         mrrSum: sql<number>`COALESCE(SUM(${churnedSubscribers.mrrCents}), 0)::bigint`,
@@ -57,12 +69,32 @@ export default async function DashboardPage() {
       .where(
         and(
           eq(churnedSubscribers.customerId, customer.id),
+          or(
+            ne(churnedSubscribers.cancellationReason, DUNNING_REASON),
+            isNull(churnedSubscribers.cancellationReason),
+          ),
           inArray(churnedSubscribers.recoveryLikelihood, ['high', 'medium']),
           ne(churnedSubscribers.status, 'recovered'),
         ),
       )
-    atRiskCount = atRisk?.count ?? 0
-    atRiskMrrAnnualizedCents = Number(atRisk?.mrrSum ?? 0) * 12
+    const [pmtRow] = await db
+      .select({
+        count: sql<number>`COUNT(*)::int`,
+        mrrSum: sql<number>`COALESCE(SUM(${churnedSubscribers.mrrCents}), 0)::bigint`,
+      })
+      .from(churnedSubscribers)
+      .where(
+        and(
+          eq(churnedSubscribers.customerId, customer.id),
+          eq(churnedSubscribers.cancellationReason, DUNNING_REASON),
+          inArray(churnedSubscribers.dunningState, ['awaiting_retry', 'final_retry_pending']),
+        ),
+      )
+    atRiskCancellationsCount = cancRow?.count ?? 0
+    atRiskPaymentRecoveriesCount = pmtRow?.count ?? 0
+    atRiskCount = atRiskCancellationsCount + atRiskPaymentRecoveriesCount
+    const totalMrrCents = Number(cancRow?.mrrSum ?? 0) + Number(pmtRow?.mrrSum ?? 0)
+    atRiskMrrAnnualizedCents = totalMrrCents * 12
   }
 
   // Spec 31 — pilot status. If pilot_until is in the future, the dashboard
@@ -88,6 +120,8 @@ export default async function DashboardPage() {
             founderName={customer?.founderName ?? session.user.name ?? null}
             atRiskCount={atRiskCount}
             atRiskMrrAnnualizedCents={atRiskMrrAnnualizedCents}
+            atRiskCancellationsCount={atRiskCancellationsCount}
+            atRiskPaymentRecoveriesCount={atRiskPaymentRecoveriesCount}
             activatedAtIso={customer?.activatedAt ? customer.activatedAt.toISOString() : null}
           />
         </div>
