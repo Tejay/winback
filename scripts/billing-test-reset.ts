@@ -18,9 +18,10 @@
 // Run: npx tsx --env-file=.env.local scripts/billing-test-reset.ts [--dryRun]
 
 import { db } from '../lib/db'
-import { customers, churnedSubscribers, recoveries, users } from '../lib/schema'
-import { eq } from 'drizzle-orm'
+import { customers, churnedSubscribers, recoveries, users, wbEvents, emailsSent } from '../lib/schema'
+import { eq, inArray, and } from 'drizzle-orm'
 import Stripe from 'stripe'
+import { decrypt } from '../src/winback/lib/encryption'
 
 const TARGET_EMAIL = 'tejaasvi@gmail.com'
 const DRY = process.argv.includes('--dryRun')
@@ -55,11 +56,34 @@ async function main() {
     }
   }
 
-  // 2) DB — delete recoveries then churned subscribers
-  const recsToDel = await db.select({ id: recoveries.id }).from(recoveries).where(eq(recoveries.customerId, c.id))
+  // 1.5) Connect Stripe — delete any billing-test-* customers so retry
+  // webhooks from previous runs don't land after we've reset the DB.
+  if (c.stripeAccessToken) {
+    const connect = new Stripe(decrypt(c.stripeAccessToken))
+    const search = await connect.customers.search({
+      query: `email~'billing-test-'`,
+      limit: 100,
+    }).catch(() => null)
+    const stale = search?.data ?? []
+    console.log(`\n[1.5/3] Connect Stripe — ${stale.length} billing-test-* customer(s) to delete`)
+    for (const cust of stale) {
+      console.log(`  ${cust.id}  ${cust.email}`)
+      if (!DRY) await connect.customers.del(cust.id)
+    }
+  }
+
+  // 2) DB — delete events + emails_sent + recoveries + subscribers (in that order)
   const subsToDel = await db.select({ id: churnedSubscribers.id }).from(churnedSubscribers).where(eq(churnedSubscribers.customerId, c.id))
-  console.log(`\n[2/3] DB cleanup — recoveries=${recsToDel.length} subscribers=${subsToDel.length}`)
+  const subIds = subsToDel.map(s => s.id)
+  const recsToDel = await db.select({ id: recoveries.id }).from(recoveries).where(eq(recoveries.customerId, c.id))
+  const eventsToDel = await db.select({ id: wbEvents.id }).from(wbEvents).where(eq(wbEvents.customerId, c.id))
+  const emailsToDel = subIds.length > 0
+    ? await db.select({ id: emailsSent.id }).from(emailsSent).where(inArray(emailsSent.subscriberId, subIds))
+    : []
+  console.log(`\n[2/3] DB cleanup — events=${eventsToDel.length} emails_sent=${emailsToDel.length} recoveries=${recsToDel.length} subscribers=${subsToDel.length}`)
   if (!DRY) {
+    if (eventsToDel.length > 0) await db.delete(wbEvents).where(eq(wbEvents.customerId, c.id))
+    if (subIds.length > 0) await db.delete(emailsSent).where(inArray(emailsSent.subscriberId, subIds))
     if (recsToDel.length > 0) await db.delete(recoveries).where(eq(recoveries.customerId, c.id))
     if (subsToDel.length > 0) await db.delete(churnedSubscribers).where(eq(churnedSubscribers.customerId, c.id))
   }
