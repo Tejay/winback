@@ -165,6 +165,28 @@ export async function isCustomerPausedForBilling(subscriberId: string): Promise<
 }
 
 /**
+ * Spec 53 — same predicate as isCustomerPausedForBilling but keyed by
+ * wb_customer id, not subscriber id. Used by the reengagement cron to
+ * pre-filter paused customers at batch level so we don't spend on LLM
+ * classification calls we'll then skip at send time. Single SELECT,
+ * no JOIN.
+ */
+export async function isCustomerPausedForBillingByCustomerId(customerId: string): Promise<boolean> {
+  const [row] = await db
+    .select({
+      activatedAt: customers.activatedAt,
+      stripeSubscriptionId: customers.stripeSubscriptionId,
+      pilotUntil: customers.pilotUntil,
+    })
+    .from(customers)
+    .where(eq(customers.id, customerId))
+    .limit(1)
+  if (!row) return false
+  if (row.pilotUntil && row.pilotUntil.getTime() > Date.now()) return false
+  return !!row.activatedAt && !row.stripeSubscriptionId
+}
+
+/**
  * Spec 22a — Returns true if the subscriber has an active AI pause
  * (ai_paused_until > now). Callers must skip sending automated emails.
  *
@@ -467,6 +489,19 @@ export async function sendReplyEmail(params: {
   if (await isCustomerPausedForSubscriber(subscriberId)) {
     console.log('Skipping reply email — customer has paused sending:', subscriberId)
     return { sent: false, reason: 'customer_paused' }
+  }
+
+  // Spec 53 — post-trial billing pause. Defensive: the reengagement cron
+  // pre-filters paused customers at batch level, so this gate primarily
+  // catches the inbound webhook path (a subscriber whose exit email
+  // landed pre-trial-end and replies after).
+  if (await isCustomerPausedForBilling(subscriberId)) {
+    console.log('Skipping reply email — customer in post-trial billing pause:', subscriberId)
+    await logEvent({
+      name: 'send_skipped_billing_pause',
+      properties: { subscriberId, emailType: 'reply' },
+    })
+    return { sent: false, reason: 'billing_paused' }
   }
 
   // Spec 22a — per-subscriber AI pause

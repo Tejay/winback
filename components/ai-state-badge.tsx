@@ -10,6 +10,13 @@ interface Props {
   sub: AiStateInputs
   /** If true, renders with smaller padding/text for dense tables */
   compact?: boolean
+  /** Spec 53 — when the customer is in post-trial billing-paused state
+   *  AND the derived ai state would otherwise be `active`, the badge
+   *  reads "⏸ Trial ended" (amber) instead of "🤖 AI active" (green).
+   *  Handoff / per-subscriber paused / recovered / done badges are
+   *  unchanged — those communicate row-specific state the founder
+   *  cares about independent of billing. */
+  billingPaused?: boolean
 }
 
 const STYLES: Record<AiState, { label: string; classes: string }> = {
@@ -35,9 +42,19 @@ const STYLES: Record<AiState, { label: string; classes: string }> = {
   },
 }
 
-export function AiStateBadge({ sub, compact = false }: Props) {
+// Spec 53 — when billingPaused is true and the row's ai state is `active`,
+// the badge becomes this trial-ended pill instead. Naming is "Trial ended"
+// not "Paused" to avoid collision with the existing per-subscriber `paused`
+// state (founder manually pausing a specific subscriber, spec 22a).
+const TRIAL_ENDED_STYLE = {
+  label: '⏸ Trial ended',
+  classes: 'bg-amber-50 text-amber-700 border-amber-200',
+}
+
+export function AiStateBadge({ sub, compact = false, billingPaused = false }: Props) {
   const state = aiState(sub)
-  const style = STYLES[state]
+  const isBillingPausedActive = billingPaused && state === 'active'
+  const style = isBillingPausedActive ? TRIAL_ENDED_STYLE : STYLES[state]
 
   // For 'paused' show days remaining; for 'done' show why
   let label = style.label

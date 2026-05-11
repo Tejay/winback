@@ -168,10 +168,17 @@ interface DashboardClientProps {
    *  external-contact compose helper. Falls back to "The team". */
   founderName?: string | null
   /** Spec 51 — count of recoverable subscribers (high/medium likelihood,
-   *  not yet recovered) for the ROI-framed banner. */
+   *  not yet recovered) for the ROI-framed banner. Spec 53 extends to
+   *  include in-flight payment-recovery rows too — total across both
+   *  cohorts. */
   atRiskCount?: number
-  /** Spec 51 — sum of mrr_cents × 12 across those at-risk subs. */
+  /** Spec 51 + 53 — sum of mrr_cents × 12 across at-risk rows in BOTH
+   *  cohorts. */
   atRiskMrrAnnualizedCents?: number
+  /** Spec 53 — at-risk cohort breakdown for the banner copy. */
+  atRiskCancellationsCount?: number
+  /** Spec 53 — at-risk cohort breakdown for the banner copy. */
+  atRiskPaymentRecoveriesCount?: number
   /** Spec 51 — ISO of customer.activated_at; non-null means first
    *  recovery delivered. Drives the persistent paused-state UI. */
   activatedAtIso?: string | null
@@ -185,6 +192,8 @@ export function DashboardClient({
   founderName = null,
   atRiskCount = 0,
   atRiskMrrAnnualizedCents = 0,
+  atRiskCancellationsCount = 0,
+  atRiskPaymentRecoveriesCount = 0,
   activatedAtIso = null,
 }: DashboardClientProps) {
   const [stats, setStats] = useState<Stats>(EMPTY_STATS)
@@ -529,6 +538,8 @@ export function DashboardClient({
           firstRecovery={firstRecovery!}
           atRiskCount={atRiskCount}
           atRiskMrrAnnualizedCents={atRiskMrrAnnualizedCents}
+          atRiskCancellationsCount={atRiskCancellationsCount}
+          atRiskPaymentRecoveriesCount={atRiskPaymentRecoveriesCount}
           onSubscribe={handleSubscribe}
           subscribing={subscribing}
           error={subscribeError}
@@ -875,7 +886,7 @@ export function DashboardClient({
                       : '—'}
                   </td>
                   <td className="py-4 px-4">
-                    <AiStateBadge sub={sub} compact />
+                    <AiStateBadge sub={sub} compact billingPaused={isPaused} />
                   </td>
                   <td className="text-sm font-medium text-slate-900 py-4 px-4 text-right">
                     ${(sub.mrrCents / 100).toFixed(2)}
@@ -897,6 +908,7 @@ export function DashboardClient({
           rows={subscribers}
           expandedRowId={expandedRowId}
           onToggleExpand={(id) => setExpandedRowId((current) => (current === id ? null : id))}
+          billingPaused={isPaused}
           onResendDunning={async (id) => {
             await fetch(`/api/subscribers/${id}/resend`, { method: 'POST' })
             fetchData()
@@ -1402,12 +1414,15 @@ function PaymentRecoveryTable({
   expandedRowId,
   onToggleExpand,
   onResendDunning,
+  billingPaused = false,
 }: {
   // null = first fetch not yet completed; [] = loaded and empty.
   rows: Subscriber[] | null
   expandedRowId: string | null
   onToggleExpand: (id: string) => void
   onResendDunning: (id: string) => void
+  /** Spec 53 — when true, in-flight dunning rows render as "⏸ Trial ended" */
+  billingPaused?: boolean
 }) {
   // Spec 52 — don't render the empty state until we know the table is
   // genuinely empty (not just mid-fetch). Avoids the brief flash of
@@ -1456,7 +1471,7 @@ function PaymentRecoveryTable({
                     {sub.lastDeclineCode ?? '—'}
                   </td>
                   <td className="py-4 px-4">
-                    <DunningStageBadge sub={sub} />
+                    <DunningStageBadge sub={sub} billingPaused={billingPaused} />
                   </td>
                   <td className="text-sm font-medium text-slate-900 py-4 px-4 text-right">
                     ${(sub.mrrCents / 100).toFixed(2)}
@@ -1521,10 +1536,17 @@ function PaymentRecoveryTable({
  * dunning-state column directly so the badge is always in sync with
  * the state machine the cron uses.
  */
-function DunningStageBadge({ sub }: { sub: Subscriber }) {
+function DunningStageBadge({ sub, billingPaused = false }: { sub: Subscriber; billingPaused?: boolean }) {
   const state = sub.dunningState
   if (sub.status === 'recovered') {
     return <span className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium bg-green-50 text-green-700 border border-green-200">Recovered</span>
+  }
+  // Spec 53 — when billing-paused, in-flight dunning rows show "Trial
+  // ended" instead of "In retry · Tn" / "Final retry". Terminal states
+  // (recovered handled above, churned_during_dunning below) keep their
+  // normal badges.
+  if (billingPaused && (state === 'awaiting_retry' || state === 'final_retry_pending')) {
+    return <span className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200">⏸ Trial ended</span>
   }
   if (state === 'final_retry_pending') {
     return <span className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium bg-rose-50 text-rose-700 border border-rose-200">Final retry</span>
@@ -1547,6 +1569,8 @@ function FirstRecoveryBanner({
   firstRecovery,
   atRiskCount,
   atRiskMrrAnnualizedCents,
+  atRiskCancellationsCount,
+  atRiskPaymentRecoveriesCount,
   onSubscribe,
   subscribing,
   error,
@@ -1554,16 +1578,35 @@ function FirstRecoveryBanner({
   firstRecovery: { name: string | null; mrrCents: number }
   atRiskCount: number
   atRiskMrrAnnualizedCents: number
+  atRiskCancellationsCount: number
+  atRiskPaymentRecoveriesCount: number
   onSubscribe: () => void
   subscribing: boolean
   error: string | null
 }) {
-  // Spec 51 — ROI-framed billing banner with red border to pull attention.
-  // Soft blue→white→emerald gradient hero, dark CTA, no "Not now" dismiss.
+  // Spec 53 — Trial-ended causal-story banner. Drops the ROI framing
+  // (which broke for $0-mrr first recoveries) and replaces with a single
+  // clear narrative: trial ended on first recovery → AI paused →
+  // subscribe to resume. Inner celebration strip is conditional on the
+  // first recovery having actual revenue.
+  const showCelebration = firstRecovery.mrrCents > 0
   const recoveredName = firstRecovery.name ?? 'Your first subscriber'
   const recoveredMrrUsd = (firstRecovery.mrrCents / 100).toFixed(0)
-  const recoveredAnnualUsd = ((firstRecovery.mrrCents * 12) / 100).toFixed(0)
   const atRiskAnnualUsd = Math.round(atRiskMrrAnnualizedCents / 100).toLocaleString()
+
+  // Cohort breakdown line — only render if we actually have a split to show.
+  const cohortParts: string[] = []
+  if (atRiskCancellationsCount > 0) {
+    cohortParts.push(`${atRiskCancellationsCount} cancellation${atRiskCancellationsCount === 1 ? '' : 's'}`)
+  }
+  if (atRiskPaymentRecoveriesCount > 0) {
+    cohortParts.push(`${atRiskPaymentRecoveriesCount} failed payment${atRiskPaymentRecoveriesCount === 1 ? '' : 's'}`)
+  }
+  const cohortBreakdown = cohortParts.length > 0 ? ` (${cohortParts.join(' + ')})` : ''
+
+  // "N more subscribers" vs "N subscribers" — "more" only fires when
+  // there's a headline recovery being broken out in the celebration strip.
+  const atRiskNoun = showCelebration ? 'more subscribers' : 'subscribers'
 
   return (
     <div
@@ -1584,33 +1627,35 @@ function FirstRecoveryBanner({
       `}</style>
 
       <div className="relative">
-        <div className="flex items-start gap-3 mb-5">
-          <span className="text-2xl leading-none flex-shrink-0">🎉</span>
+        <div className="flex items-start gap-3 mb-4">
+          <span className="text-2xl leading-none flex-shrink-0">⏸</span>
           <div>
             <h2 className="text-xl font-bold text-slate-900 leading-tight">
-              {recoveredName} is back at <span className="text-emerald-600">${recoveredMrrUsd}/mo</span>
+              Your trial ended on your first recovery.
             </h2>
             <p className="text-sm text-slate-600 mt-1">
-              That&apos;s ${recoveredAnnualUsd}/yr in recovered revenue from one customer.
+              The AI has paused new sends until you subscribe.
             </p>
           </div>
         </div>
 
-        {atRiskCount > 0 && (
-          <div className="bg-white rounded-xl p-4 mb-5 border border-slate-200 shadow-sm">
-            <p className="text-sm text-slate-700 leading-relaxed">
-              You currently have <strong className="text-slate-900">{atRiskCount} more</strong> cancelled
-              or failed-payment subscriber{atRiskCount === 1 ? '' : 's'} in your dashboard worth approximately{' '}
-              <strong className="text-amber-700">${atRiskAnnualUsd}/yr</strong> in MRR-at-risk.
-            </p>
+        {showCelebration && (
+          <div className="bg-white/70 rounded-xl px-4 py-3 mb-4 border border-emerald-200 inline-flex items-center gap-3">
+            <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium bg-green-50 text-green-700 border border-green-200">
+              ✓ First recovery
+            </span>
+            <span className="text-sm text-slate-700">
+              <span className="font-semibold text-slate-900">{recoveredName}</span> · <span className="font-semibold text-emerald-700">${recoveredMrrUsd}/mo</span> restored
+            </span>
           </div>
         )}
 
-        <p className="text-sm text-slate-600 leading-relaxed mb-5">
-          Subscribe to start working them — <strong className="text-slate-900">$99/mo</strong> +{' '}
-          <strong className="text-slate-900">1× MRR per recovery</strong> (refundable for 14 days if they
-          re-cancel).
-        </p>
+        {atRiskCount > 0 && (
+          <p className="text-sm text-slate-700 leading-relaxed mb-5">
+            <strong className="text-red-700">${atRiskAnnualUsd}/yr</strong> at risk across{' '}
+            <strong className="text-slate-900">{atRiskCount} {atRiskNoun}</strong> in your queue{cohortBreakdown}.
+          </p>
+        )}
 
         <div className="flex flex-wrap items-center gap-4">
           <button
@@ -1622,7 +1667,7 @@ function FirstRecoveryBanner({
             {!subscribing && <span>→</span>}
           </button>
           <span className="text-xs text-slate-500">
-            Opens Stripe Checkout · 14-day refund window
+            $99/mo + 1× MRR per recovery · Refundable for 14 days if they re-cancel
           </span>
         </div>
         {error && (
