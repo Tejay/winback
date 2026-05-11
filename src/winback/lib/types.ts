@@ -46,7 +46,7 @@ export interface ClassificationResult {
   cancellationCategory: string
   confidence:           number
   suppress:             boolean
-  suppressReason?:      string
+  suppressReason?:      string | null
   firstMessage: {
     subject:        string
     body:           string

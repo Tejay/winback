@@ -36,7 +36,12 @@ const ClassificationSchema = z.object({
   cancellationCategory: z.enum(['Competitor', 'Price', 'Quality', 'Unused', 'Feature', 'Other']),
   confidence:           z.number().min(0).max(1).default(0),
   suppress:             z.boolean().default(false),
-  suppressReason:       z.string().optional(),
+  // Spec 54 — accept null in addition to undefined. The model often returns
+  // `suppressReason: null` when suppress=false (especially after the spec 54
+  // prompt addition that names this field explicitly). Without .nullable()
+  // the strict z.string().optional() rejects null and the whole
+  // classification fails.
+  suppressReason:       z.string().nullable().optional(),
   firstMessage:         z.object({
     subject:       z.string(),
     body:          z.string(),
