@@ -36,7 +36,12 @@ const ClassificationSchema = z.object({
   cancellationCategory: z.enum(['Competitor', 'Price', 'Quality', 'Unused', 'Feature', 'Other']),
   confidence:           z.number().min(0).max(1).default(0),
   suppress:             z.boolean().default(false),
-  suppressReason:       z.string().optional(),
+  // Spec 54 — accept null in addition to undefined. The model often returns
+  // `suppressReason: null` when suppress=false (especially after the spec 54
+  // prompt addition that names this field explicitly). Without .nullable()
+  // the strict z.string().optional() rejects null and the whole
+  // classification fails.
+  suppressReason:       z.string().nullable().optional(),
   firstMessage:         z.object({
     subject:       z.string(),
     body:          z.string(),
@@ -338,7 +343,12 @@ SUBSCRIBER SIGNALS:
 - reply_text: ${signals.replyText ?? 'not_provided'}
 - billing_portal_clicked: ${signals.billingPortalClicked ?? false}
 - cancelled_at: ${signals.cancelledAt.toISOString()}
-- emails_sent: ${signals.emailsSent ?? 0}   (0 = nothing sent yet; 3 is the maximum we will ever send)
+- emails_sent: ${signals.emailsSent ?? 0}   (0 = nothing sent yet; 3 is the maximum we will ever send)${
+    signals.daysElapsedSinceEvent !== undefined
+      ? `
+- days_elapsed_since_event: ${signals.daysElapsedSinceEvent}   (spec 54: this subscriber's email was blocked during the merchant's paused window; now being processed by the drain. Factor time decay into your tier + handoff judgement — a "missing feature" cancellation decays fast, a "too expensive" one decays slowly. If the elapsed time has made the email feel stale or weird, set suppress=true with a brief suppressReason. If the recent changelog now addresses their stated need, that's a strong signal to send.)`
+      : ''
+  }
 
 BUSINESS CONTEXT:
 - product_name: ${context.productName ?? 'not_provided'}

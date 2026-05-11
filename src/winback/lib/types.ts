@@ -26,6 +26,15 @@ export interface SubscriberSignals {
    * 3 is the hard ceiling — after that, no more emails go out.
    */
   emailsSent?:          number
+  /**
+   * Spec 54 — days since the triggering event (cancellation for category A,
+   * reply for category C). Drain-on-subscribe sets this when re-classifying
+   * subscribers whose email was blocked during the paused window — lets the
+   * model factor in time decay against the cancellation reason (a "missing
+   * feature" cancel decays faster than a "too expensive" one).
+   * Unset / undefined for the normal real-time classification path.
+   */
+  daysElapsedSinceEvent?: number
 }
 
 export type RecoveryLikelihood = 'high' | 'medium' | 'low'
@@ -37,7 +46,7 @@ export interface ClassificationResult {
   cancellationCategory: string
   confidence:           number
   suppress:             boolean
-  suppressReason?:      string
+  suppressReason?:      string | null
   firstMessage: {
     subject:        string
     body:           string
