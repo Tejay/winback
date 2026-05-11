@@ -303,11 +303,26 @@ export function DashboardClient({
   }, [])
 
   const fetchData = useCallback(() => {
+    // Defensive: if the server returns 401/404/500 (e.g. session expired
+    // mid-flow, customer lookup race after subscribe), the body may be
+    // `{ error: '...' }` not the expected shape. Without guards, calling
+    // setStats / setSubscribers with the error object causes downstream
+    // .map() / .length reads to throw, and the table goes blank with no
+    // explanation. Log + fall back to empty-but-loaded state so the UI
+    // is at least honest about the failure.
     fetch('/api/stats')
-      .then((r) => r.json())
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
       .then((data) => {
-        setStats(data)
+        if (data && typeof data === 'object' && 'winBack' in data) {
+          setStats(data)
+        } else {
+          console.warn('[dashboard] /api/stats returned unexpected shape:', data)
+        }
         setStatsLoaded(true)
+      })
+      .catch((err) => {
+        console.error('[dashboard] /api/stats fetch failed:', err)
+        setStatsLoaded(true) // unblock UI so KPIs show "—" rather than spinning
       })
     const params = new URLSearchParams()
     // Spec 40 — partition by cohort. The "Has reply" chip is win-back-only
@@ -320,7 +335,20 @@ export function DashboardClient({
       params.set('filter', filter)
     }
     if (search) params.set('search', search)
-    fetch(`/api/subscribers?${params}`).then((r) => r.json()).then(setSubscribers)
+    fetch(`/api/subscribers?${params}`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then((data) => {
+        if (Array.isArray(data)) {
+          setSubscribers(data)
+        } else {
+          console.warn('[dashboard] /api/subscribers returned non-array:', data)
+          setSubscribers([])
+        }
+      })
+      .catch((err) => {
+        console.error('[dashboard] /api/subscribers fetch failed:', err)
+        setSubscribers([]) // show "No win-backs yet" rather than blank loading state
+      })
   }, [tab, filter, search])
 
   useEffect(() => { fetchData() }, [fetchData])
