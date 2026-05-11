@@ -29,7 +29,9 @@ vi.mock('@/lib/schema', () => ({
 vi.mock('drizzle-orm', () => ({
   eq: vi.fn((a, b) => ({ op: 'eq', a, b })),
   and: vi.fn((...args: unknown[]) => ({ op: 'and', args })),
+  or: vi.fn((...args: unknown[]) => ({ op: 'or', args })),
   isNull: vi.fn((a) => ({ op: 'isNull', a })),
+  lt: vi.fn((a, b) => ({ op: 'lt', a, b })),
 }))
 
 vi.mock('../lib/platform-stripe', () => ({
@@ -110,9 +112,29 @@ function setupReads(opts: {
   }))
 }
 
-function setupUpdateChain() {
+/**
+ * Spec 58 — the lock claim is `db.update(...).set(...).where(...).returning(...)`.
+ * `.returning()` returns rows iff the WHERE matched. Pass `claimReturns` to
+ * control whether the test caller "wins" the claim (default: wins).
+ * Other UPDATE call sites (e.g. the final write of perfFeeStripeItemId)
+ * don't use `.returning()` and just resolve to undefined.
+ */
+function setupUpdateChain(opts: { claimReturns?: Array<{ id: string }> } = {}) {
+  const claimReturns = opts.claimReturns ?? [{ id: 'rec_1' }]
   mockUpdate.mockImplementation(() => ({
-    set: () => ({ where: () => Promise.resolve(undefined) }),
+    set: () => ({
+      where: () => {
+        // Build a promise that ALSO has a .returning() method on it. Most
+        // callers `await` the where(); the lock-claim caller calls
+        // `.returning(...)` before awaiting.
+        const p: Promise<undefined> & { returning?: () => Promise<unknown[]> } =
+          Promise.resolve(undefined) as Promise<undefined> & {
+            returning?: () => Promise<unknown[]>
+          }
+        p.returning = () => Promise.resolve(claimReturns)
+        return p
+      },
+    }),
   }))
 }
 
@@ -155,6 +177,7 @@ describe('chargePerformanceFee', () => {
         currency: 'usd',
         metadata: expect.objectContaining({ winback_recovery_id: 'rec_1' }),
       }),
+      expect.objectContaining({ idempotencyKey: 'wb-perf-rec_1' }),
     )
     expect(mockUpdate).toHaveBeenCalled()
   })
@@ -196,18 +219,85 @@ describe('chargePerformanceFee', () => {
     expect(result.invoiceItemId).toBe('ii_pending')
     expect(mockStripe.invoiceItems.create).toHaveBeenCalledWith(
       expect.not.objectContaining({ subscription: expect.anything() }),
+      expect.objectContaining({ idempotencyKey: 'wb-perf-rec_1' }),
     )
     expect(mockStripe.invoiceItems.create).toHaveBeenCalledWith(
       expect.objectContaining({
         customer: 'cus_platform_1',
         amount: 2500,
       }),
+      expect.objectContaining({ idempotencyKey: 'wb-perf-rec_1' }),
     )
   })
 
   it('throws when recovery does not exist', async () => {
     setupReads({ recovery: null })
     await expect(chargePerformanceFee('rec_missing')).rejects.toThrow(/not found/)
+  })
+
+  // ============================================================
+  // Spec 58 — race-fence + Stripe idempotency key
+  // ============================================================
+
+  it('Spec 58 — passes Idempotency-Key: wb-perf-${recoveryId} to Stripe', async () => {
+    setupReads({ recovery: baseRecovery, customer: baseCustomer })
+    mockStripe.invoiceItems.create.mockResolvedValue({ id: 'ii_new' })
+
+    await chargePerformanceFee('rec_1')
+
+    expect(mockStripe.invoiceItems.create).toHaveBeenCalledWith(
+      expect.objectContaining({ amount: 2500 }),
+      { idempotencyKey: 'wb-perf-rec_1' },
+    )
+  })
+
+  it('Spec 58 — claim lost, lock-holder finished → returns alreadyCharged', async () => {
+    // First select returns the not-yet-charged recovery; chargePerformanceFee
+    // proceeds to claim. The claim's UPDATE returns empty (someone else won).
+    // The re-read finds perfFeeStripeItemId set (the winner wrote it).
+    let selectCall = 0
+    mockSelect.mockImplementation(() => ({
+      from: (table: string) => ({
+        where: () => ({
+          limit: () => {
+            if (table === 'wb_recoveries') {
+              selectCall += 1
+              return selectCall === 1
+                ? [baseRecovery]                                // initial loadRecovery
+                : [{ ...baseRecovery, perfFeeStripeItemId: 'ii_winner' }]  // re-read after claim loss
+            }
+            if (table === 'wb_customers') return [baseCustomer]
+            if (table === 'wb_churned_subscribers') return [{ email: 't@x.com' }]
+            return []
+          },
+        }),
+      }),
+    }))
+    setupUpdateChain({ claimReturns: [] }) // claim returns no row → lost the race
+
+    const result = await chargePerformanceFee('rec_1')
+
+    expect(result.alreadyCharged).toBe(true)
+    expect(result.invoiceItemId).toBe('ii_winner')
+    expect(mockStripe.invoiceItems.create).not.toHaveBeenCalled()
+  })
+
+  it('Spec 58 — claim lost, holder still mid-create → returns skipped=race, NO Stripe call', async () => {
+    // Both selects (initial + re-read) return the recovery still unfired.
+    // This is the in-flight state: a lock-holder is between Stripe POST
+    // and DB UPDATE. We back out cleanly — the holder will finish.
+    setupReads({ recovery: baseRecovery, customer: baseCustomer })
+    setupUpdateChain({ claimReturns: [] })
+
+    const result = await chargePerformanceFee('rec_1')
+
+    expect(result.alreadyCharged).toBe(false)
+    expect(result.skipped).toBe('race')
+    expect(result.invoiceItemId).toBeNull()
+    expect(mockStripe.invoiceItems.create).not.toHaveBeenCalled()
+    expect(mockLogEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'perf_fee_create_skipped_race' }),
+    )
   })
 })
 

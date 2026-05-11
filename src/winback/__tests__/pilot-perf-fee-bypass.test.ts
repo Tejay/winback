@@ -32,7 +32,9 @@ vi.mock('@/lib/schema', () => ({
 vi.mock('drizzle-orm', () => ({
   eq:     vi.fn((a, b) => ({ eq: [a, b] })),
   and:    vi.fn((...a) => ({ and: a })),
+  or:     vi.fn((...a) => ({ or: a })),
   isNull: vi.fn((a) => ({ isNull: a })),
+  lt:     vi.fn((a, b) => ({ lt: [a, b] })),
 }))
 
 vi.mock('../lib/platform-stripe', () => ({
@@ -125,9 +127,19 @@ describe('chargePerformanceFee pilot bypass', () => {
         }),
       }),
     }))
+    // Spec 58 — the claim UPDATE adds .returning() to the chain. Provide
+    // a chainable promise so both the claim (which calls .returning()) and
+    // the final write (which awaits the where()) work.
     mockUpdate.mockReturnValue({
       set: vi.fn().mockReturnValue({
-        where: vi.fn().mockResolvedValue(undefined),
+        where: vi.fn().mockImplementation(() => {
+          const p: Promise<undefined> & { returning?: () => Promise<Array<{ id: string }>> } =
+            Promise.resolve(undefined) as Promise<undefined> & {
+              returning?: () => Promise<Array<{ id: string }>>
+            }
+          p.returning = () => Promise.resolve([{ id: 'rec_1' }])
+          return p
+        }),
       }),
     })
 
