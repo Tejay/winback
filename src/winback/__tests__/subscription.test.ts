@@ -123,6 +123,10 @@ describe('ensurePlatformSubscription', () => {
         proration_behavior: 'create_prorations',
         collection_method: 'charge_automatically',
       }),
+      // Spec 59 — idempotency key passed as second arg.
+      expect.objectContaining({
+        idempotencyKey: expect.stringMatching(/^wb-sub-wb_cust_1-\d+$/),
+      }),
     )
     expect(mockUpdate).toHaveBeenCalled()
   })
@@ -188,6 +192,7 @@ describe('ensurePlatformSubscription', () => {
       expect.objectContaining({
         items: [{ price: 'price_env_override' }],
       }),
+      expect.objectContaining({ idempotencyKey: expect.stringMatching(/^wb-sub-/) }),
     )
     // No fallback to lookup_keys when env var is set
     expect(mockStripe.prices.list).not.toHaveBeenCalled()
@@ -219,6 +224,7 @@ describe('ensurePlatformSubscription', () => {
       expect.objectContaining({
         items: [{ price: 'price_from_lookup' }],
       }),
+      expect.objectContaining({ idempotencyKey: expect.stringMatching(/^wb-sub-/) }),
     )
   })
 
