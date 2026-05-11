@@ -10,6 +10,7 @@ import { Logo } from '@/components/logo'
 import { getPlatformStripe } from '@/src/winback/lib/platform-stripe'
 import { setDefaultPaymentMethod } from '@/src/winback/lib/platform-billing'
 import { ensureActivation, type ActivationState } from '@/src/winback/lib/activation'
+import { getPausedQueueCounts, type QueueCounts } from '@/src/winback/lib/pause-drain'
 
 /**
  * Spec 52 — Subscribe success landing page.
@@ -92,14 +93,27 @@ export default async function BillingSuccessPage({
     outcome = { state: 'error' }
   }
 
-  if (outcome.state === 'active') return <Shell tone="success" />
+  // Spec 54 — once activation has run (state=active), look up the paused-
+  // window queue counts so we can surface "we're processing N events…".
+  // Cron at /api/cron/drain-paused-queue does the actual processing; this
+  // page is just informing the merchant. On error, omit the line.
+  let queueCounts: QueueCounts | null = null
+  if (outcome.state === 'active') {
+    try {
+      queueCounts = await getPausedQueueCounts(customer.id)
+    } catch (err) {
+      console.warn('[billing/success] queue counts lookup failed:', err)
+    }
+  }
+
+  if (outcome.state === 'active') return <Shell tone="success" queueCounts={queueCounts} />
   if (outcome.state === 'pilot') return <Shell tone="pilot" />
   return <Shell tone="pending" />
 }
 
 type Tone = 'success' | 'pilot' | 'pending'
 
-function Shell({ tone }: { tone: Tone }) {
+function Shell({ tone, queueCounts }: { tone: Tone; queueCounts?: QueueCounts | null }) {
   const { icon, title, body } = COPY[tone]
   return (
     <div className="min-h-screen bg-[#f5f5f5]">
@@ -109,7 +123,13 @@ function Shell({ tone }: { tone: Tone }) {
       <div className="max-w-md mx-auto bg-white rounded-2xl shadow-sm border border-slate-100 p-8 text-center">
         <div className="flex justify-center mb-4">{icon}</div>
         <h1 className="text-2xl font-bold text-slate-900 mb-2">{title}</h1>
-        <p className="text-sm text-slate-600 leading-relaxed mb-6">{body}</p>
+        <p className="text-sm text-slate-600 leading-relaxed mb-3">{body}</p>
+        {queueCounts && queueCounts.total > 0 && (
+          <p className="text-xs text-slate-500 leading-relaxed mb-6">
+            {queueDrainCopy(queueCounts)}
+          </p>
+        )}
+        {(!queueCounts || queueCounts.total === 0) && <div className="mb-6" />}
         <Link
           href="/dashboard"
           className="inline-flex items-center justify-center bg-[#0f172a] text-white rounded-full px-5 py-2 text-sm font-medium hover:bg-[#1e293b] transition-colors"
@@ -119,6 +139,18 @@ function Shell({ tone }: { tone: Tone }) {
       </div>
     </div>
   )
+}
+
+// Spec 54 — drain queue copy. Examples:
+//   "3 cancellations" / "1 failed payment + 2 replies" / "5 events"
+// Style mirrors the spec 53 banner cohort breakdown.
+function queueDrainCopy(c: QueueCounts): string {
+  const parts: string[] = []
+  if (c.cancellations > 0) parts.push(`${c.cancellations} ${c.cancellations === 1 ? 'cancellation' : 'cancellations'}`)
+  if (c.paymentRecoveries > 0) parts.push(`${c.paymentRecoveries} failed ${c.paymentRecoveries === 1 ? 'payment' : 'payments'}`)
+  if (c.replies > 0) parts.push(`${c.replies} ${c.replies === 1 ? 'reply' : 'replies'}`)
+  const breakdown = parts.join(' + ')
+  return `We're now processing ${c.total} ${c.total === 1 ? 'event' : 'events'} from your trial-paused window (${breakdown}). Most will land in your dashboard within a few minutes.`
 }
 
 const COPY: Record<Tone, { icon: ReactNode; title: string; body: string }> = {

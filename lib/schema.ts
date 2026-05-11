@@ -110,6 +110,12 @@ export const churnedSubscribers = pgTable('wb_churned_subscribers', {
   // Spec 21a — engagement tracking
   lastEngagementAt:     timestamp('last_engagement_at'),
   proactiveNudgeAt:     timestamp('proactive_nudge_at'),
+  // Spec 54 — Drain on subscribe. Set by /api/cron/drain-paused-queue
+  // when a row reaches a terminal outcome (sent / classifier-suppressed /
+  // handoff). Rows with NULL here AND a subscribed-customer with
+  // activated_at set are the queue. See spec 54 for the partial index
+  // (idx_wb_churned_subscribers_drain_queue) that powers the cron filter.
+  pauseDrainProcessedAt: timestamp('pause_drain_processed_at'),
   // Spec 21b — founder handoff
   founderHandoffAt:           timestamp('founder_handoff_at'),
   founderHandoffResolvedAt:   timestamp('founder_handoff_resolved_at'),
