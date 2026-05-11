@@ -34,6 +34,11 @@ export const customers = pgTable('wb_customers', {
   // Phase A — $99/mo platform fee Stripe Subscription. Created on first
   // delivered save or win-back via activation.ts. Null until activation.
   stripeSubscriptionId: text('stripe_subscription_id'),
+  // Spec 52 — TTL'd creation lock. Set by ensurePlatformSubscription's
+  // claim step, cleared when the subscription is written. Prevents the
+  // synchronous /billing/success path and the checkout.session.completed
+  // webhook from both creating subscriptions in parallel.
+  stripeSubscriptionCreatingAt: timestamp('stripe_subscription_creating_at'),
   // Timestamp of first delivered save or win-back — when billing started.
   activatedAt:          timestamp('activated_at'),
   pausedAt:             timestamp('paused_at'),

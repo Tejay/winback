@@ -42,7 +42,7 @@ export async function POST() {
       mode: 'setup',
       customer: platformCustomerId,
       payment_method_types: ['card'],
-      success_url: `${baseUrl}/settings?billing=success`,
+      success_url: `${baseUrl}/billing/success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${baseUrl}/settings?billing=cancelled`,
       metadata: {
         winback_customer_id: customer.id,

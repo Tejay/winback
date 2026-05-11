@@ -27,6 +27,10 @@ vi.mock('@/lib/schema', () => ({
 
 vi.mock('drizzle-orm', () => ({
   eq: vi.fn((a, b) => ({ op: 'eq', a, b })),
+  and: vi.fn((...args) => ({ op: 'and', args })),
+  or: vi.fn((...args) => ({ op: 'or', args })),
+  isNull: vi.fn((a) => ({ op: 'isNull', a })),
+  lt: vi.fn((a, b) => ({ op: 'lt', a, b })),
 }))
 
 vi.mock('../lib/platform-stripe', () => ({
@@ -72,10 +76,21 @@ function setupNoCustomer() {
   }))
 }
 
-function setupUpdateChain() {
+// Spec 52 — the update chain has to support both shapes:
+//   .update(...).set(...).where(...)             ← plain write (awaited directly)
+//   .update(...).set(...).where(...).returning() ← claim step (drizzle's .returning())
+// So the value returned by `where()` is a thenable that ALSO carries `.returning`.
+function setupUpdateChain(opts: { returningRows?: { id: string }[] } = {}) {
+  const returningRows = opts.returningRows ?? [{ id: 'wb_cust_1' }]
   mockUpdate.mockImplementation(() => ({
     set: () => ({
-      where: () => Promise.resolve(undefined),
+      where: () => {
+        const result = Promise.resolve(undefined) as Promise<undefined> & {
+          returning: () => Promise<{ id: string }[]>
+        }
+        result.returning = () => Promise.resolve(returningRows)
+        return result
+      },
     }),
   }))
 }
@@ -205,6 +220,101 @@ describe('ensurePlatformSubscription', () => {
         items: [{ price: 'price_from_lookup' }],
       }),
     )
+  })
+
+  // Spec 52 — race-fence behaviour. Two concurrent callers (the new
+  // /billing/success page + the existing checkout.session.completed
+  // webhook) used to both pass the "no subscription yet" pre-check and
+  // both call stripe.subscriptions.create, producing an orphan
+  // subscription that billed the customer with no DB record. The claim
+  // step (conditional UPDATE with .returning()) prevents this.
+  describe('race fence', () => {
+    it('lost claim → waits and returns the winning caller\'s subscription', async () => {
+      // First SELECT: no subscription yet (so we don't return from the pre-check).
+      // Second SELECT (after the wait): the racing caller has written sub_winner.
+      mockSelect
+        .mockImplementationOnce(() => ({
+          from: () => ({
+            where: () => ({
+              limit: () => [{ stripePlatformCustomerId: 'cus_existing', stripeSubscriptionId: null }],
+            }),
+          }),
+        }))
+        .mockImplementationOnce(() => ({
+          from: () => ({
+            where: () => ({
+              limit: () => [{ stripeSubscriptionId: 'sub_winner' }],
+            }),
+          }),
+        }))
+      // Claim returns empty → we lost the race.
+      setupUpdateChain({ returningRows: [] })
+
+      const result = await ensurePlatformSubscription('wb_cust_1')
+
+      expect(result).toEqual({ subscriptionId: 'sub_winner', created: false })
+      expect(mockStripe.subscriptions.create).not.toHaveBeenCalled()
+    }, 5000)
+
+    it('lost claim → throws if the winning caller hasn\'t completed within the wait window', async () => {
+      // Both reads return NULL sub_id — winner is still in flight.
+      mockSelect
+        .mockImplementationOnce(() => ({
+          from: () => ({
+            where: () => ({
+              limit: () => [{ stripePlatformCustomerId: 'cus_existing', stripeSubscriptionId: null }],
+            }),
+          }),
+        }))
+        .mockImplementationOnce(() => ({
+          from: () => ({
+            where: () => ({
+              limit: () => [{ stripeSubscriptionId: null }],
+            }),
+          }),
+        }))
+      setupUpdateChain({ returningRows: [] })
+
+      await expect(ensurePlatformSubscription('wb_cust_1')).rejects.toThrow(
+        /subscription_creation_in_progress/,
+      )
+      expect(mockStripe.subscriptions.create).not.toHaveBeenCalled()
+    }, 5000)
+
+    it('won claim → creates exactly one subscription', async () => {
+      setupCustomerRow({
+        stripePlatformCustomerId: 'cus_existing',
+        stripeSubscriptionId: null,
+      })
+      // Claim wins (returningRows defaults to [{id:'wb_cust_1'}]).
+      setupUpdateChain()
+      mockStripe.subscriptions.create.mockResolvedValue({
+        id: 'sub_new',
+        status: 'active',
+      })
+
+      const result = await ensurePlatformSubscription('wb_cust_1')
+
+      expect(result).toEqual({ subscriptionId: 'sub_new', created: true })
+      expect(mockStripe.subscriptions.create).toHaveBeenCalledTimes(1)
+    })
+
+    it('won claim then Stripe create throws → releases the claim before rethrowing', async () => {
+      setupCustomerRow({
+        stripePlatformCustomerId: 'cus_existing',
+        stripeSubscriptionId: null,
+      })
+      setupUpdateChain()
+      const stripeErr = new Error('stripe unreachable')
+      mockStripe.subscriptions.create.mockRejectedValue(stripeErr)
+
+      await expect(ensurePlatformSubscription('wb_cust_1')).rejects.toThrow(stripeErr)
+
+      // Two updates: claim + release. Both go through the same mockUpdate.
+      // The important property is the call count, not the specific args
+      // (set arg objects vary by call).
+      expect(mockUpdate).toHaveBeenCalledTimes(2)
+    })
   })
 
   it('creates Product + Price on first run when neither env nor lookup hits', async () => {
