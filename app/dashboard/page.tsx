@@ -1,8 +1,8 @@
 import { redirect } from 'next/navigation'
 import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
-import { customers, recoveries } from '@/lib/schema'
-import { eq, and } from 'drizzle-orm'
+import { customers, recoveries, churnedSubscribers } from '@/lib/schema'
+import { eq, and, ne, inArray, sql } from 'drizzle-orm'
 import { TopNav } from '@/components/top-nav'
 import { DashboardClient } from './dashboard-client'
 
@@ -26,16 +26,43 @@ export default async function DashboardPage() {
   // signal (the Phase A `plan === 'trial'` field is legacy and stale).
   const billingActive = !!customer?.stripeSubscriptionId
   let firstRecovery: { name: string | null; mrrCents: number } | null = null
+  // Spec 51 — additional ROI-framing data for the banner: at-risk count +
+  // annualized MRR-at-risk across unrecovered, recoverable subscribers.
+  let atRiskCount = 0
+  let atRiskMrrAnnualizedCents = 0
   if (customer && !billingActive) {
+    // Spec 51 — join recoveries with churned_subscribers so we can show
+    // the recovered subscriber's name, not just a generic "first recovery".
     const recs = await db
-      .select()
+      .select({
+        name: churnedSubscribers.name,
+        mrrCents: recoveries.planMrrCents,
+      })
       .from(recoveries)
+      .innerJoin(churnedSubscribers, eq(recoveries.subscriberId, churnedSubscribers.id))
       .where(eq(recoveries.customerId, customer.id))
       .limit(1)
 
     if (recs.length > 0) {
-      firstRecovery = { name: null, mrrCents: recs[0].planMrrCents }
+      firstRecovery = { name: recs[0].name, mrrCents: recs[0].mrrCents }
     }
+
+    // At-risk subscribers: classified as recoverable, not yet recovered.
+    const [atRisk] = await db
+      .select({
+        count: sql<number>`COUNT(*)::int`,
+        mrrSum: sql<number>`COALESCE(SUM(${churnedSubscribers.mrrCents}), 0)::bigint`,
+      })
+      .from(churnedSubscribers)
+      .where(
+        and(
+          eq(churnedSubscribers.customerId, customer.id),
+          inArray(churnedSubscribers.recoveryLikelihood, ['high', 'medium']),
+          ne(churnedSubscribers.status, 'recovered'),
+        ),
+      )
+    atRiskCount = atRisk?.count ?? 0
+    atRiskMrrAnnualizedCents = Number(atRisk?.mrrSum ?? 0) * 12
   }
 
   // Spec 31 — pilot status. If pilot_until is in the future, the dashboard
@@ -59,6 +86,9 @@ export default async function DashboardPage() {
             firstRecovery={firstRecovery}
             pilotUntilIso={pilotUntil ? pilotUntil.toISOString() : null}
             founderName={customer?.founderName ?? session.user.name ?? null}
+            atRiskCount={atRiskCount}
+            atRiskMrrAnnualizedCents={atRiskMrrAnnualizedCents}
+            activatedAtIso={customer?.activatedAt ? customer.activatedAt.toISOString() : null}
           />
         </div>
       </main>

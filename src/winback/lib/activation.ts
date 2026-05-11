@@ -1,6 +1,6 @@
 import { db } from '@/lib/db'
-import { customers, recoveries } from '@/lib/schema'
-import { eq, and, isNull } from 'drizzle-orm'
+import { customers, recoveries, churnedSubscribers } from '@/lib/schema'
+import { eq, and, isNull, desc } from 'drizzle-orm'
 import {
   getOrCreatePlatformCustomer,
   getCurrentDefaultPaymentMethodId,
@@ -9,6 +9,7 @@ import { ensurePlatformSubscription } from './subscription'
 import { chargePendingPerformanceFees } from './performance-fee'
 import { isCustomerOnPilot, getPilotUntil } from './pilot'
 import { logEvent } from './events'
+import { sendPlatformTrialCompleteEmail } from './billing-notifications'
 
 /**
  * Phase A — Single converging function for activating a customer's billing.
@@ -98,6 +99,31 @@ export async function ensureActivation(wbCustomerId: string): Promise<Activation
       .returning({ activatedAt: customers.activatedAt })
     if (claimed.length) {
       activatedAt = claimed[0].activatedAt as Date
+      // Spec 51 — we just won the race to set activatedAt. Send the
+      // one-time trial-complete email (fire-and-forget; failures don't
+      // block activation). Look up the most recent recovery row so we
+      // can name the recovered subscriber + show MRR. Pilot customers
+      // are skipped — they don't enter the paused-state UX.
+      const isPilot = await isCustomerOnPilot(wbCustomerId)
+      if (!isPilot) {
+        const [first] = await db
+          .select({
+            name: churnedSubscribers.name,
+            mrrCents: churnedSubscribers.mrrCents,
+          })
+          .from(recoveries)
+          .innerJoin(churnedSubscribers, eq(recoveries.subscriberId, churnedSubscribers.id))
+          .where(eq(recoveries.customerId, wbCustomerId))
+          .orderBy(desc(recoveries.recoveredAt))
+          .limit(1)
+        sendPlatformTrialCompleteEmail({
+          customerId: wbCustomerId,
+          recoveredSubscriberName: first?.name ?? null,
+          recoveredMrrCents: first?.mrrCents ?? 0,
+        }).catch((err) =>
+          console.error('[activation] failed to send trial-complete email', err)
+        )
+      }
     } else {
       // Lost the race — re-read whichever timestamp the winning call wrote.
       const [latest] = await db

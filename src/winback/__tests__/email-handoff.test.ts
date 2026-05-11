@@ -272,6 +272,7 @@ describe('scheduleExitEmail — AI decides initial hand-off', () => {
     // scheduleExitEmail gates: DNC, customer-paused, ai-paused — in that order.
     enqueueSelect([{ dnc: false }])                         // isDoNotContact
     enqueueSelect([{ pausedAt: null }])                     // isCustomerPausedForSubscriber
+    enqueueSelect([{ activatedAt: null, stripeSubscriptionId: null, pilotUntil: null }])  // isCustomerPausedForBilling (Spec 51)
     enqueueSelect([{ aiPausedUntil: null }])                // isAiPaused
     // Then triggerFounderHandoff path:
     enqueueSelect([subscriberRow])                          // SELECT subscriber

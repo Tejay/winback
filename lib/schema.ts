@@ -56,6 +56,12 @@ export const customers = pgTable('wb_customers', {
   // first cron run populates real values.
   cumulativeRevenueSavedCents:      bigint('cumulative_revenue_saved_cents', { mode: 'number' }).notNull().default(0),
   cumulativeRevenueLastComputedAt:  timestamp('cumulative_revenue_last_computed_at'),
+  // Spec 51 — billing nudge idempotency + cadence tracking. All four are
+  // null until the corresponding event fires; see migration 032.
+  billingNudgeDay7SentAt:           timestamp('billing_nudge_day7_sent_at'),
+  billingNudgeDay30SentAt:          timestamp('billing_nudge_day30_sent_at'),
+  billingMonthlyReportLastSentAt:   timestamp('billing_monthly_report_last_sent_at'),
+  billingEmailsOptedOutAt:          timestamp('billing_emails_opted_out_at'),
   createdAt:            timestamp('created_at').defaultNow(),
   updatedAt:            timestamp('updated_at').defaultNow(),
 })

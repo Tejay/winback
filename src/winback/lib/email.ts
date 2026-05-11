@@ -139,6 +139,32 @@ export async function isCustomerPausedForSubscriber(subscriberId: string): Promi
 }
 
 /**
+ * Spec 51 — Returns true when the customer is in post-trial paused state:
+ * first recovery delivered (activatedAt set) AND no active platform
+ * subscription. Callers must skip sending win-back / payment-recovery
+ * emails. Pause is implicit — there's no "unpause" button; the merchant
+ * subscribes to resume.
+ *
+ * Pilot bypass: pilot customers (pilotUntil > now) are NOT considered
+ * paused — pilot is its own free tier per spec 31.
+ */
+export async function isCustomerPausedForBilling(subscriberId: string): Promise<boolean> {
+  const [row] = await db
+    .select({
+      activatedAt: customers.activatedAt,
+      stripeSubscriptionId: customers.stripeSubscriptionId,
+      pilotUntil: customers.pilotUntil,
+    })
+    .from(churnedSubscribers)
+    .innerJoin(customers, eq(churnedSubscribers.customerId, customers.id))
+    .where(eq(churnedSubscribers.id, subscriberId))
+    .limit(1)
+  if (!row) return false
+  if (row.pilotUntil && row.pilotUntil.getTime() > Date.now()) return false
+  return !!row.activatedAt && !row.stripeSubscriptionId
+}
+
+/**
  * Spec 22a — Returns true if the subscriber has an active AI pause
  * (ai_paused_until > now). Callers must skip sending automated emails.
  *
@@ -330,6 +356,17 @@ export async function scheduleExitEmail(params: {
 
   if (await isCustomerPausedForSubscriber(subscriberId)) {
     console.log('Skipping exit email — customer has paused sending:', subscriberId)
+    return
+  }
+
+  // Spec 51 — post-trial billing pause (auto-paused after first delivered
+  // recovery until subscription is active).
+  if (await isCustomerPausedForBilling(subscriberId)) {
+    console.log('Skipping exit email — customer in post-trial billing pause:', subscriberId)
+    await logEvent({
+      name: 'send_skipped_billing_pause',
+      properties: { subscriberId, emailType: 'exit' },
+    })
     return
   }
 
@@ -593,6 +630,16 @@ export async function sendDunningEmail(params: {
     return
   }
 
+  // Spec 51 — post-trial billing pause
+  if (await isCustomerPausedForBilling(subscriberId)) {
+    console.log('Skipping dunning email — customer in post-trial billing pause:', subscriberId)
+    await logEvent({
+      name: 'send_skipped_billing_pause',
+      properties: { subscriberId, emailType: 'dunning' },
+    })
+    return
+  }
+
   // Spec 22a — per-subscriber AI pause
   if (await isAiPaused(subscriberId)) {
     console.log('Skipping dunning email — AI paused for subscriber:', subscriberId)
@@ -761,6 +808,15 @@ export async function sendDunningFollowupEmail(params: {
   }
   if (await isCustomerPausedForSubscriber(subscriberId)) {
     console.log('Skipping dunning followup — customer paused:', subscriberId)
+    return
+  }
+  // Spec 51 — post-trial billing pause
+  if (await isCustomerPausedForBilling(subscriberId)) {
+    console.log('Skipping dunning followup — post-trial billing pause:', subscriberId)
+    await logEvent({
+      name: 'send_skipped_billing_pause',
+      properties: { subscriberId, emailType: 'dunning_followup' },
+    })
     return
   }
   if (await isAiPaused(subscriberId)) {

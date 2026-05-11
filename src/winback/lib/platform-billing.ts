@@ -51,7 +51,35 @@ export async function getOrCreatePlatformCustomer(wbCustomerId: string): Promise
     .limit(1)
 
   if (!row) throw new Error(`wb_customer ${wbCustomerId} not found`)
-  if (row.stripePlatformCustomerId) return row.stripePlatformCustomerId
+
+  // Spec 51 — defensive validation. The stored ID can become stale when:
+  //   - The dev environment switches Stripe modes (test ↔ live)
+  //   - The customer was deleted on Stripe (test data cleanup, account switch)
+  //   - We're hitting a different Stripe platform account than when it was created
+  // In any of those cases, treat the stored ID as gone and create a fresh one.
+  if (row.stripePlatformCustomerId) {
+    try {
+      const stripe = getPlatformStripe()
+      const existing = await stripe.customers.retrieve(row.stripePlatformCustomerId)
+      // Stripe returns { deleted: true, ... } for soft-deleted customers
+      if (!('deleted' in existing) || !existing.deleted) {
+        return row.stripePlatformCustomerId
+      }
+      console.warn(
+        `[platform-billing] stripePlatformCustomerId ${row.stripePlatformCustomerId} is deleted; recreating for ${wbCustomerId}`,
+      )
+    } catch (err) {
+      const isMissing =
+        err instanceof Error &&
+        (err as { type?: string }).type === 'StripeInvalidRequestError' &&
+        err.message.includes('No such customer')
+      if (!isMissing) throw err
+      console.warn(
+        `[platform-billing] stale stripePlatformCustomerId ${row.stripePlatformCustomerId} (no such customer); recreating for ${wbCustomerId}`,
+      )
+    }
+    // Fall through to creation below
+  }
 
   const [user] = await db
     .select({ email: users.email })
