@@ -555,6 +555,56 @@ NEXT_PUBLIC_APP_URL=http://localhost:3000  # Must be publicly accessible (ngrok 
 
 ---
 
+## Testing accounts — canonical reference
+
+There are **two distinct Stripe platform accounts** for Winback (the
+SaaS), each paired with a designated **merchant/founder** test account
+on the Winback app itself. Always use the correct pair — mixing them
+risks live charges or polluting prod data.
+
+### Local / dev testing (sandbox — safe)
+
+- **Stripe platform account (test mode):** `tkedambadi@gmail.com`
+  - This is the Stripe account that owns the Connect application
+    Winback uses to read subscribers from merchants. `sk_test_…` keys
+    in `.env.local` belong here.
+  - All merchants connect their Stripe account via OAuth into this
+    platform. Test subscriptions, cancels, refunds — all live here.
+- **Winback merchant/founder account (the customer of Winback on dev):**
+  `tejaasvi@gmail.com`
+  - Login at `http://localhost:3000` for end-to-end dashboard
+    walkthroughs. All dev-test data (recoveries, subscriptions,
+    pauses, pilot bypass) is reset against this row by
+    `scripts/billing-test-reset.ts`.
+
+### Production testing (LIVE — be careful)
+
+- **Stripe platform account (LIVE mode):** `Thejasvi.Kedambadi@winbackflow.co`
+  - **Real money moves here.** `sk_live_…` keys live in Vercel prod
+    env. The production webhook endpoint `https://winbackflow.co/api/stripe/webhook`
+    is registered against this account's Connect application.
+  - Do not run reset scripts or test seeds against this account
+    without explicit human confirmation, and never without `--dryRun`
+    first.
+- **Winback merchant/founder account (the customer of Winback on prod):**
+  `testfounder.winback@gmail.com`
+  - This is the only account intended for live-flow smoke testing on
+    `winbackflow.co`. Treat it like a real customer — single test
+    subscriber at a time, clean up after.
+
+### Quick mental checklist before a billing action
+
+1. Am I on local or prod? (`echo $VERCEL_ENV` / which `.env*` is loaded)
+2. Does the Stripe key I'm using start with `sk_test_` or `sk_live_`?
+3. Does the founder account I'm operating on match the environment?
+   (`tejaasvi@gmail.com` ↔ local; `testfounder.winback@gmail.com` ↔ prod)
+4. If I'm about to run something destructive (cancel sub, delete row,
+   refund), have I dry-run it first?
+
+If any answer feels uncertain, stop and ask.
+
+---
+
 ## How to start each session
 
 Say: "Read CLAUDE.md and TASKS.md. Work through the next unchecked task."

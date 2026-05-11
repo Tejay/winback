@@ -21,6 +21,8 @@ const ERROR_MESSAGES: Record<string, string> = {
     "We couldn't match the response to your account. Please try connecting again.",
   token_exchange_failed:
     "Stripe authorised the connection but we couldn't complete it. Please try again.",
+  account_already_linked:
+    'This Stripe account is already connected to another Winback workspace. Connect a different Stripe account, or contact support@winbackflow.co if this is unexpected.',
 }
 
 // Permission matrix — surfaced inside the first disclosure, not above the fold.
