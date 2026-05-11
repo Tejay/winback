@@ -5,7 +5,7 @@ import { eq, and, lt, lte, isNotNull, isNull, inArray, sql } from 'drizzle-orm'
 import { classifySubscriber } from '@/src/winback/lib/classifier'
 import {
   sendEmail,
-  isCustomerPausedForSubscriber,
+  isCustomerPausedForWinback,
   isCustomerPausedForBillingByCustomerId,
 } from '@/src/winback/lib/email'
 import { SubscriberSignals } from '@/src/winback/lib/types'
@@ -124,7 +124,7 @@ export async function GET(req: NextRequest) {
         continue
       }
       // Skip if the customer has paused sending
-      if (await isCustomerPausedForSubscriber(sub.id)) {
+      if (await isCustomerPausedForWinback(sub.id)) {
         skipped++
         continue
       }
@@ -272,7 +272,7 @@ export async function GET(req: NextRequest) {
         nudgeSkipped++
         continue
       }
-      if (await isCustomerPausedForSubscriber(sub.id)) {
+      if (await isCustomerPausedForWinback(sub.id)) {
         nudgeSkipped++
         continue
       }

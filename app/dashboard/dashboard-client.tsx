@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, Fragment } from 'react'
+import Link from 'next/link'
 import { StatusBadge } from '@/components/status-badge'
 import { AiStateBadge } from '@/components/ai-state-badge'
 import { TrendingUp, CheckCircle, DollarSign, Users, Search, Zap, X, RotateCcw, Check, Loader2, Sparkles, MessageSquare, CreditCard, ChevronRight, ChevronDown, Copy, Mail } from 'lucide-react'
@@ -188,6 +189,15 @@ interface DashboardClientProps {
    *  first recovery" — the same paused state, but different cause
    *  and so different copy. */
   everSubscribed?: boolean
+  /** Spec 55 — Settings → "Pause win-back" toggle. When set, no
+   *  voluntary-cancel emails (exit / reply / reengagement nudge)
+   *  go out. Dashboard renders an amber banner reflecting the
+   *  paused cohort(s). */
+  manuallyPausedWinbackAtIso?: string | null
+  /** Spec 55 — Settings → "Pause payment-recovery" toggle. When set,
+   *  no dunning / dunning-followup emails go out. Independent of
+   *  the win-back pause — both can be active. */
+  manuallyPausedDunningAtIso?: string | null
 }
 
 export function DashboardClient({
@@ -202,6 +212,8 @@ export function DashboardClient({
   atRiskPaymentRecoveriesCount = 0,
   activatedAtIso = null,
   everSubscribed = false,
+  manuallyPausedWinbackAtIso = null,
+  manuallyPausedDunningAtIso = null,
 }: DashboardClientProps) {
   const [stats, setStats] = useState<Stats>(EMPTY_STATS)
   // Spec 52 — `null` means "first fetch hasn't completed yet"; `[]` means
@@ -504,8 +516,44 @@ export function DashboardClient({
   const isPaused = !onPilot && isTrial && !!activatedAtIso
   const showBanner = isPaused && !!firstRecovery
 
+  // Spec 55 — Settings-paused state. Independent of the billing-paused
+  // state (spec 51/53) — both can render simultaneously.
+  const winbackPaused = !!manuallyPausedWinbackAtIso
+  const dunningPaused = !!manuallyPausedDunningAtIso
+  const anyManuallyPaused = winbackPaused || dunningPaused
+  const manualPauseCopy = (() => {
+    if (winbackPaused && dunningPaused) {
+      return 'All Winback emails are paused in Settings (win-back AND payment recovery). New cancellations and failed payments still land here — nothing goes out until you resume.'
+    }
+    if (winbackPaused) {
+      return 'Win-back emails are paused in Settings. New cancellations are still recorded — but no win-back emails go out until you resume.'
+    }
+    return 'Payment-recovery emails are paused in Settings. New failed payments are still recorded — but no dunning emails go out until you resume.'
+  })()
+
   return (
     <>
+      {/* Spec 55 — manual pause banner. Renders first because it's the
+          more immediately reversible (one toggle in Settings) vs the
+          billing-paused banner below (requires a Stripe subscription). */}
+      {anyManuallyPaused && (
+        <div className="bg-amber-50 border-2 border-amber-300 rounded-2xl px-5 py-4 mb-4 flex items-start justify-between gap-3">
+          <div className="flex items-start gap-2.5 text-sm text-amber-900">
+            <span className="text-base leading-none mt-0.5">⏸</span>
+            <span>
+              <strong className="font-semibold">You paused sending in Settings.</strong>{' '}
+              {manualPauseCopy}
+            </span>
+          </div>
+          <Link
+            href="/settings"
+            className="flex-shrink-0 text-sm font-medium text-amber-900 underline hover:text-amber-700"
+          >
+            Resume in Settings →
+          </Link>
+        </div>
+      )}
+
       {/* Spec 51 — persistent paused status bar. Shows whenever the customer
           is in post-trial paused state and the main ROI banner isn't visible
           (the main banner is more prominent and already communicates state). */}

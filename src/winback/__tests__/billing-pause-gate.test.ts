@@ -19,7 +19,13 @@ vi.mock('@/lib/db', () => ({
 }))
 
 vi.mock('@/lib/schema', () => ({
-  customers: { activatedAt: 'a', stripeSubscriptionId: 's', pilotUntil: 'p' },
+  customers: {
+    activatedAt: 'a',
+    stripeSubscriptionId: 's',
+    pilotUntil: 'p',
+    pausedAt: 'pw',
+    pausedDunningAt: 'pd',
+  },
   churnedSubscribers: { id: 'cs.id', customerId: 'cs.customer_id' },
 }))
 
@@ -160,5 +166,51 @@ describe('isCustomerPausedForBillingByCustomerId', () => {
   it('returns false: customer row not found', async () => {
     setCustomerRow(null)
     expect(await isCustomerPausedForBillingByCustomerId('cust_missing')).toBe(false)
+  })
+})
+
+// Spec 55 — split pause control. Two separate helpers, each gating
+// only its own cohort. Verify independence.
+describe('isCustomerPausedForWinback / isCustomerPausedForDunning', () => {
+  it('isCustomerPausedForWinback: true when paused_at set', async () => {
+    const { isCustomerPausedForWinback } = await import('../lib/email')
+    setRow({ pausedAt: new Date() })
+    expect(await isCustomerPausedForWinback('sub_1')).toBe(true)
+  })
+
+  it('isCustomerPausedForWinback: false when paused_at null', async () => {
+    const { isCustomerPausedForWinback } = await import('../lib/email')
+    setRow({ pausedAt: null })
+    expect(await isCustomerPausedForWinback('sub_1')).toBe(false)
+  })
+
+  it('isCustomerPausedForDunning: true when paused_dunning_at set', async () => {
+    const { isCustomerPausedForDunning } = await import('../lib/email')
+    setRow({ pausedDunningAt: new Date() })
+    expect(await isCustomerPausedForDunning('sub_1')).toBe(true)
+  })
+
+  it('isCustomerPausedForDunning: false when paused_dunning_at null', async () => {
+    const { isCustomerPausedForDunning } = await import('../lib/email')
+    setRow({ pausedDunningAt: null })
+    expect(await isCustomerPausedForDunning('sub_1')).toBe(false)
+  })
+
+  it('helpers are independent: winback paused does NOT trip dunning gate', async () => {
+    const { isCustomerPausedForWinback, isCustomerPausedForDunning } = await import('../lib/email')
+    setRow({ pausedAt: new Date() })
+    expect(await isCustomerPausedForWinback('sub_1')).toBe(true)
+    setRow({ pausedDunningAt: null })
+    expect(await isCustomerPausedForDunning('sub_1')).toBe(false)
+  })
+
+  it('legacy isCustomerPausedForSubscriber wrapper returns OR of both', async () => {
+    const { isCustomerPausedForSubscriber } = await import('../lib/email')
+    // Neither paused → false
+    setRow({ pausedAt: null })
+    expect(await isCustomerPausedForSubscriber('sub_1')).toBe(false)
+    // Win-back paused alone → true (OR-wrapper trips)
+    setRow({ pausedAt: new Date() })
+    expect(await isCustomerPausedForSubscriber('sub_1')).toBe(true)
   })
 })

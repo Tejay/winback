@@ -125,10 +125,14 @@ export async function isDoNotContact(subscriberId: string): Promise<boolean> {
 }
 
 /**
- * Returns true if the subscriber's customer (the Winback user) has paused
- * sending from Settings. Callers must skip sending.
+ * Spec 55 — true if the customer paused the WIN-BACK cohort
+ * (exit emails, reply win-backs, reengagement nudges) via Settings.
+ *
+ * Reads `customers.paused_at` — semantically narrowed to win-back
+ * only as of spec 55. Payment-recovery emails check
+ * `isCustomerPausedForDunning` instead.
  */
-export async function isCustomerPausedForSubscriber(subscriberId: string): Promise<boolean> {
+export async function isCustomerPausedForWinback(subscriberId: string): Promise<boolean> {
   const [row] = await db
     .select({ pausedAt: customers.pausedAt })
     .from(churnedSubscribers)
@@ -136,6 +140,38 @@ export async function isCustomerPausedForSubscriber(subscriberId: string): Promi
     .where(eq(churnedSubscribers.id, subscriberId))
     .limit(1)
   return !!row?.pausedAt
+}
+
+/**
+ * Spec 55 — true if the customer paused the PAYMENT-RECOVERY cohort
+ * (dunning + dunning followup) via Settings.
+ *
+ * Reads `customers.paused_dunning_at`. Independent of the win-back
+ * pause — merchants can pause one without the other.
+ */
+export async function isCustomerPausedForDunning(subscriberId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ pausedDunningAt: customers.pausedDunningAt })
+    .from(churnedSubscribers)
+    .innerJoin(customers, eq(churnedSubscribers.customerId, customers.id))
+    .where(eq(churnedSubscribers.id, subscriberId))
+    .limit(1)
+  return !!row?.pausedDunningAt
+}
+
+/**
+ * Legacy combined helper — true if either cohort is paused. Kept as a
+ * thin OR-wrapper for any caller I missed during the spec 55 split.
+ * No active senders use this directly anymore.
+ *
+ * @deprecated since spec 55. Prefer `isCustomerPausedForWinback` or
+ * `isCustomerPausedForDunning` depending on the email cohort.
+ */
+export async function isCustomerPausedForSubscriber(subscriberId: string): Promise<boolean> {
+  return (
+    (await isCustomerPausedForWinback(subscriberId)) ||
+    (await isCustomerPausedForDunning(subscriberId))
+  )
 }
 
 /**
@@ -376,8 +412,9 @@ export async function scheduleExitEmail(params: {
     return
   }
 
-  if (await isCustomerPausedForSubscriber(subscriberId)) {
-    console.log('Skipping exit email — customer has paused sending:', subscriberId)
+  // Spec 55 — win-back cohort pause
+  if (await isCustomerPausedForWinback(subscriberId)) {
+    console.log('Skipping exit email — customer has paused win-back sending:', subscriberId)
     return
   }
 
@@ -486,8 +523,10 @@ export async function sendReplyEmail(params: {
     return { sent: false, reason: 'do_not_contact' }
   }
 
-  if (await isCustomerPausedForSubscriber(subscriberId)) {
-    console.log('Skipping reply email — customer has paused sending:', subscriberId)
+  // Spec 55 — win-back cohort pause (reply emails are part of the
+  // win-back conversation thread)
+  if (await isCustomerPausedForWinback(subscriberId)) {
+    console.log('Skipping reply email — customer has paused win-back sending:', subscriberId)
     return { sent: false, reason: 'customer_paused' }
   }
 
@@ -662,6 +701,14 @@ export async function sendDunningEmail(params: {
 
   if (await isDoNotContact(subscriberId)) {
     console.log('Skipping dunning email — subscriber unsubscribed:', subscriberId)
+    return
+  }
+
+  // Spec 55 — payment-recovery cohort pause. Was missing entirely
+  // before spec 55 (only the followup variant was gated). Closed
+  // when we split pause control into win-back + dunning cohorts.
+  if (await isCustomerPausedForDunning(subscriberId)) {
+    console.log('Skipping dunning email — customer has paused dunning:', subscriberId)
     return
   }
 
@@ -841,8 +888,9 @@ export async function sendDunningFollowupEmail(params: {
     console.log('Skipping dunning followup — DNC:', subscriberId)
     return
   }
-  if (await isCustomerPausedForSubscriber(subscriberId)) {
-    console.log('Skipping dunning followup — customer paused:', subscriberId)
+  // Spec 55 — payment-recovery cohort pause
+  if (await isCustomerPausedForDunning(subscriberId)) {
+    console.log('Skipping dunning followup — customer has paused dunning:', subscriberId)
     return
   }
   // Spec 51 — post-trial billing pause

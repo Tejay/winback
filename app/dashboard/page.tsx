@@ -143,6 +143,8 @@ export default async function DashboardPage() {
             atRiskPaymentRecoveriesCount={atRiskPaymentRecoveriesCount}
             activatedAtIso={customer?.activatedAt ? customer.activatedAt.toISOString() : null}
             everSubscribed={everSubscribed}
+            manuallyPausedWinbackAtIso={customer?.pausedAt ? customer.pausedAt.toISOString() : null}
+            manuallyPausedDunningAtIso={customer?.pausedDunningAt ? customer.pausedDunningAt.toISOString() : null}
           />
         </div>
       </main>
