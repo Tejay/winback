@@ -295,7 +295,10 @@ export default async function SettingsPage({
           </div>
 
           {/* Danger zone */}
-          <DangerZone paused={!!customer?.pausedAt} />
+          <DangerZone
+            pausedWinback={!!customer?.pausedAt}
+            pausedDunning={!!customer?.pausedDunningAt}
+          />
         </div>
       </main>
     </>

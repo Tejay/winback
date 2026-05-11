@@ -3,10 +3,11 @@ import { Pause, Trash2 } from 'lucide-react'
 import { PauseToggle } from './pause-toggle'
 
 interface DangerZoneProps {
-  paused: boolean
+  pausedWinback: boolean
+  pausedDunning: boolean
 }
 
-export function DangerZone({ paused }: DangerZoneProps) {
+export function DangerZone({ pausedWinback, pausedDunning }: DangerZoneProps) {
   return (
     <div className="bg-rose-50/40 border border-rose-200 rounded-2xl p-6 mt-6">
       <div className="text-xs font-semibold tracking-widest uppercase text-rose-600">
@@ -16,10 +17,12 @@ export function DangerZone({ paused }: DangerZoneProps) {
         Stop Winback from sending
       </h2>
       <p className="text-sm text-slate-500 mt-1 mb-5">
-        Safe to use. Cancellations keep flowing in — nothing is sent until you resume.
+        Safe to use. Cancellations and failed payments keep flowing in —
+        but no emails go out for the paused cohort. Each toggle works
+        independently.
       </p>
 
-      {/* Pause row */}
+      {/* Spec 55 — Win-back pause */}
       <div className="bg-white border border-rose-100 rounded-2xl p-4 mb-3">
         <div className="flex items-start justify-between gap-4">
           <div className="flex items-start gap-3">
@@ -28,16 +31,41 @@ export function DangerZone({ paused }: DangerZoneProps) {
             </div>
             <div>
               <div className="text-sm font-medium text-slate-900">
-                Pause all winback emails
+                Pause win-back emails
               </div>
               <div className="text-xs text-slate-500 mt-0.5 max-w-md">
-                Temporarily stop sending any winback email. Useful during
-                incidents, launches, or while you rework your changelog.
+                For voluntary cancellations. Pause if the AI is
+                misclassifying, your changelog is out of date, or you&rsquo;re
+                reworking your win-back tone.
               </div>
             </div>
           </div>
           <div className="flex-shrink-0">
-            <PauseToggle initialPaused={paused} compact />
+            <PauseToggle scope="winback" initialPaused={pausedWinback} compact />
+          </div>
+        </div>
+      </div>
+
+      {/* Spec 55 — Payment-recovery pause (independent) */}
+      <div className="bg-white border border-rose-100 rounded-2xl p-4 mb-3">
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <div className="bg-rose-50 rounded-xl w-9 h-9 flex items-center justify-center flex-shrink-0">
+              <Pause className="w-4 h-4 text-rose-600" />
+            </div>
+            <div>
+              <div className="text-sm font-medium text-slate-900">
+                Pause payment-recovery emails
+              </div>
+              <div className="text-xs text-slate-500 mt-0.5 max-w-md">
+                For subscribers whose card failed. Pause if you&rsquo;re
+                rebranding mid-flight, or the dunning template needs work.
+                Stripe&rsquo;s own retries continue regardless.
+              </div>
+            </div>
+          </div>
+          <div className="flex-shrink-0">
+            <PauseToggle scope="dunning" initialPaused={pausedDunning} compact />
           </div>
         </div>
       </div>

@@ -41,7 +41,15 @@ export const customers = pgTable('wb_customers', {
   stripeSubscriptionCreatingAt: timestamp('stripe_subscription_creating_at'),
   // Timestamp of first delivered save or win-back — when billing started.
   activatedAt:          timestamp('activated_at'),
+  // Spec 55 — win-back send pause toggle (Settings danger zone).
+  // NULL = sending live, timestamp = paused. The name retains "paused_at"
+  // (rather than "paused_winback_at") for backwards compat with existing
+  // call sites; semantics narrowed to win-back-only with spec 55.
   pausedAt:             timestamp('paused_at'),
+  // Spec 55 — payment-recovery send pause toggle (Settings danger zone).
+  // NULL = sending live, timestamp = paused. Independent of pausedAt;
+  // gates `sendDunningEmail` + `sendDunningFollowupEmail` only.
+  pausedDunningAt:      timestamp('paused_dunning_at'),
   backfillTotal:        integer('backfill_total').default(0),
   backfillProcessed:    integer('backfill_processed').default(0),
   backfillStartedAt:    timestamp('backfill_started_at'),
