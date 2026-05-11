@@ -256,4 +256,9 @@ export const recoveries = pgTable('wb_recoveries', {
   perfFeeRefundedAt: timestamp('perf_fee_refunded_at'),
   perfFeeStripeItemId: text('perf_fee_stripe_item_id'),
   perfFeeAmountCents: integer('perf_fee_amount_cents'),
+  // Spec 58 — TTL'd lock for race-safe perf-fee charging. NULL = not
+  // claimed; timestamp = a caller is mid-create. The atomic claim-and-act
+  // path in chargePerformanceFee uses this to serialize concurrent
+  // ensureActivation calls. Migration 037.
+  perfFeeCreatingAt: timestamp('perf_fee_creating_at'),
 })

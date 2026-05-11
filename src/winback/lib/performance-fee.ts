@@ -1,11 +1,22 @@
 import type Stripe from 'stripe'
 import { db } from '@/lib/db'
 import { customers, churnedSubscribers, recoveries } from '@/lib/schema'
-import { eq, and, isNull } from 'drizzle-orm'
+import { eq, and, or, isNull, lt } from 'drizzle-orm'
 import { getPlatformStripe } from './platform-stripe'
 import { PLATFORM_FEE_CURRENCY } from './subscription'
 import { isCustomerOnPilot } from './pilot'
 import { logEvent } from './events'
+
+/**
+ * Spec 58 — TTL for the perf-fee creation lock.
+ *
+ * Wide enough to comfortably cover one stripe.invoiceItems.create call
+ * (~200-500ms typical) plus the follow-up UPDATE. After this window a
+ * caller's claim is considered stale and the next caller can reclaim
+ * it (crash recovery). Mirrors the SUBSCRIPTION_CREATION_LOCK_TTL_MS
+ * in subscription.ts.
+ */
+const PERF_FEE_CREATING_LOCK_TTL_MS = 30_000
 
 /**
  * Phase A — Performance-fee charging and refunding.
@@ -101,7 +112,7 @@ export async function chargePerformanceFee(recoveryId: string): Promise<{
   invoiceItemId: string | null
   amountCents: number
   alreadyCharged: boolean
-  skipped?: 'pilot'
+  skipped?: 'pilot' | 'race'
 }> {
   const rec = await loadRecovery(recoveryId)
   if (!rec) throw new Error(`recovery ${recoveryId} not found`)
@@ -140,8 +151,62 @@ export async function chargePerformanceFee(recoveryId: string): Promise<{
     }
   }
 
+  // Spec 58 — atomic claim. Two concurrent ensureActivation calls (the
+  // Subscribe-flow Spec 52 scenario: /billing/success + the
+  // checkout.session.completed webhook) both reach this point with the
+  // same recovery, perfFeeStripeItemId still NULL. Without this fence,
+  // both would call stripe.invoiceItems.create and the customer would be
+  // billed twice (the DB UPDATE that writes perfFeeStripeItemId is a
+  // last-writer-wins, but the Stripe items both exist). The conditional
+  // UPDATE serializes them: Postgres returns a row to exactly one caller;
+  // the loser sees `claimed.length === 0` and short-circuits.
+  const claimStaleCutoff = new Date(Date.now() - PERF_FEE_CREATING_LOCK_TTL_MS)
+  const claimed = await db
+    .update(recoveries)
+    .set({ perfFeeCreatingAt: new Date() })
+    .where(and(
+      eq(recoveries.id, recoveryId),
+      isNull(recoveries.perfFeeStripeItemId),
+      or(
+        isNull(recoveries.perfFeeCreatingAt),
+        lt(recoveries.perfFeeCreatingAt, claimStaleCutoff),
+      ),
+    ))
+    .returning({ id: recoveries.id })
+
+  if (claimed.length === 0) {
+    // Another caller has the lock (or has just finished). Re-read once
+    // — if the lock-holder completed, return their item id as
+    // alreadyCharged. Otherwise log and back out; the holder will
+    // complete the work for us.
+    const fresh = await loadRecovery(recoveryId)
+    if (fresh?.perfFeeStripeItemId) {
+      return {
+        invoiceItemId: fresh.perfFeeStripeItemId,
+        amountCents: rec.planMrrCents,
+        alreadyCharged: true,
+      }
+    }
+    await logEvent({
+      name: 'perf_fee_create_skipped_race',
+      customerId: rec.customerId,
+      properties: { recoveryId },
+    })
+    return {
+      invoiceItemId: null,
+      amountCents: rec.planMrrCents,
+      alreadyCharged: false,
+      skipped: 'race',
+    }
+  }
+
   const cust = await loadCustomerBilling(rec.customerId)
   if (!cust?.stripePlatformCustomerId) {
+    // Release the lock before throwing so retries aren't blocked.
+    await db
+      .update(recoveries)
+      .set({ perfFeeCreatingAt: null })
+      .where(eq(recoveries.id, recoveryId))
     throw new Error(`customer ${rec.customerId} has no platform Stripe customer`)
   }
 
@@ -165,14 +230,36 @@ export async function chargePerformanceFee(recoveryId: string): Promise<{
     params.subscription = cust.stripeSubscriptionId
   }
 
-  const item = await stripe.invoiceItems.create(params)
+  let item: Stripe.InvoiceItem
+  try {
+    // Spec 58 — Stripe Idempotency-Key is the belt to the DB fence's
+    // suspenders. Per-recovery key is natural (one perf fee per recovery,
+    // ever). If the DB lock ever leaks (refactor regression, weird Postgres
+    // edge case), Stripe will dedup by key for 24h and return the same
+    // invoice item id rather than billing twice.
+    item = await stripe.invoiceItems.create(params, {
+      idempotencyKey: `wb-perf-${recoveryId}`,
+    })
+  } catch (err) {
+    // Release the lock so the next caller (or a retry) isn't blocked
+    // for 30s waiting for the TTL.
+    await db
+      .update(recoveries)
+      .set({ perfFeeCreatingAt: null })
+      .where(eq(recoveries.id, recoveryId))
+    throw err
+  }
 
+  // Atomic: write the item id AND clear the lock in one UPDATE. Once this
+  // returns, future callers reading the row will see perfFeeStripeItemId
+  // set and short-circuit at the top of the function.
   await db
     .update(recoveries)
     .set({
       perfFeeStripeItemId: item.id,
       perfFeeAmountCents: rec.planMrrCents,
       perfFeeChargedAt: new Date(),
+      perfFeeCreatingAt: null,
     })
     .where(eq(recoveries.id, recoveryId))
 
