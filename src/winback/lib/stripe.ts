@@ -87,3 +87,45 @@ export async function extractSignals(
     cancelledAt,
   }
 }
+
+/**
+ * Spec 57 — read the subscription id off a Stripe invoice payload
+ * regardless of API version.
+ *
+ * In Stripe API ≥ 2024-09-30 (and current default 2026-03-25), the
+ * top-level `invoice.subscription` field was removed. The reference
+ * moved to `invoice.parent.subscription_details.subscription`.
+ *
+ * This helper:
+ *   - prefers the new path (the only one populated on current API)
+ *   - falls back to the legacy field (still set on replayed events at
+ *     older API versions, and on webhook endpoints configured to an
+ *     older API version)
+ *   - accepts either a string id or an expanded Subscription object
+ *   - returns null if neither shape carries a subscription (one-time
+ *     invoices) — callers should early-return in that case
+ */
+export function getInvoiceSubscriptionId(invoice: unknown): string | null {
+  if (!invoice || typeof invoice !== 'object') return null
+  const inv = invoice as Record<string, unknown>
+
+  // New API: invoice.parent.subscription_details.subscription
+  const parent = inv.parent as Record<string, unknown> | undefined
+  const subDetails = parent?.subscription_details as Record<string, unknown> | undefined
+  const fromParent = subDetails?.subscription
+  if (typeof fromParent === 'string') return fromParent
+  if (fromParent && typeof fromParent === 'object') {
+    const id = (fromParent as Record<string, unknown>).id
+    if (typeof id === 'string') return id
+  }
+
+  // Legacy: top-level invoice.subscription (pre-2024-09-30)
+  const legacy = inv.subscription
+  if (typeof legacy === 'string') return legacy
+  if (legacy && typeof legacy === 'object') {
+    const id = (legacy as Record<string, unknown>).id
+    if (typeof id === 'string') return id
+  }
+
+  return null
+}

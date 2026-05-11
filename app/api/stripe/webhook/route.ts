@@ -3,7 +3,7 @@ import { db } from '@/lib/db'
 import { users, customers, churnedSubscribers, recoveries, emailsSent } from '@/lib/schema'
 import { eq, and, ne, inArray, desc, gt, isNull, isNotNull } from 'drizzle-orm'
 import { decrypt } from '@/src/winback/lib/encryption'
-import { extractSignals } from '@/src/winback/lib/stripe'
+import { extractSignals, getInvoiceSubscriptionId } from '@/src/winback/lib/stripe'
 import { classifySubscriber } from '@/src/winback/lib/classifier'
 import type { ClassificationResult } from '@/src/winback/lib/types'
 import { scheduleExitEmail, sendDunningEmail } from '@/src/winback/lib/email'
@@ -576,7 +576,9 @@ async function processPaymentFailed(event: Stripe.Event) {
   const accountId = event.account
 
   if (!accountId) return
-  if (!invoice.subscription) return // One-time payment, not our scope
+  // Spec 57 — invoice.subscription moved to invoice.parent.subscription_details.subscription
+  // in Stripe API ≥ 2024-09-30. Helper handles both shapes.
+  if (!getInvoiceSubscriptionId(invoice)) return // One-time payment, not our scope
 
   const attemptCount: number = invoice.attempt_count ?? 1
   const isFirstAttempt = attemptCount === 1
@@ -722,9 +724,7 @@ async function processPaymentFailed(event: Stripe.Event) {
       })
       .where(eq(churnedSubscribers.id, existingSub.id))
   } else {
-    const subscriptionId = typeof invoice.subscription === 'string'
-      ? invoice.subscription
-      : (invoice.subscription as Stripe.Subscription)?.id ?? ''
+    const subscriptionId = getInvoiceSubscriptionId(invoice) ?? ''
 
     const [newSub] = await db
       .insert(churnedSubscribers)
@@ -786,7 +786,9 @@ async function processPaymentSucceeded(event: Stripe.Event) {
   const accountId = event.account
 
   if (!accountId) return
-  if (!invoice.subscription) return
+  // Spec 57 — invoice.subscription moved to invoice.parent.subscription_details.subscription
+  // in Stripe API ≥ 2024-09-30. Helper handles both shapes.
+  if (!getInvoiceSubscriptionId(invoice)) return
 
   const [customer] = await db
     .select()
@@ -866,7 +868,8 @@ async function processPaymentSucceeded(event: Stripe.Event) {
     subscriberId: subscriber.id,
     customerId: customer.id,
     planMrrCents: subscriber.mrrCents,
-    newStripeSubId: typeof invoice.subscription === 'string' ? invoice.subscription : null,
+    // Spec 57 — read subscription id via helper (handles new + legacy API shapes)
+    newStripeSubId: getInvoiceSubscriptionId(invoice),
     attributionType,
     // Phase B — dunning recoveries are card saves: covered by the platform
     // fee, no per-recovery performance fee.
