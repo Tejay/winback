@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { customers, churnedSubscribers } from '@/lib/schema'
-import { eq, and } from 'drizzle-orm'
+import { eq, and, ne } from 'drizzle-orm'
 import { encrypt } from '@/src/winback/lib/encryption'
 import { extractSignals } from '@/src/winback/lib/stripe'
 import { classifySubscriber } from '@/src/winback/lib/classifier'
@@ -97,6 +97,36 @@ export async function GET(req: NextRequest) {
   const tokenData = await tokenRes.json()
   const accessToken = tokenData.access_token
   const newAccountId = tokenData.stripe_user_id
+
+  // Spec 56 — reject re-linking a Stripe account that another Winback
+  // customer already owns. Without this, two wb_customers rows would
+  // both claim the same stripe_account_id and webhook handlers' .limit(1)
+  // would silently pick one (multi-tenant data leak). The DB also has
+  // a partial UNIQUE index (migration 036) as the integrity guarantee;
+  // this pre-check exists so the user sees a friendly error instead of
+  // a 500.
+  const [conflict] = await db
+    .select({ id: customers.id })
+    .from(customers)
+    .where(and(
+      eq(customers.stripeAccountId, newAccountId),
+      ne(customers.id, state),
+    ))
+    .limit(1)
+
+  if (conflict) {
+    await logEvent({
+      name: 'oauth_error',
+      customerId: customer.id,
+      userId: customer.userId,
+      properties: {
+        errorType: 'account_already_linked',
+        newAccountId,
+        conflictingCustomerId: conflict.id,
+      },
+    })
+    return NextResponse.redirect(`${baseUrl()}/onboarding/stripe?error=account_already_linked`)
+  }
 
   // Spec 49 — always trust OAuth's response. The previous "keep original
   // ID" path silently dropped webhooks when a merchant reconnected to a

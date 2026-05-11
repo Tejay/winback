@@ -1,4 +1,5 @@
-import { pgTable, uuid, text, integer, bigint, boolean, decimal, timestamp, jsonb, index } from 'drizzle-orm/pg-core'
+import { pgTable, uuid, text, integer, bigint, boolean, decimal, timestamp, jsonb, index, uniqueIndex } from 'drizzle-orm/pg-core'
+import { sql } from 'drizzle-orm'
 
 export const users = pgTable('wb_users', {
   id:           uuid('id').primaryKey().defaultRandom(),
@@ -77,7 +78,16 @@ export const customers = pgTable('wb_customers', {
   billingEmailsOptedOutAt:          timestamp('billing_emails_opted_out_at'),
   createdAt:            timestamp('created_at').defaultNow(),
   updatedAt:            timestamp('updated_at').defaultNow(),
-})
+}, (table) => ({
+  // Spec 56 — one Stripe Connect account links to at most one Winback
+  // customer row. Partial: NULL stripe_account_id rows are unaffected.
+  // OAuth callback (`app/api/stripe/callback/route.ts`) pre-checks for
+  // duplicates and redirects with a friendly error; this index is the
+  // DB-level guarantee in case the pre-check is bypassed (race).
+  stripeAccountIdUnique: uniqueIndex('customers_stripe_account_id_unique')
+    .on(table.stripeAccountId)
+    .where(sql`${table.stripeAccountId} IS NOT NULL`),
+}))
 
 export const churnedSubscribers = pgTable('wb_churned_subscribers', {
   id:                   uuid('id').primaryKey().defaultRandom(),
