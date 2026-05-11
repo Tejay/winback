@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Spec 53 mockup — Paused state: trial-ended banner + row badges</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+    body { font-family: 'Inter', sans-serif; }
+  </style>
+</head>
+<body class="bg-slate-50">
+
+<!-- Header -->
+<header class="bg-white border-b border-slate-100">
+  <div class="max-w-5xl mx-auto px-6 h-16 flex items-center justify-between">
+    <div class="flex items-center gap-2">
+      <div class="w-7 h-7 rounded-lg bg-blue-500 flex items-center justify-center">
+        <svg class="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 20 20"><path d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z"/></svg>
+      </div>
+      <span class="font-semibold text-slate-900">win<span class="text-blue-500">back</span></span>
+    </div>
+    <nav class="flex items-center gap-8">
+      <span class="bg-slate-900 text-white rounded-full px-4 py-1.5 text-sm">Dashboard</span>
+      <span class="text-sm text-slate-500">Settings</span>
+    </nav>
+    <div class="flex items-center gap-2">
+      <div class="w-7 h-7 rounded-full bg-blue-500 text-white flex items-center justify-center text-xs font-medium">F</div>
+      <span class="text-sm text-slate-700">Fitness App Live</span>
+    </div>
+  </div>
+</header>
+
+<main class="max-w-5xl mx-auto px-6 py-8 space-y-14">
+
+  <!-- ──────────────────────────────────────────────────────────── -->
+  <!-- Case 1: First recovery had $ value                            -->
+  <!-- ──────────────────────────────────────────────────────────── -->
+  <section>
+    <div class="text-blue-500 text-xs font-semibold uppercase tracking-widest mb-2">Case 1 — first recovery has revenue ($50/mo)</div>
+    <p class="text-sm text-slate-500 mb-4">The inner celebration strip renders because <code class="text-xs bg-slate-100 px-1 py-0.5 rounded">firstRecovery.mrrCents &gt; 0</code>. Win is acknowledged inside the same banner; trial-ended narrative drives the subscription ask.</p>
+
+    <div class="text-blue-500 text-xs font-semibold uppercase tracking-widest mb-2">OVERVIEW</div>
+    <h1 class="text-4xl font-bold text-slate-900">Dashboard.</h1>
+    <p class="text-sm text-slate-500 mt-1 mb-6">Every cancellation, every recovery — all in one view.</p>
+
+    <!-- Banner — paused with celebration -->
+    <div class="rounded-2xl p-6 border-2 border-red-400" style="background: linear-gradient(135deg, #eff6ff 0%, #ecfdf5 100%);">
+      <div class="flex items-start gap-4">
+        <div class="text-2xl">⏸</div>
+        <div class="flex-1">
+          <h2 class="text-xl font-bold text-slate-900 leading-snug">Your trial ended on your first recovery.</h2>
+          <p class="text-sm text-slate-700 mt-1.5">
+            The AI has paused new sends until you subscribe.
+          </p>
+
+          <!-- Conditional inner strip — only when first recovery mrr > 0 -->
+          <div class="mt-4 bg-white/70 border border-emerald-200 rounded-xl px-4 py-3 flex items-center gap-3">
+            <span class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium bg-green-50 text-green-700 border border-green-200">✓ First recovery</span>
+            <span class="text-sm text-slate-700"><span class="font-semibold text-slate-900">Sarah Lee</span> · <span class="font-semibold text-emerald-700">$50/mo</span> restored</span>
+          </div>
+
+          <p class="text-sm text-slate-700 mt-4">
+            <span class="font-bold text-red-700">$2,100/yr</span> at risk across <span class="font-semibold">7 more subscribers</span> in your queue (4 cancellations + 3 failed payments).
+          </p>
+
+          <div class="mt-5 flex items-center gap-4">
+            <button class="bg-slate-900 text-white rounded-full px-5 py-2.5 text-sm font-medium hover:bg-slate-800">
+              Subscribe via Stripe →
+            </button>
+            <span class="text-xs text-slate-500">$99/mo + 1× MRR per recovery · Refundable for 14 days if they re-cancel</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ──────────────────────────────────────────────────────────── -->
+  <!-- Case 2: $0 recovery (Fitness App Live)                        -->
+  <!-- ──────────────────────────────────────────────────────────── -->
+  <section>
+    <div class="text-blue-500 text-xs font-semibold uppercase tracking-widest mb-2">Case 2 — first recovery has no MRR ($0)</div>
+    <p class="text-sm text-slate-500 mb-4">Inner celebration strip is <strong>hidden</strong> because <code class="text-xs bg-slate-100 px-1 py-0.5 rounded">firstRecovery.mrrCents === 0</code>. Banner reads cleanly without dead/awkward "$0 restored" text. Matches Fitness App Live's real situation.</p>
+
+    <!-- Banner — paused, no inner celebration -->
+    <div class="rounded-2xl p-6 border-2 border-red-400" style="background: linear-gradient(135deg, #eff6ff 0%, #ecfdf5 100%);">
+      <div class="flex items-start gap-4">
+        <div class="text-2xl">⏸</div>
+        <div class="flex-1">
+          <h2 class="text-xl font-bold text-slate-900 leading-snug">Your trial ended on your first recovery.</h2>
+          <p class="text-sm text-slate-700 mt-1.5">
+            The AI has paused new sends until you subscribe.
+          </p>
+
+          <p class="text-sm text-slate-700 mt-4">
+            <span class="font-bold text-red-700">$2,100/yr</span> at risk across <span class="font-semibold">7 subscribers</span> in your queue (4 cancellations + 3 failed payments).
+          </p>
+
+          <div class="mt-5 flex items-center gap-4">
+            <button class="bg-slate-900 text-white rounded-full px-5 py-2.5 text-sm font-medium hover:bg-slate-800">
+              Subscribe via Stripe →
+            </button>
+            <span class="text-xs text-slate-500">$99/mo + 1× MRR per recovery · Refundable for 14 days if they re-cancel</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ──────────────────────────────────────────────────────────── -->
+  <!-- Table with ⏸ Paused badges                                    -->
+  <!-- ──────────────────────────────────────────────────────────── -->
+  <section>
+    <div class="text-blue-500 text-xs font-semibold uppercase tracking-widest mb-2">Table — AI Status column shows "⏸ Paused" on in-flight rows</div>
+    <p class="text-sm text-slate-500 mb-4">Every subscriber the AI <strong>would be working</strong> (any non-terminal state — currently <code class="text-xs bg-slate-100 px-1 py-0.5 rounded">contacted</code>, <code class="text-xs bg-slate-100 px-1 py-0.5 rounded">pending</code>, <code class="text-xs bg-slate-100 px-1 py-0.5 rounded">awaiting_retry</code>, etc.) shows the amber <span class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium bg-amber-50 text-amber-700 border border-amber-200">⏸ Paused</span> badge. Already-recovered or lost rows keep their normal badges.</p>
+
+    <div class="bg-white rounded-2xl border border-slate-100 overflow-hidden">
+      <table class="w-full">
+        <thead>
+          <tr class="border-b border-slate-100 bg-slate-50">
+            <th class="text-left text-xs font-semibold uppercase tracking-wide text-slate-400 py-3 px-4">Subscriber</th>
+            <th class="text-left text-xs font-semibold uppercase tracking-wide text-slate-400 py-3 px-4">Plan</th>
+            <th class="text-left text-xs font-semibold uppercase tracking-wide text-slate-400 py-3 px-4">Cancelled</th>
+            <th class="text-left text-xs font-semibold uppercase tracking-wide text-slate-400 py-3 px-4">Reason</th>
+            <th class="text-left text-xs font-semibold uppercase tracking-wide text-slate-400 py-3 px-4">AI Status</th>
+            <th class="text-right text-xs font-semibold uppercase tracking-wide text-slate-400 py-3 px-4">MRR</th>
+          </tr>
+        </thead>
+        <tbody>
+          <!-- In-flight rows: ⏸ Paused -->
+          <tr class="border-b border-slate-50">
+            <td class="py-4 px-4">
+              <div class="text-sm font-medium text-slate-900">Carol Competitor</div>
+              <div class="text-xs text-slate-400">carol@example.com</div>
+            </td>
+            <td class="text-sm text-slate-600 py-4 px-4">Pro</td>
+            <td class="text-sm text-slate-600 py-4 px-4">2026-05-09</td>
+            <td class="text-sm text-slate-600 py-4 px-4">Switched to Linear</td>
+            <td class="py-4 px-4">
+              <span class="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200">⏸ Paused</span>
+            </td>
+            <td class="text-sm font-medium text-slate-900 py-4 px-4 text-right tabular-nums">$49.00</td>
+          </tr>
+          <tr class="border-b border-slate-50">
+            <td class="py-4 px-4">
+              <div class="text-sm font-medium text-slate-900">Bob Feature</div>
+              <div class="text-xs text-slate-400">bob@example.com</div>
+            </td>
+            <td class="text-sm text-slate-600 py-4 px-4">Starter</td>
+            <td class="text-sm text-slate-600 py-4 px-4">2026-05-08</td>
+            <td class="text-sm text-slate-600 py-4 px-4">Needs CSV export</td>
+            <td class="py-4 px-4">
+              <span class="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200">⏸ Paused</span>
+            </td>
+            <td class="text-sm font-medium text-slate-900 py-4 px-4 text-right tabular-nums">$19.00</td>
+          </tr>
+          <tr class="border-b border-slate-50">
+            <td class="py-4 px-4">
+              <div class="text-sm font-medium text-slate-900">Alice Price</div>
+              <div class="text-xs text-slate-400">alice@example.com</div>
+            </td>
+            <td class="text-sm text-slate-600 py-4 px-4">Pro</td>
+            <td class="text-sm text-slate-600 py-4 px-4">2026-05-08</td>
+            <td class="text-sm text-slate-600 py-4 px-4">Price too high for usage</td>
+            <td class="py-4 px-4">
+              <span class="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200">⏸ Paused</span>
+            </td>
+            <td class="text-sm font-medium text-slate-900 py-4 px-4 text-right tabular-nums">$29.00</td>
+          </tr>
+          <!-- Already-recovered row keeps its green badge -->
+          <tr class="border-b border-slate-50 bg-slate-50/40">
+            <td class="py-4 px-4">
+              <div class="text-sm font-medium text-slate-900">Sarah Lee</div>
+              <div class="text-xs text-slate-400">sarah@example.com</div>
+            </td>
+            <td class="text-sm text-slate-600 py-4 px-4">Pro</td>
+            <td class="text-sm text-slate-600 py-4 px-4">2026-05-07</td>
+            <td class="text-sm text-slate-600 py-4 px-4">Dashboard issue, now fixed</td>
+            <td class="py-4 px-4">
+              <span class="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium bg-green-50 text-green-700 border border-green-200">✓ Recovered</span>
+            </td>
+            <td class="text-sm font-medium text-slate-900 py-4 px-4 text-right tabular-nums">$49.00</td>
+          </tr>
+          <!-- Lost row keeps its slate badge -->
+          <tr>
+            <td class="py-4 px-4">
+              <div class="text-sm font-medium text-slate-900">Dan Done</div>
+              <div class="text-xs text-slate-400">dan@example.com</div>
+            </td>
+            <td class="text-sm text-slate-600 py-4 px-4">Starter</td>
+            <td class="text-sm text-slate-600 py-4 px-4">2026-04-30</td>
+            <td class="text-sm text-slate-600 py-4 px-4">Don't need anymore</td>
+            <td class="py-4 px-4">
+              <span class="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium bg-slate-100 text-slate-500 border border-slate-200">× Lost</span>
+            </td>
+            <td class="text-sm font-medium text-slate-900 py-4 px-4 text-right tabular-nums">$19.00</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ──────────────────────────────────────────────────────────── -->
+  <!-- Implementation notes                                          -->
+  <!-- ──────────────────────────────────────────────────────────── -->
+  <section class="bg-white rounded-2xl border border-slate-200 p-6">
+    <h3 class="text-sm font-semibold uppercase tracking-widest text-blue-500 mb-3">Implementation notes</h3>
+    <ul class="text-sm text-slate-700 space-y-2 list-disc pl-5">
+      <li><strong>Banner trigger unchanged:</strong> still fires when <code class="text-xs bg-slate-100 px-1 py-0.5 rounded">activatedAt IS NOT NULL AND stripeSubscriptionId IS NULL</code>. Just rewritten copy and the inner celebration strip is added.</li>
+      <li><strong>At-risk math extends to both cohorts:</strong> one extra <code class="text-xs bg-slate-100 px-1 py-0.5 rounded">SELECT</code> in <code class="text-xs bg-slate-100 px-1 py-0.5 rounded">app/dashboard/page.tsx</code> to include payment-recovery rows in the count + MRR sum. No schema change.</li>
+      <li><strong>Inner strip is conditional:</strong> only renders if <code class="text-xs bg-slate-100 px-1 py-0.5 rounded">firstRecovery && firstRecovery.mrrCents &gt; 0</code>. The <code class="text-xs bg-slate-100 px-1 py-0.5 rounded">firstRecovery</code> object already exists on the dashboard server component — no new query.</li>
+      <li><strong>Row badge:</strong> change inside <code class="text-xs bg-slate-100 px-1 py-0.5 rounded">components/ai-state-badge.tsx</code>. When <code class="text-xs bg-slate-100 px-1 py-0.5 rounded">paused === true</code> is passed in AND the row's state would otherwise render as in-flight (AI active, pending, contacted, awaiting_retry, final_retry_pending), render the amber <code class="text-xs bg-slate-100 px-1 py-0.5 rounded">⏸ Paused</code> pill instead. Recovered / Lost / Unsubscribed / Handoff badges stay as-is.</li>
+      <li><strong>Two files touched:</strong> <code class="text-xs bg-slate-100 px-1 py-0.5 rounded">app/dashboard/page.tsx</code> (banner copy + payment-recovery at-risk query) and <code class="text-xs bg-slate-100 px-1 py-0.5 rounded">components/ai-state-badge.tsx</code> (paused branch). Plus tests.</li>
+    </ul>
+  </section>
+
+</main>
+
+</body>
+</html>
