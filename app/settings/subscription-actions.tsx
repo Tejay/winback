@@ -86,20 +86,25 @@ export function SubscriptionActions({
           Cancel your $99/mo subscription? You'll keep access through the
           current cycle, then no further charges.
         </p>
-        <div className="mt-3 flex items-center gap-3">
-          <button
-            onClick={() => call('cancel')}
-            disabled={busy}
-            className="bg-rose-600 text-white rounded-full px-4 py-1.5 text-sm font-medium hover:bg-rose-700 disabled:opacity-50"
-          >
-            {busy ? 'Canceling…' : 'Yes, cancel'}
-          </button>
+        {/* Visual hierarchy intentionally inverts: the safe action (Keep) is
+            the primary filled button, and the destructive action (Yes, cancel)
+            is a smaller secondary link. Matches the Stripe / GitHub / Google
+            convention for destructive-confirmation dialogs — you have to
+            consciously pick the destructive one, not just mash Enter. */}
+        <div className="mt-3 flex items-center gap-4">
           <button
             onClick={() => setConfirming(false)}
             disabled={busy}
-            className="text-sm text-slate-500 hover:text-slate-900"
+            className="bg-[#0f172a] text-white rounded-full px-5 py-2 text-sm font-medium hover:bg-[#1e293b] disabled:opacity-50"
           >
             Keep subscription
+          </button>
+          <button
+            onClick={() => call('cancel')}
+            disabled={busy}
+            className="text-sm text-rose-600 hover:text-rose-700 underline disabled:opacity-50"
+          >
+            {busy ? 'Canceling…' : 'Yes, cancel'}
           </button>
         </div>
         {error && <p className="text-xs text-rose-600 mt-2">{error}</p>}
