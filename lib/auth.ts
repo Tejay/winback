@@ -86,6 +86,29 @@ export type RequireAdminResult =
   | { userId: string }
   | { error: string; status: 401 | 403 }
 
+/**
+ * Non-throwing variant of requireAdmin — returns a boolean for UI use
+ * (e.g. conditionally rendering an Admin nav link). Server gates on
+ * `/admin/*` still use requireAdmin separately.
+ */
+export async function userIsAdmin(userId: string): Promise<boolean> {
+  try {
+    const [row] = await getDbReadOnly()
+      .select({ isAdmin: users.isAdmin })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1)
+    return !!row?.isAdmin
+  } catch {
+    const [row] = await db
+      .select({ isAdmin: users.isAdmin })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1)
+    return !!row?.isAdmin
+  }
+}
+
 export async function requireAdmin(): Promise<RequireAdminResult> {
   const session = await auth()
   if (!session?.user?.id) return { error: 'Not signed in', status: 401 }
