@@ -186,6 +186,20 @@ export const emailsSent = pgTable('wb_emails_sent', {
   repliedAt:      timestamp('replied_at'),
 })
 
+// Spec 64 — Resend inbound webhook dedup ledger. Primary-keyed on
+// Resend's email_id; a second webhook with the same id conflicts on
+// INSERT and short-circuits before any DB mutation. See migration 038
+// and app/api/email/inbound/route.ts for the gate.
+export const inboundEvents = pgTable('wb_inbound_events', {
+  emailId:      text('email_id').primaryKey(),
+  source:       text('source').notNull().default('resend_inbound'),
+  receivedAt:   timestamp('received_at', { withTimezone: true }).notNull().defaultNow(),
+  subscriberId: uuid('subscriber_id'),
+  outcome:      text('outcome').notNull(),  // 'reserved' | 'processed' | 'no_subscriber_id' | 'subscriber_not_found' | 'empty_reply_text'
+}, (t) => ({
+  receivedAtIdx: index('idx_wb_inbound_events_received_at').on(t.receivedAt),
+}))
+
 // First-party events table for conversion funnels. See migration 010 and
 // src/winback/lib/events.ts for the logEvent helper. Properties is a free-form
 // jsonb blob (error type, stripe account id, etc.) — keep it small.
