@@ -46,7 +46,10 @@ export function extractEnvelope(body: unknown): {
   text: string                    // empty in normal Resend webhooks
 } {
   const wrapped = (body as { data?: ResendInboundEnvelope })?.data
-  const src: ResendInboundEnvelope = (wrapped ?? body) as ResendInboundEnvelope
+  // A literal JSON `null` body parses to `null` — coalesce to {} so we don't
+  // crash on `src.to`. Without this, a malformed inbound 500s, Resend retries,
+  // and we infinite-loop ourselves.
+  const src: ResendInboundEnvelope = (wrapped ?? (body as ResendInboundEnvelope | null) ?? {}) as ResendInboundEnvelope
 
   const rawTo = Array.isArray(src.to) ? src.to[0] : src.to
   const to = typeof rawTo === 'string' ? rawTo : (rawTo?.email ?? '')

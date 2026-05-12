@@ -180,9 +180,18 @@ describe('extractEnvelope — Resend payload shapes', () => {
     expect(out).toEqual({ emailId: '', to: '', from: '', text: '' })
   })
 
-  // Note: extractEnvelope(null) currently throws — a JSON body of literal
-  // "null" would bubble a TypeError out of the POST handler. Tracked as a
-  // follow-up; not fixed in sweep A to keep this PR purely additive.
+  it('survives a literal-null body without throwing', () => {
+    // A JSON body of literal `null` parses to JS null. Previously this
+    // crashed extractEnvelope with TypeError on `src.to`, returning 500
+    // and tripping Resend's retry loop.
+    const out = extractEnvelope(null)
+    expect(out).toEqual({ emailId: '', to: '', from: '', text: '' })
+  })
+
+  it('survives an undefined body without throwing', () => {
+    const out = extractEnvelope(undefined)
+    expect(out).toEqual({ emailId: '', to: '', from: '', text: '' })
+  })
 })
 
 describe('integration: parseSubscriberIdFromTo composed with extractEnvelope', () => {
