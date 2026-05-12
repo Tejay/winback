@@ -109,7 +109,7 @@ async function main() {
       handoff: null,
       pause: null,
       suppress: null,
-    } as Parameters<typeof scheduleExitEmail>[0]['classification'],
+    } as unknown as Parameters<typeof scheduleExitEmail>[0]['classification'],
     fromName: 'Tier 4 Tester',
   })
   const count41 = await emailsSentCount(sub41)
@@ -145,7 +145,7 @@ async function main() {
     classification: {
       firstMessage: { subject: 'hi', body: 'hi' },
       handoff: null, pause: null, suppress: null,
-    } as Parameters<typeof scheduleExitEmail>[0]['classification'],
+    } as unknown as Parameters<typeof scheduleExitEmail>[0]['classification'],
     fromName: 'Tier 4 Tester',
   })
   await sendDunningEmail({
