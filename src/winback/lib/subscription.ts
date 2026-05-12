@@ -86,10 +86,15 @@ export type SubscriptionStatus =
 // subsequent UPDATE.
 const SUBSCRIPTION_CREATION_LOCK_TTL_MS = 30_000
 
-// Spec 52 — how long the lock-loser waits before re-reading to see the
-// winner's subscription_id. Generous enough that any successful create
-// call has had time to complete its post-Stripe UPDATE.
-const SUBSCRIPTION_CREATION_RACE_WAIT_MS = 1_000
+// Spec 52 + Spec 60 — race-loser polling. Tier 2.2 showed the winner
+// can take 3-6s end-to-end (chargePendingPerformanceFees + Stripe API
+// + UPDATE), longer than the original 1s sleep-once window. The loser
+// now polls every POLL_INTERVAL_MS for up to TOTAL_WAIT_MS, returning
+// as soon as the winner writes stripe_subscription_id. Falls through
+// to the same throw if the total window expires (upstream try/catch
+// renders the "pending" tone in `/billing/success`).
+const SUBSCRIPTION_CREATION_RACE_POLL_INTERVAL_MS = 500
+const SUBSCRIPTION_CREATION_RACE_TOTAL_WAIT_MS = 10_000
 
 export async function ensurePlatformSubscription(
   wbCustomerId: string,
@@ -146,20 +151,31 @@ export async function ensurePlatformSubscription(
     .returning({ id: customers.id })
 
   if (claimed.length === 0) {
-    // We lost the race. Wait for the winner to finish, then return their sub.
-    await new Promise((resolve) => setTimeout(resolve, SUBSCRIPTION_CREATION_RACE_WAIT_MS))
-    const [after] = await db
-      .select({ stripeSubscriptionId: customers.stripeSubscriptionId })
-      .from(customers)
-      .where(eq(customers.id, wbCustomerId))
-      .limit(1)
-    if (after?.stripeSubscriptionId) {
-      return { subscriptionId: after.stripeSubscriptionId, created: false }
+    // Spec 60 — Lost the race. Poll for the winner to finish writing the
+    // sub id, every POLL_INTERVAL_MS for up to TOTAL_WAIT_MS. Returns as
+    // soon as the winner's row appears, capping the loser's wait at the
+    // winner's actual completion time (+ one poll interval), rather than
+    // a fixed sleep. Tier 2.2 measured winners completing at ~3-6s; the
+    // 10s cap leaves comfortable headroom for Stripe back-pressure.
+    const deadline = Date.now() + SUBSCRIPTION_CREATION_RACE_TOTAL_WAIT_MS
+    while (Date.now() < deadline) {
+      await new Promise((resolve) =>
+        setTimeout(resolve, SUBSCRIPTION_CREATION_RACE_POLL_INTERVAL_MS),
+      )
+      const [after] = await db
+        .select({ stripeSubscriptionId: customers.stripeSubscriptionId })
+        .from(customers)
+        .where(eq(customers.id, wbCustomerId))
+        .limit(1)
+      if (after?.stripeSubscriptionId) {
+        return { subscriptionId: after.stripeSubscriptionId, created: false }
+      }
     }
-    // The other claimer is still in flight beyond our wait window, or
+    // The other claimer is still in flight beyond our total wait, or
     // crashed. The caller can retry — by then either the row will have
     // a subscription_id (this branch returns it) or the lock will be
-    // past TTL (next attempt successfully claims).
+    // past TTL (next attempt successfully claims). Upstream's try/catch
+    // in /billing/success renders the "pending" tone for the user.
     throw new Error(
       `ensurePlatformSubscription: subscription_creation_in_progress for ${wbCustomerId}`,
     )

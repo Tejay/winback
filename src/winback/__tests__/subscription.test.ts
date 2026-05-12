@@ -262,30 +262,34 @@ describe('ensurePlatformSubscription', () => {
       expect(mockStripe.subscriptions.create).not.toHaveBeenCalled()
     }, 5000)
 
-    it('lost claim → throws if the winning caller hasn\'t completed within the wait window', async () => {
-      // Both reads return NULL sub_id — winner is still in flight.
-      mockSelect
-        .mockImplementationOnce(() => ({
-          from: () => ({
-            where: () => ({
-              limit: () => [{ stripePlatformCustomerId: 'cus_existing', stripeSubscriptionId: null }],
-            }),
+    it('lost claim → throws if the winning caller hasn\'t completed within the total wait window', async () => {
+      // Spec 60 — race-loser polls every 500ms for up to 10s.
+      // Pre-check SELECT returns null sub once; all poll SELECTs also
+      // return null forever. Loser polls ~20 times before giving up.
+      mockSelect.mockImplementationOnce(() => ({
+        from: () => ({
+          where: () => ({
+            limit: () => [{ stripePlatformCustomerId: 'cus_existing', stripeSubscriptionId: null }],
           }),
-        }))
-        .mockImplementationOnce(() => ({
-          from: () => ({
-            where: () => ({
-              limit: () => [{ stripeSubscriptionId: null }],
-            }),
+        }),
+      }))
+      mockSelect.mockImplementation(() => ({
+        from: () => ({
+          where: () => ({
+            limit: () => [{ stripeSubscriptionId: null }],
           }),
-        }))
+        }),
+      }))
       setupUpdateChain({ returningRows: [] })
 
       await expect(ensurePlatformSubscription('wb_cust_1')).rejects.toThrow(
         /subscription_creation_in_progress/,
       )
       expect(mockStripe.subscriptions.create).not.toHaveBeenCalled()
-    }, 5000)
+      // We polled the DB multiple times (1 pre-check + ~20 poll reads = 21 calls).
+      // Allow some slack for timer jitter — at least 5 to prove we polled.
+      expect(mockSelect.mock.calls.length).toBeGreaterThanOrEqual(5)
+    }, 12_000)
 
     it('won claim → creates exactly one subscription', async () => {
       setupCustomerRow({
