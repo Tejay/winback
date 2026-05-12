@@ -126,6 +126,77 @@ listed four test files. Exploration of existing coverage revealed:
 **Cost:** 0 (no LLM calls).
 **Acceptance:** new tests + all existing vitest still green.
 
+---
+
+## Sweeps B/C/D/E — evaluated and dropped
+
+**Status (post-evaluation):** all four LLM-driven sweeps were authored
+and run against the production prompt. After triage of the results, all
+four were removed from the test suite. The detail of what they did is
+preserved below for posterity, but they are NOT part of the current
+suite.
+
+**Why dropped:**
+
+The premise was correctness testing — "does the LLM give the right
+answer?" In practice, the sweeps degraded into regression testing —
+"does the LLM give the same answer as last time?" — because:
+
+1. **Ambiguous fixtures.** Cases like "Set it up and forgot about it"
+   are genuinely on the Unused/Other boundary. There's no objectively
+   right category. Setting an expected value either over-specifies (and
+   the test flaps) or accepts both (and the test means nothing).
+
+2. **Non-determinism at temp=0.** Claude Haiku gives different
+   categories across runs for the same input. The same fixture would
+   pass one run and fail the next. Calibrating expectations to "either
+   of two values" loses the regression signal entirely.
+
+3. **Judge LLM unreliability.** The first-email quality judge (sweep C)
+   hallucinated banned-phrase violations beyond the explicit list,
+   invented new rubric clauses, and miscounted lines around blank-line
+   boundaries. Tightening the judge prompt helped but never converged.
+
+4. **Cost-to-signal ratio.** ~\$0.35 per full run × ~3 calibration
+   passes to reach near-green = ~\$1 spent, and the resulting suite
+   would only catch model-update regressions, not real classifier
+   prompt bugs. Sweep A — the mocked-LLM unit-test layer — caught two
+   real production fragilities (null-body crash, missing inbound
+   dedup) at \$0 cost.
+
+**What the sweeps surfaced** (preserved as findings, not as tests):
+
+| Finding | Status |
+|---|---|
+| `extractEnvelope(null)` 500s the inbound webhook | Fixed in [PR #94](https://github.com/Tejay/winback/pull/94) |
+| Inbound webhook had no `email_id` dedup | Fixed in [PR #95](https://github.com/Tejay/winback/pull/95) |
+| Empty changelog still calls LLM and can produce false-positive matches | Spawned as separate task (one-line guard in `changelog-match.ts`) |
+| Classifier prompt vs output drift: occasional 2-em-dash bodies, "a quick question" subject lines | Logged; not blocking |
+| Classifier is non-deterministic at temp=0 on borderline categories | Documented; affects dashboard grouping stability |
+
+**Replacement strategy:** Sweep F (manual e2e checklist at
+`specs/regression-winback-e2e.md`) carries the correctness-verification
+responsibility. The human runs it before any prod release that touches
+the AI flow. ~30 min, \$0.05 LLM cost, catches actual product issues
+that fixture-based testing missed.
+
+If we ever want to re-attempt LLM-based correctness testing, the
+lessons from this attempt are:
+- Don't use the LLM to test itself if non-determinism is part of the
+  story — pick a different testing layer.
+- Judge LLMs against a rubric are brittle; mechanical rules
+  (substring, length) only.
+- Keep fixture count small (~10 total) and pick only cases where the
+  correct answer is genuinely unambiguous.
+
+---
+
+## Sweeps B–E — original plan (preserved for reference)
+
+The sections below describe what each sweep was supposed to do. None
+of this code lives in the current suite; the test files and fixtures
+were removed.
+
 ### Sweep B — Layer 2.A: classification golden fixtures
 
 **Goal:** catch classifier-prompt regressions in CI.
