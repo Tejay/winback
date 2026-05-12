@@ -62,6 +62,13 @@ export async function matchChangelogToSubscribers(
 ): Promise<Set<string>> {
   if (candidates.length === 0) return new Set()
 
+  // Fail closed on empty changelog — without this guard, the LLM is given
+  // an empty changelog and a list of subscriber needs, and may return
+  // false-positive matches against vague needs ("wanted any improvement").
+  // That would surface as a re-engagement email referencing nothing,
+  // which looks like spam. Found during Spec 63 sweep E.
+  if (!changelogText.trim()) return new Set()
+
   // Chunk for safety — won't hit this in practice
   if (candidates.length > MAX_BATCH_SIZE) {
     const results = new Set<string>()

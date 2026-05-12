@@ -32,6 +32,22 @@ describe('matchChangelogToSubscribers', () => {
     expect(mockCreate).not.toHaveBeenCalled()
   })
 
+  it('returns empty Set when changelog is empty string (no LLM call)', async () => {
+    const result = await matchChangelogToSubscribers('', [
+      { id: 'a', need: 'wanted any improvement' },
+    ])
+    expect(result.size).toBe(0)
+    expect(mockCreate).not.toHaveBeenCalled()
+  })
+
+  it('returns empty Set when changelog is whitespace only (no LLM call)', async () => {
+    const result = await matchChangelogToSubscribers('   \n\t\n ', [
+      { id: 'a', need: 'wanted any improvement' },
+    ])
+    expect(result.size).toBe(0)
+    expect(mockCreate).not.toHaveBeenCalled()
+  })
+
   it('returns IDs marked true by the LLM', async () => {
     mockLLMResponse('{"a": true, "b": false, "c": true}')
 
