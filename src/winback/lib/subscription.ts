@@ -174,13 +174,21 @@ export async function ensurePlatformSubscription(
 
   let subscription: Stripe.Subscription
   try {
-    subscription = await stripe.subscriptions.create({
-      customer: platformCustomerId,
-      items: [{ price: priceId }],
-      proration_behavior: 'create_prorations',
-      collection_method: 'charge_automatically',
-      metadata: { winback_customer_id: wbCustomerId },
-    })
+    // Spec 59 — Stripe Idempotency-Key. Stable for the duration of this
+    // call (so Stripe SDK auto-retries on transient 5xx/network errors
+    // reuse the cached response). Different across cancel + re-activate
+    // cycles because `claimedAt` is re-set by each new lock claim.
+    // Belt-and-suspenders to the Spec 52 DB race-fence above.
+    subscription = await stripe.subscriptions.create(
+      {
+        customer: platformCustomerId,
+        items: [{ price: priceId }],
+        proration_behavior: 'create_prorations',
+        collection_method: 'charge_automatically',
+        metadata: { winback_customer_id: wbCustomerId },
+      },
+      { idempotencyKey: `wb-sub-${wbCustomerId}-${claimedAt.getTime()}` },
+    )
   } catch (err) {
     // Release the claim so a retry can proceed without waiting for TTL.
     await db
