@@ -14,6 +14,7 @@ import { appendStandardFooter } from '@/src/winback/lib/email'
 import { buildHandoffNotification } from '@/src/winback/lib/founder-handoff-email'
 import { logEvent } from '@/src/winback/lib/events'
 import { ensureActivation } from '@/src/winback/lib/activation'
+import { getConnectStripe } from '@/src/winback/lib/stripe'
 import { SubscriberSignals } from '@/src/winback/lib/types'
 
 /**
@@ -297,7 +298,7 @@ async function handlePost(req: Request) {
   // Initialize Stripe once if the customer is connected — used by seed (provision)
   // and reset (cleanup). Falls back to null if not connected.
   const stripe: Stripe | null = customer.stripeAccessToken
-    ? new Stripe(decrypt(customer.stripeAccessToken))
+    ? getConnectStripe(decrypt(customer.stripeAccessToken))
     : null
 
   if (action === 'reset') {

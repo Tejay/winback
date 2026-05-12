@@ -555,6 +555,58 @@ NEXT_PUBLIC_APP_URL=http://localhost:3000  # Must be publicly accessible (ngrok 
 
 ---
 
+## Stripe API version pin
+
+All runtime Stripe clients are pinned to API version **`2026-03-25.dahlia`**
+via `STRIPE_API_VERSION` in `src/winback/lib/stripe.ts`. Webhook
+endpoints in Stripe Dashboard are pinned to the same value.
+
+**Why:** Stripe quietly restructures fields between API versions. Two
+silent production regressions were caught in one week before this pin
+was added — `invoice.subscription` moved (Spec 57), and
+`invoice.lines.data[].invoice_item` moved (Spec 61). Both broke
+billing-critical flows. Pinning freezes the response shape so Stripe
+can't move fields out from under us; upgrades become a deliberate
+choice rather than a random surprise break.
+
+**How to instantiate Stripe clients:**
+
+- **Platform-side** (our account, sk_test_/sk_live_ keys):
+  `import { getPlatformStripe } from '@/src/winback/lib/platform-stripe'`
+- **Connect-side** (merchant's account, OAuth access token):
+  `import { getConnectStripe } from '@/src/winback/lib/stripe'` —
+  pass the decrypted access token
+
+**Never** call `new Stripe(...)` directly in runtime code. The helpers
+apply the pin. Test scripts in `scripts/*` are exempt (they're
+diagnostic tooling, not production), but should prefer the helpers
+when convenient.
+
+**To upgrade the pin** (do not change `STRIPE_API_VERSION` without
+following this ritual):
+
+1. Read every Stripe migration guide between current and target:
+   https://docs.stripe.com/upgrades
+2. Audit every field access on Stripe objects in our code for fields
+   that were renamed, moved, or removed (especially nested fields
+   on `Invoice`, `InvoiceLineItem`, `Subscription`, `Charge`,
+   `Checkout.Session`). Pay attention to anything reading
+   `.subscription`, `.invoice_item`, `.parent.*` — these are the
+   common migration vectors.
+3. Update `STRIPE_API_VERSION` on a feature branch.
+4. Run the full `vitest` suite plus the Tier 1/2/3 e2e billing
+   scripts against dev — confirm all green.
+5. Deploy the code change first.
+6. Then update each Stripe Dashboard webhook endpoint's API version
+   to the new value. (Code is tolerant of either shape during the
+   deploy window via Spec 57 + 61's dual-shape helpers.)
+
+Stripe never deprecates historical API versions retroactively, so
+staying pinned indefinitely is safe. Upgrade only when we want a
+specific new Stripe feature.
+
+---
+
 ## Testing accounts — canonical reference
 
 There are **two distinct Stripe platform accounts** for Winback (the

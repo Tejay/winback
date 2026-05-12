@@ -3,7 +3,7 @@ import { db } from '@/lib/db'
 import { customers, churnedSubscribers } from '@/lib/schema'
 import { eq, and } from 'drizzle-orm'
 import { decrypt } from './encryption'
-import { extractSignals } from './stripe'
+import { extractSignals, getConnectStripe } from './stripe'
 import { classifySubscriber } from './classifier'
 import { scheduleExitEmail } from './email'
 import { ClassificationResult } from './types'
@@ -81,7 +81,7 @@ export async function backfillCancellations(customerId: string): Promise<void> {
   }
 
   const accessToken = decrypt(customer.stripeAccessToken)
-  const stripe = new Stripe(accessToken)
+  const stripe = getConnectStripe(accessToken)
 
   const oneYearAgo = new Date(Date.now() - ONE_YEAR_MS)
   const emailCutoff = new Date(Date.now() - BACKFILL_EMAIL_CUTOFF_DAYS * 24 * 60 * 60 * 1000)

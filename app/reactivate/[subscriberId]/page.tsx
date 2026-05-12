@@ -1,9 +1,10 @@
 import { notFound, redirect } from 'next/navigation'
-import Stripe from 'stripe'
+import type Stripe from 'stripe'
 import { db } from '@/lib/db'
 import { customers, churnedSubscribers } from '@/lib/schema'
 import { eq } from 'drizzle-orm'
 import { decrypt } from '@/src/winback/lib/encryption'
+import { getConnectStripe } from '@/src/winback/lib/stripe'
 import { verifySubscriberToken } from '@/src/winback/lib/unsubscribe-token'
 import { ChooserForm } from './chooser-form'
 
@@ -66,7 +67,7 @@ export default async function ReactivateChooserPage({
   }
 
   // Load active prices + their products (for display names)
-  const stripe = new Stripe(decrypt(customer.stripeAccessToken))
+  const stripe = getConnectStripe(decrypt(customer.stripeAccessToken))
   const pricesList = await stripe.prices.list({
     active: true,
     type: 'recurring',

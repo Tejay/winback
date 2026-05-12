@@ -1,4 +1,5 @@
 import Stripe from 'stripe'
+import { STRIPE_API_VERSION } from './stripe'
 
 /**
  * Spec 23 — Stripe client for Winback's platform account.
@@ -12,9 +13,11 @@ import Stripe from 'stripe'
  * Lazy-constructed inside functions (not at module load) so Vercel build
  * doesn't fail for routes that don't need Stripe when the env var is
  * missing in preview deployments.
+ *
+ * Spec 62 — pinned to STRIPE_API_VERSION; see src/winback/lib/stripe.ts.
  */
 export function getPlatformStripe(): Stripe {
   const key = process.env.STRIPE_SECRET_KEY
   if (!key) throw new Error('STRIPE_SECRET_KEY is not set')
-  return new Stripe(key)
+  return new Stripe(key, { apiVersion: STRIPE_API_VERSION })
 }

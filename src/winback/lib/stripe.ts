@@ -1,12 +1,40 @@
 import Stripe from 'stripe'
 import { SubscriberSignals } from './types'
 
+/**
+ * Spec 62 — Pinned Stripe API version.
+ *
+ * Every Stripe client constructor across our runtime code uses this,
+ * and the webhook endpoints in the Stripe Dashboard are pinned to the
+ * same value. This prevents silent shape regressions when Stripe ships
+ * a new API version (as happened with Spec 57 and Spec 61 — both
+ * caused by `(default)` version drift).
+ *
+ * **Upgrading this constant is a deliberate ritual** — read Stripe's
+ * migration guides, audit field accesses, update the Dashboard
+ * webhook pin, deploy. See CLAUDE.md → "Stripe API version pin."
+ */
+export const STRIPE_API_VERSION = '2026-03-25.dahlia' as const
+
+/**
+ * Spec 62 — central constructor for Connect-account Stripe clients.
+ *
+ * Mirrors `getPlatformStripe()` for the Connect side. All runtime
+ * code should instantiate Connect clients through this helper so the
+ * `apiVersion` pin is applied consistently. Tests / scripts may
+ * instantiate directly if they need to test version-specific
+ * behavior, but production code must not.
+ */
+export function getConnectStripe(accessToken: string): Stripe {
+  return new Stripe(accessToken, { apiVersion: STRIPE_API_VERSION })
+}
+
 // Uses the CUSTOMER's OAuth access token — not our platform key
 export async function extractSignals(
   subscription: Stripe.Subscription,
   accessToken: string
 ): Promise<SubscriberSignals> {
-  const stripe = new Stripe(accessToken)
+  const stripe = getConnectStripe(accessToken)
 
   const customerId = typeof subscription.customer === 'string'
     ? subscription.customer
