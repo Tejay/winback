@@ -129,3 +129,37 @@ export function getInvoiceSubscriptionId(invoice: unknown): string | null {
 
   return null
 }
+
+/**
+ * Spec 61 — read the invoice_item id off an invoice line, regardless of
+ * API version.
+ *
+ * Same Stripe API restructuring pattern as Spec 57: on API ≥ 2024-09-30
+ * (current default 2026-03-25), the top-level `line.invoice_item` field
+ * was removed. The reference moved to
+ * `line.parent.invoice_item_details.invoice_item`. Used in
+ * refundPerformanceFee to find which line on an invoice corresponds to
+ * a given perf-fee invoice item so we can create a credit note against
+ * it.
+ *
+ * Returns null for non-invoice-item lines (e.g. subscription lines,
+ * whose parent.type is 'subscription_item_details') and for old or
+ * malformed inputs. Callers handle null as "this line doesn't match
+ * a perf-fee invoice item — skip it."
+ */
+export function getInvoiceLineInvoiceItemId(line: unknown): string | null {
+  if (!line || typeof line !== 'object') return null
+  const l = line as Record<string, unknown>
+
+  // New API: line.parent.invoice_item_details.invoice_item
+  const parent = l.parent as Record<string, unknown> | undefined
+  const details = parent?.invoice_item_details as Record<string, unknown> | undefined
+  const fromParent = details?.invoice_item
+  if (typeof fromParent === 'string') return fromParent
+
+  // Legacy: top-level line.invoice_item (pre-2024-09-30)
+  const legacy = l.invoice_item
+  if (typeof legacy === 'string') return legacy
+
+  return null
+}

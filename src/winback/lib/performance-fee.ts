@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { customers, churnedSubscribers, recoveries } from '@/lib/schema'
 import { eq, and, or, isNull, lt } from 'drizzle-orm'
 import { getPlatformStripe } from './platform-stripe'
+import { getInvoiceLineInvoiceItemId } from './stripe'
 import { PLATFORM_FEE_CURRENCY } from './subscription'
 import { isCustomerOnPilot } from './pilot'
 import { logEvent } from './events'
@@ -311,9 +312,11 @@ export async function refundPerformanceFee(recoveryId: string): Promise<{
       await stripe.invoiceItems.del(rec.perfFeeStripeItemId)
       method = 'delete_item'
     } else {
+      // Spec 61 — `line.invoice_item` was moved to
+      // `line.parent.invoice_item_details.invoice_item` in Stripe API
+      // ≥ 2024-09-30. Helper handles both shapes.
       const line = invoice.lines.data.find(
-        (l) => (l as Stripe.InvoiceLineItem & { invoice_item?: string }).invoice_item ===
-          rec.perfFeeStripeItemId,
+        (l) => getInvoiceLineInvoiceItemId(l) === rec.perfFeeStripeItemId,
       )
       if (!line) {
         // Phase D — graceful no-line path. Most likely causes: invoice line
@@ -334,11 +337,18 @@ export async function refundPerformanceFee(recoveryId: string): Promise<{
         })
         method = 'line_not_found'
       } else {
+        // Spec 61 — Stripe API requires that the credit note's total
+        // (sum of line amounts) equal `refund_amount + credit_amount +
+        // out_of_band_amount`. We pass refund_amount = perf fee amount
+        // so Stripe issues a real refund back to the merchant's card
+        // alongside the credit note. Semantically: "the win-back didn't
+        // stick — give the merchant their perf fee back."
         await stripe.creditNotes.create({
           invoice: invoiceId,
           lines: [
             { type: 'invoice_line_item', invoice_line_item: line.id, quantity: 1 },
           ],
+          refund_amount: rec.planMrrCents,
         })
         method = 'credit_note'
       }

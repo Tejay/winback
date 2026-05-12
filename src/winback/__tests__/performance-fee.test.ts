@@ -368,9 +368,52 @@ describe('refundPerformanceFee', () => {
         lines: [
           { type: 'invoice_line_item', invoice_line_item: 'il_1', quantity: 1 },
         ],
+        // Spec 61 — must include refund_amount so the credit note's total balances
+        refund_amount: 2500,
       }),
     )
     expect(mockStripe.invoiceItems.del).not.toHaveBeenCalled()
+  })
+
+  // Spec 61 — Stripe API ≥ 2024-09-30 shape. The invoice_item moved from
+  // line.invoice_item to line.parent.invoice_item_details.invoice_item.
+  // This is the shape we actually receive in production today.
+  it('creates a credit note on new-API invoice shape (Spec 61)', async () => {
+    setupReads({
+      recovery: { ...baseRecovery, perfFeeStripeItemId: 'ii_paid' },
+    })
+    mockStripe.invoiceItems.retrieve.mockResolvedValue({
+      id: 'ii_paid',
+      invoice: 'inv_paid',
+    })
+    mockStripe.invoices.retrieve.mockResolvedValue({
+      id: 'inv_paid',
+      status: 'paid',
+      lines: {
+        data: [{
+          id: 'il_1',
+          // No top-level invoice_item on new shape — it's nested under parent.
+          parent: {
+            type: 'invoice_item_details',
+            invoice_item_details: { invoice_item: 'ii_paid' },
+          },
+        }],
+      },
+    })
+
+    const result = await refundPerformanceFee('rec_1')
+
+    expect(result.method).toBe('credit_note')
+    expect(mockStripe.creditNotes.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        invoice: 'inv_paid',
+        lines: [
+          { type: 'invoice_line_item', invoice_line_item: 'il_1', quantity: 1 },
+        ],
+        // Spec 61 — must include refund_amount so the credit note's total balances
+        refund_amount: 2500,
+      }),
+    )
   })
 
   it('is idempotent when already refunded', async () => {
