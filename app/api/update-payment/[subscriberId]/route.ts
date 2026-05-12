@@ -5,6 +5,7 @@ import { customers, churnedSubscribers } from '@/lib/schema'
 import { eq } from 'drizzle-orm'
 import { decrypt } from '@/src/winback/lib/encryption'
 import { logEvent } from '@/src/winback/lib/events'
+import { getConnectStripe } from '@/src/winback/lib/stripe'
 
 export async function GET(
   req: NextRequest,
@@ -62,7 +63,7 @@ export async function GET(
   // server-side.
   try {
     const accessToken = decrypt(customer.stripeAccessToken)
-    const stripe = new Stripe(accessToken)
+    const stripe = getConnectStripe(accessToken)
 
     // Stripe Checkout in setup mode requires `currency` (drives method
     // filtering — e.g. SEPA for EUR, BACS for GBP). Pull the subscription

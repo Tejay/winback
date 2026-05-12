@@ -5,6 +5,7 @@ import { customers, churnedSubscribers } from '@/lib/schema'
 import { eq } from 'drizzle-orm'
 import { decrypt } from '@/src/winback/lib/encryption'
 import { logEvent } from '@/src/winback/lib/events'
+import { getConnectStripe } from '@/src/winback/lib/stripe'
 import { verifySubscriberToken } from '@/src/winback/lib/unsubscribe-token'
 
 /**
@@ -54,7 +55,7 @@ export async function POST(
     return NextResponse.json({ error: 'Account not connected' }, { status: 400 })
   }
 
-  const stripe = new Stripe(decrypt(customer.stripeAccessToken))
+  const stripe = getConnectStripe(decrypt(customer.stripeAccessToken))
 
   // Security: verify the priceId actually belongs to the connected account
   // (prevents arbitrary price injection from the client).

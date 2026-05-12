@@ -5,6 +5,7 @@ import { customers, churnedSubscribers, recoveries } from '@/lib/schema'
 import { eq } from 'drizzle-orm'
 import { decrypt } from '@/src/winback/lib/encryption'
 import { logEvent } from '@/src/winback/lib/events'
+import { getConnectStripe } from '@/src/winback/lib/stripe'
 import { signSubscriberToken } from '@/src/winback/lib/unsubscribe-token'
 
 /**
@@ -98,7 +99,7 @@ export async function GET(
     .where(eq(churnedSubscribers.id, subscriberId))
 
   const accessToken = decrypt(customer.stripeAccessToken)
-  const stripe = new Stripe(accessToken)
+  const stripe = getConnectStripe(accessToken)
 
   try {
     // ─── Stage 1: Try to resume existing subscription ───────────────────

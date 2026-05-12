@@ -22,6 +22,7 @@ import { customers, churnedSubscribers } from '@/lib/schema'
 import { eq } from 'drizzle-orm'
 import { decrypt } from './encryption'
 import { logEvent } from './events'
+import { getConnectStripe } from './stripe'
 
 export async function processDunningPaymentUpdate(event: Stripe.Event): Promise<void> {
   const session = event.data.object as Stripe.Checkout.Session
@@ -48,7 +49,7 @@ export async function processDunningPaymentUpdate(event: Stripe.Event): Promise<
   if (!customer?.stripeAccessToken) return
 
   const accessToken = decrypt(customer.stripeAccessToken)
-  const stripe = new Stripe(accessToken)
+  const stripe = getConnectStripe(accessToken)
 
   // Resolve the SetupIntent and the new payment method ID.
   const setupIntentId = typeof session.setup_intent === 'string'

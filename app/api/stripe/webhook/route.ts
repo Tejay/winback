@@ -3,7 +3,8 @@ import { db } from '@/lib/db'
 import { users, customers, churnedSubscribers, recoveries, emailsSent } from '@/lib/schema'
 import { eq, and, ne, inArray, desc, gt, isNull, isNotNull } from 'drizzle-orm'
 import { decrypt } from '@/src/winback/lib/encryption'
-import { extractSignals, getInvoiceSubscriptionId } from '@/src/winback/lib/stripe'
+import { extractSignals, getConnectStripe, getInvoiceSubscriptionId } from '@/src/winback/lib/stripe'
+import { getPlatformStripe } from '@/src/winback/lib/platform-stripe'
 import { classifySubscriber } from '@/src/winback/lib/classifier'
 import type { ClassificationResult } from '@/src/winback/lib/types'
 import { scheduleExitEmail, sendDunningEmail } from '@/src/winback/lib/email'
@@ -18,8 +19,11 @@ import { refundPerformanceFee, PERF_FEE_REFUND_WINDOW_DAYS } from '@/src/winback
 import { sendPlatformPaymentFailedEmail } from '@/src/winback/lib/billing-notifications'
 import { processDunningPaymentUpdate } from '@/src/winback/lib/dunning-checkout'
 
+// Spec 62 — pinned Stripe client (platform-side). Wraps getPlatformStripe
+// so the existing call sites (signature verification, retrievals) stay
+// unchanged.
 function getStripe() {
-  return new Stripe(process.env.STRIPE_SECRET_KEY!)
+  return getPlatformStripe()
 }
 
 /**
@@ -696,7 +700,7 @@ async function processPaymentFailed(event: Stripe.Event) {
 
   // Get customer details from Stripe
   const accessToken = decrypt(customer.stripeAccessToken!)
-  const stripe = new Stripe(accessToken)
+  const stripe = getConnectStripe(accessToken)
   const stripeCustomer = await stripe.customers.retrieve(stripeCustomerId) as Stripe.Customer
 
   if (!stripeCustomer.email) {
@@ -848,7 +852,7 @@ async function processPaymentSucceeded(event: Stripe.Event) {
     } else {
       // Check if payment method changed
       const accessToken = decrypt(customer.stripeAccessToken!)
-      const stripe = new Stripe(accessToken)
+      const stripe = getConnectStripe(accessToken)
       const stripeCustomer = await stripe.customers.retrieve(stripeCustomerId) as Stripe.Customer
       const currentPM = stripeCustomer.invoice_settings?.default_payment_method
       const currentPMId = typeof currentPM === 'string' ? currentPM : currentPM?.id ?? null
