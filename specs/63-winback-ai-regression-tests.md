@@ -81,26 +81,47 @@ Each sweep is one PR. The spec is the source of truth — sweeps reference
 
 **Goal:** close the holes in our existing fixture coverage.
 
-**Test files to add under `src/winback/__tests__/`:**
+**Rescope finding (recorded at sweep-A implementation):** initial plan
+listed four test files. Exploration of existing coverage revealed:
 
-- `tier-resolution.test.ts` — table-driven test of the tier-resolution logic.
-  For each row in the table `{stripeComment, stripeEnum, replyText, mrrCents,
-  tenureDays} → expected tier ∈ {1,2,3,4}`, classify with a mocked LLM that
-  returns a tier-tagged response, assert the right tier is recorded on
-  `churnedSubscribers.tier` (or equivalent column).
-- `gate-matrix.test.ts` — table-driven test of the gate composition. For each
-  row in the table `{doNotContact, customerPausedWinback, customerPausedBilling,
-  aiPausedUntil, founderHandoffAt, followupsSent} → expected skip_reason ∈
-  {sent, dnc, customer_paused, billing_pause, ai_paused, handoff, max_followups}`,
-  call `sendEmail()` and assert (a) no Resend call is made when skipped,
-  (b) the right `wb_events` row is written.
-- `inbound-threading.test.ts` — table-driven test that an inbound Resend
-  webhook with `In-Reply-To` / `References` headers resolves to the correct
-  `churnedSubscribers` row even when the From-address differs from the
-  original to-address (forwarded, alias, +tag).
-- `idempotency.test.ts` — for each webhook source (Stripe
-  `customer.subscription.deleted`, Resend `email.received`), replay the same
-  payload twice and assert exactly one DB row + one outbound email.
+- **`tier-resolution.test.ts` — dropped.** Tier is LLM-decided; the
+  deterministic post-LLM validation (tier-aware first-message rules) is
+  already exercised thoroughly by `classifier-validator.test.ts`
+  (golden good/bad samples + per-rule spot-checks). A mocked-LLM
+  pass-through test there would be tautological.
+- **`gate-matrix.test.ts` — narrowed.** Individual gates
+  (`isDoNotContact`, `isCustomerPausedForWinback`, `isCustomerPausedForDunning`,
+  `isCustomerPausedForBilling`, `isAiPaused`) are already covered by
+  `billing-pause-gate.test.ts` + `ai-pause.test.ts` + `email.test.ts`.
+  The real gap is integration through `scheduleExitEmail`: AI-pause,
+  billing-pause, and initial-classification handoff are not exercised
+  end-to-end through that entry point. The narrowed test
+  (`gate-precedence.test.ts`) covers those plus short-circuit
+  precedence across the gate stack.
+- **`idempotency.test.ts` — deferred.** The Resend inbound webhook
+  has no `email_id` dedup today — a replayed webhook would re-classify
+  the subscriber twice and may send two reply emails. This is a
+  *product* gap, not a *test* gap: a test that asserts "no dedup
+  happens" just freezes the gap in place. Spawned as a follow-up task
+  to add inbound dedup; will then be tested in its own PR.
+
+**Test files actually added in sweep A:**
+
+- `gate-precedence.test.ts` — drives `scheduleExitEmail` with each
+  gate active in isolation and in combination, asserts (a) no Resend
+  call is made when any gate trips, (b) the DB row status is not
+  bumped to `'contacted'`, (c) the correct event is logged for the
+  billing-pause gate (the only gate that currently emits an event),
+  (d) short-circuit precedence: `firstMessage:null` > DNC > win-back
+  pause > billing-pause > AI-pause > handoff > send.
+- `inbound-threading.test.ts` — extracts and tests the inbound
+  `to`-address parser. Cases: valid UUID, missing `reply+` prefix,
+  empty UUID, uppercase UUID, no `@` separator, multiple `reply+`
+  fragments. Also tests `extractEnvelope()` against Resend's documented
+  payload shapes: `to` as string, array, object, array of objects.
+  These were previously inline-private to the route handler — sweep A
+  exports them as pure helpers (no behaviour change) so they can be
+  tested without booting the full POST handler.
 
 **Cost:** 0 (no LLM calls).
 **Acceptance:** new tests + all existing vitest still green.
