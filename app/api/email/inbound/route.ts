@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { emailsSent, churnedSubscribers, customers, users } from '@/lib/schema'
+import { emailsSent, churnedSubscribers, customers, users, inboundEvents } from '@/lib/schema'
 import { eq, count } from 'drizzle-orm'
 import { Webhook } from 'svix'
 import { classifySubscriber } from '@/src/winback/lib/classifier'
@@ -9,6 +9,46 @@ import { buildReplyAfterHandoffNotification } from '@/src/winback/lib/founder-ha
 import { Resend } from 'resend'
 import { SubscriberSignals } from '@/src/winback/lib/types'
 import { logEvent } from '@/src/winback/lib/events'
+
+type InboundOutcome =
+  | 'processed'
+  | 'no_subscriber_id'
+  | 'subscriber_not_found'
+  | 'empty_reply_text'
+
+/**
+ * Spec 64 — Reserve an idempotency token for an inbound webhook. INSERT
+ * with ON CONFLICT DO NOTHING; if zero rows come back, this email_id has
+ * been seen before and the caller must short-circuit.
+ *
+ * Returns true when this is the first time we've seen the id (caller
+ * proceeds), false otherwise (caller returns `already_processed`).
+ */
+export async function reserveInboundEvent(emailId: string): Promise<boolean> {
+  const reserved = await db
+    .insert(inboundEvents)
+    .values({ emailId, outcome: 'reserved' })
+    .onConflictDoNothing()
+    .returning({ emailId: inboundEvents.emailId })
+  return reserved.length > 0
+}
+
+/**
+ * Spec 64 — Finalize the reserved token with the terminal outcome. Called
+ * at every exit point of the handler. No-op when emailId is empty (we
+ * didn't reserve a row in that case).
+ */
+export async function finalizeInboundEvent(
+  emailId: string,
+  outcome: InboundOutcome,
+  subscriberId?: string | null,
+): Promise<void> {
+  if (!emailId) return
+  await db
+    .update(inboundEvents)
+    .set({ outcome, subscriberId: subscriberId ?? null })
+    .where(eq(inboundEvents.emailId, emailId))
+}
 
 /**
  * Lazy-initialised Svix verifier. Per CLAUDE.md's serverless-safe rule, don't
@@ -139,12 +179,36 @@ export async function POST(req: Request) {
 
   const { emailId, to, from, text: envelopeText } = extractEnvelope(body)
 
+  // Spec 64 — idempotency gate. If Resend retries the same webhook (network
+  // blip, our 500, etc.) we must not re-process: classifier costs money and
+  // a second auto-reply would go out to the subscriber.
+  if (!emailId) {
+    // Resend always sends email_id per docs. A missing one means malformed
+    // or non-Resend traffic — log it and fall through (can't dedup what we
+    // can't identify).
+    await logEvent({
+      name: 'inbound_missing_email_id',
+      properties: { source: 'resend_inbound' },
+    })
+  } else {
+    const isFirst = await reserveInboundEvent(emailId)
+    if (!isFirst) {
+      console.log('Inbound webhook duplicate (email_id already processed):', emailId)
+      return NextResponse.json({
+        received: true,
+        processed: false,
+        reason: 'already_processed',
+      })
+    }
+  }
+
   // Extract subscriberId from the "to" address: reply+{subscriberId}@<anyhost>.
   // Host doesn't matter for the parser — currently sent from
   // reply+<id>@reply.winbackflow.co (spec 27 / inbound subdomain).
   const subscriberId = parseSubscriberIdFromTo(to)
   if (!subscriberId) {
     console.log('Inbound email: no subscriber ID in to address:', to)
+    await finalizeInboundEvent(emailId, 'no_subscriber_id')
     return NextResponse.json({ received: true, processed: false, reason: 'no_subscriber_id' })
   }
   console.log('Inbound reply for subscriber:', subscriberId, 'from:', from, 'email_id:', emailId)
@@ -164,6 +228,7 @@ export async function POST(req: Request) {
 
   if (!replyText) {
     console.log('Empty reply text after stripping quotes (subscriberId:', subscriberId, 'emailId:', emailId, ')')
+    await finalizeInboundEvent(emailId, 'empty_reply_text', subscriberId)
     return NextResponse.json({ received: true, processed: false, reason: 'empty_reply_text' })
   }
 
@@ -187,6 +252,7 @@ export async function POST(req: Request) {
 
   if (!subscriber) {
     console.log('Subscriber not found:', subscriberId)
+    await finalizeInboundEvent(emailId, 'subscriber_not_found', subscriberId)
     return NextResponse.json({ received: true, processed: false })
   }
 
@@ -315,6 +381,7 @@ export async function POST(req: Request) {
         }
       }
       // Don't auto-reply while under pause or handoff
+      await finalizeInboundEvent(emailId, 'processed', subscriberId)
       return NextResponse.json({ received: true, processed: true, handedOff: isHandedOff, paused: isPaused })
     }
 
@@ -355,5 +422,6 @@ export async function POST(req: Request) {
     console.error('Re-classification after reply failed:', err)
   }
 
+  await finalizeInboundEvent(emailId, 'processed', subscriberId)
   return NextResponse.json({ received: true, processed: true })
 }
