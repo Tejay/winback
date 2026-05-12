@@ -8,14 +8,16 @@ import { LogOut } from 'lucide-react'
 
 interface TopNavProps {
   userName?: string | null
+  isAdmin?: boolean
 }
 
-export function TopNav({ userName }: TopNavProps) {
+export function TopNav({ userName, isAdmin = false }: TopNavProps) {
   const pathname = usePathname()
 
   const navItems = [
     { href: '/dashboard', label: 'Dashboard' },
     { href: '/settings', label: 'Settings' },
+    ...(isAdmin ? [{ href: '/admin', label: 'Admin' }] : []),
   ]
 
   const initial = userName?.charAt(0)?.toUpperCase() ?? '?'
@@ -27,7 +29,13 @@ export function TopNav({ userName }: TopNavProps) {
 
         <div className="flex items-center gap-1">
           {navItems.map((item) => {
-            const isActive = pathname === item.href
+            // Admin section has sub-pages (/admin/customers, etc.) — highlight
+            // the Admin button on any of them. Other top-level items are
+            // single pages, exact match is fine.
+            const isActive =
+              item.href === '/admin'
+                ? pathname.startsWith('/admin')
+                : pathname === item.href
             return (
               <Link
                 key={item.href}

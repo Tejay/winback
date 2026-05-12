@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation'
-import { auth } from '@/lib/auth'
+import { auth, userIsAdmin } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { customers } from '@/lib/schema'
 import { eq } from 'drizzle-orm'
@@ -22,6 +22,8 @@ export default async function SettingsPage({
 }) {
   const session = await auth()
   if (!session?.user?.id) redirect('/login')
+
+  const isAdmin = await userIsAdmin(session.user.id)
 
   const [customer] = await db
     .select()
@@ -61,7 +63,7 @@ export default async function SettingsPage({
 
   return (
     <>
-      <TopNav userName={session.user.name} />
+      <TopNav userName={session.user.name} isAdmin={isAdmin} />
       <main className="min-h-screen bg-[#f5f5f5]">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
           {/* Page header */}
