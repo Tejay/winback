@@ -39,7 +39,7 @@ type ResendInboundEnvelope = {
   plain_text?: string            // legacy fallback
 }
 
-function extractEnvelope(body: unknown): {
+export function extractEnvelope(body: unknown): {
   emailId: string
   to: string
   from: string
@@ -54,6 +54,20 @@ function extractEnvelope(body: unknown): {
   const text = src.text ?? src.plain_text ?? ''
   const emailId = src.email_id ?? ''
   return { emailId, to, from, text }
+}
+
+/**
+ * Parse the subscriber ID out of an inbound reply `to` address.
+ *
+ * We send win-back emails with `from: reply+<subscriberId>@reply.winbackflow.co`,
+ * so the subscriber's reply lands at the same address. The subscriber ID is
+ * the `+tag` portion. Host is intentionally ignored — only MX matters there.
+ *
+ * Returns the subscriber ID, or null if the address doesn't carry one.
+ */
+export function parseSubscriberIdFromTo(to: string): string | null {
+  const match = to.match(/reply\+([a-f0-9-]+)@/i)
+  return match ? match[1] : null
 }
 
 /**
@@ -125,13 +139,11 @@ export async function POST(req: Request) {
   // Extract subscriberId from the "to" address: reply+{subscriberId}@<anyhost>.
   // Host doesn't matter for the parser — currently sent from
   // reply+<id>@reply.winbackflow.co (spec 27 / inbound subdomain).
-  const match = to.match(/reply\+([a-f0-9-]+)@/i)
-  if (!match) {
+  const subscriberId = parseSubscriberIdFromTo(to)
+  if (!subscriberId) {
     console.log('Inbound email: no subscriber ID in to address:', to)
     return NextResponse.json({ received: true, processed: false, reason: 'no_subscriber_id' })
   }
-
-  const subscriberId = match[1]
   console.log('Inbound reply for subscriber:', subscriberId, 'from:', from, 'email_id:', emailId)
 
   // Resend's email.received webhook is metadata-only — no body. Fetch the
