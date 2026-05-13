@@ -36,6 +36,16 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
+  // Spec 65 Phase 3 — gated cutover. When the flag is on, run the new
+  // eligibility-based pipeline (improvements + sanity check + cooldown +
+  // 9-month wall). Old single-shot path stays as the default until prod
+  // is ready to flip.
+  if (process.env.USE_WINBACK_REASONS_V2 === 'true') {
+    const { runReengagementCronV2 } = await import('@/src/winback/lib/reengagement-cron-v2')
+    const stats = await runReengagementCronV2()
+    return NextResponse.json({ ok: true, version: 'v2', stats })
+  }
+
   // Find eligible subscribers: 90-day fallback window has elapsed.
   // Spec 21b — skip subscribers who've been handed off to the founder.
   const eligible = await db
