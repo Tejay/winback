@@ -566,11 +566,13 @@ columns).
 
 ## Rollback
 
-Each phase is independently revertable. Schema changes are additive —
-rollback doesn't require dropping columns.
+Phases 1 and 2 are independently revertable — their schema changes are
+purely additive.
 
-The Phase 3 cron rewrite deleted the legacy V1 code path. If a revert
-of Phase 3 is ever needed, the prior version of
-`app/api/cron/reengagement/route.ts` (commit before Phase 3 merged) can
-be cherry-picked back — it reads only from `customers.changelog_text`,
-which we deliberately kept as a sunset column for exactly this reason.
+Phase 3 deleted the legacy V1 code path AND (in the cleanup commit on
+the same PR) dropped `customers.changelog_text` via migration 040.
+Reverting Phase 3 would therefore require restoring both the V1 cron
+code (cherry-pick from before merge `188fc1d`) and the column itself
+(re-create with a new migration; original blob content is lost). At the
+time of cleanup, prod had zero V1 traffic in the prior 30 days, so the
+risk was judged acceptable.
