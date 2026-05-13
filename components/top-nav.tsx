@@ -16,7 +16,8 @@ export function TopNav({ userName, isAdmin = false }: TopNavProps) {
 
   const navItems = [
     { href: '/dashboard', label: 'Dashboard' },
-    { href: '/settings', label: 'Settings' },
+    { href: '/reasons',   label: 'Reasons' },
+    { href: '/settings',  label: 'Settings' },
     ...(isAdmin ? [{ href: '/admin', label: 'Admin' }] : []),
   ]
 

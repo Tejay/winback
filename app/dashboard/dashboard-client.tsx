@@ -583,12 +583,12 @@ export function DashboardClient({
           <h1 className="text-4xl font-bold text-slate-900">Dashboard.</h1>
           <p className="text-sm text-slate-500 mt-1">Every cancellation, every recovery — all in one view.</p>
         </div>
-        <button
-          onClick={() => setChangelogOpen(true)}
-          className="self-start border border-slate-200 bg-white text-slate-700 rounded-full px-5 py-2 text-sm font-medium flex-shrink-0"
+        <a
+          href="/reasons"
+          className="self-start border border-slate-200 bg-white text-slate-700 rounded-full px-5 py-2 text-sm font-medium flex-shrink-0 inline-block"
         >
-          Update changelog
-        </button>
+          Manage Winback reasons
+        </a>
       </div>
 
       {/* Spec 31 — pilot banner */}
@@ -706,12 +706,12 @@ export function DashboardClient({
               <p className="text-sm text-slate-500 mt-1">
                 Winback uses your changelog to write win-back emails that reference the exact thing a subscriber asked for. Takes 30 seconds — one line per shipment.
               </p>
-              <button
-                onClick={() => setChangelogOpen(true)}
-                className="mt-3 bg-[#0f172a] text-white rounded-full px-5 py-2 text-sm font-medium hover:bg-[#1e293b]"
+              <a
+                href="/reasons"
+                className="mt-3 bg-[#0f172a] text-white rounded-full px-5 py-2 text-sm font-medium hover:bg-[#1e293b] inline-block"
               >
                 Add what you&apos;ve shipped →
-              </button>
+              </a>
             </div>
           </div>
           <button
