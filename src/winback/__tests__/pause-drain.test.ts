@@ -153,7 +153,6 @@ function fakeCustomerRow() {
     id: 'cust_1',
     founderName: 'Alex Founder',
     productName: 'Acme Pro',
-    changelogText: 'Just shipped CSV export.',
   }
 }
 

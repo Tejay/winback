@@ -326,7 +326,6 @@ async function processCancellationItem(sub: SubscriberRow): Promise<DrainItem> {
   const classification = await classifySubscriber(signals, {
     founderName: customer.founderName ?? undefined,
     productName: customer.productName ?? undefined,
-    changelog: customer.changelogText ?? undefined,
   })
 
   // Persist the refreshed classification + suppress reasoning to the row
@@ -462,7 +461,6 @@ async function processReplyItem(sub: SubscriberRow): Promise<DrainItem> {
   const classification = await classifySubscriber(signals, {
     founderName: customer.founderName ?? undefined,
     productName: customer.productName ?? undefined,
-    changelog: customer.changelogText ?? undefined,
   })
 
   // Persist refreshed classification for visibility

@@ -221,50 +221,5 @@ ${mailto ? `→ REPLY TO ${firstName}: ${mailto}\n\n` : ''}→ View full details
   return { subject, body }
 }
 
-/**
- * Sent when a changelog matches a handed-off subscriber's stated need.
- * Instead of auto-emailing them (which could undercut the founder's own
- * conversation), notify the founder that there's a fresh angle they could use.
- */
-export async function buildChangelogMatchAfterHandoffNotification(params: {
-  subscriber: SubscriberContext
-  founderName: string
-  changelogText: string
-}): Promise<{ subject: string; body: string }> {
-  const { subscriber, founderName, changelogText } = params
-  const firstName = subscriber.name?.split(' ')[0] ?? 'there'
-  const reactivation = reactivationUrl(subscriber.id)
-  const dashboard = dashboardUrl(subscriber.id)
-
-  const mailto = subscriber.email
-    ? buildMailto({
-        subscriberEmail: subscriber.email,
-        firstName,
-        founderName,
-        reactivationLink: reactivation,
-        conversationQuote: `> They originally asked: ${subscriber.triggerNeed ?? subscriber.cancellationReason ?? ''}`,
-      })
-    : null
-
-  const subject = `[Winback] Changelog match for ${subscriber.name ?? subscriber.email ?? 'a handed-off subscriber'}`
-
-  const body = `Hi ${founderName},
-
-What you just shipped matches what ${subscriber.name ?? 'this subscriber'} asked for when they cancelled. Since you're handling this conversation, I'm not auto-emailing them — but this might be a perfect moment to reach out.
-
-──────────────────────────────────────
-THEY ASKED FOR:
-${subscriber.triggerNeed ?? subscriber.cancellationReason ?? '(no trigger captured)'}
-
-YOU JUST SHIPPED:
-${changelogText.slice(0, 500)}${changelogText.length > 500 ? '…' : ''}
-──────────────────────────────────────
-
-${mailto ? `→ REPLY TO ${firstName}: ${mailto}\n\n` : ''}→ View full details: ${dashboard}
-`
-
-  return { subject, body }
-}
-
 // Exported for testing
 export { buildMailto, formatConversation, daysSince }

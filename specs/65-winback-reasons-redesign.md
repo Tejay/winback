@@ -538,17 +538,19 @@ with existing content.
 deprecated with a 410 response.
 
 **Phase 3** (one PR): rewrite the reengagement cron per this spec.
-Existing cron behaviour preserved until cutover; cutover flagged behind
-a feature flag (`USE_WINBACK_REASONS_V2`) and tested against the test
-merchant's sandbox subscribers before flipping for all customers.
+Originally planned behind a `USE_WINBACK_REASONS_V2` feature flag for
+staged rollout. In practice the flag was retired during Phase 3
+itself — prod had zero subscribers eligible under the old V1 path
+(0 sends in the prior 30 days, 0 changelog content), so staging the
+cutover added complexity without buying safety. V1 code path deleted
+in the same PR.
 
 **Phase 4** (one PR): admin observability section + reply re-classification
 behaviour change (no auto-reply).
 
 Each phase is a separate PR. The schema migration in Phase 1 is
 additive (no existing columns dropped, only new tables and new
-columns). Phase 3's cron rewrite is the riskiest change and gets a
-feature flag for staged rollout.
+columns).
 
 ## Open questions to resolve before Phase 3
 
@@ -564,12 +566,11 @@ feature flag for staged rollout.
 
 ## Rollback
 
-Each phase is independently revertable. The biggest risk is Phase 3
-(cron rewrite). The feature flag (`USE_WINBACK_REASONS_V2`) on the cron
-ensures the old code path stays available until we're confident in the
-new one. Schema changes are additive — rollback doesn't require dropping
-columns.
+Each phase is independently revertable. Schema changes are additive —
+rollback doesn't require dropping columns.
 
-If we need to fully revert: drop the flag default to `false`, the old
-cron logic runs as before. Merchant UI still uses the new endpoints but
-no re-engagement emails fire from the new path.
+The Phase 3 cron rewrite deleted the legacy V1 code path. If a revert
+of Phase 3 is ever needed, the prior version of
+`app/api/cron/reengagement/route.ts` (commit before Phase 3 merged) can
+be cherry-picked back — it reads only from `customers.changelog_text`,
+which we deliberately kept as a sunset column for exactly this reason.

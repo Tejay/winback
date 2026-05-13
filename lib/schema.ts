@@ -25,7 +25,6 @@ export const customers = pgTable('wb_customers', {
   gmailEmail:         text('gmail_email'),
   founderName:        text('founder_name'),
   productName:        text('product_name'),
-  changelogText:      text('changelog_text'),
   onboardingComplete: boolean('onboarding_complete').default(false),
   plan:               text('plan').default('trial'),
   notificationEmail:  text('notification_email'),  // Spec 21c — overrides user.email for handoff alerts
@@ -164,9 +163,10 @@ export const churnedSubscribers = pgTable('wb_churned_subscribers', {
   // presence. 'high' = eligible for re-engagement matching; 'low' = silent
   // churn, never matched (still receives the exit email). Migration 039.
   triggerNeedConfidence:      text('trigger_need_confidence'),  // 'high' | 'low' | null
-  // Spec 65 — cooldown timestamp scoped to changelog-triggered emails only.
-  // Re-engagement matcher won't fire if this is within the last 60 days.
-  // Distinct from reengagementSentAt which was the old single-shot field.
+  // Spec 65 — cooldown timestamp scoped to re-engagement emails. Matcher
+  // won't fire again on this subscriber if this is within the last 60
+  // days. Distinct from reengagementSentAt which was the old single-shot
+  // field.
   lastReengagedAt:            timestamp('last_reengaged_at', { withTimezone: true }),
   // Spec 65 — set by daily expiry sweep when the subscriber hits 9 months
   // post-cancellation without recovering. Permanently disqualifies them
@@ -203,8 +203,7 @@ export const emailsSent = pgTable('wb_emails_sent', {
 
 // Spec 65 — Winback Reasons. Each row is a single shipped product
 // improvement the merchant wants to communicate to cancelled customers
-// who asked for something like it. Replaces the free-text
-// `customers.changelog_text` blob. Migration 039.
+// who asked for something like it. Migration 039.
 export const improvements = pgTable('wb_improvements', {
   id:               uuid('id').primaryKey().defaultRandom(),
   customerId:       uuid('customer_id').notNull().references(() => customers.id, { onDelete: 'cascade' }),

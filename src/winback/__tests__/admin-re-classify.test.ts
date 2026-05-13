@@ -64,7 +64,6 @@ vi.mock('@/lib/schema', () => ({
     id: 'cust_id',
     founderName: 'founder_name',
     productName: 'product_name',
-    changelogText: 'changelog_text',
   },
   emailsSent: { subscriberId: 'subscriber_id' },
 }))
@@ -114,7 +113,6 @@ const SUBSCRIBER_ROW = {
   customerId: 'cust_1',
   founderName: 'Alex',
   productName: 'Acme',
-  changelogText: 'CSV export rebuilt',
 }
 
 const FRESH_CLASSIFICATION = {
