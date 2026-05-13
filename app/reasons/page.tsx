@@ -1,5 +1,21 @@
 import { redirect } from 'next/navigation'
 import { auth, userIsAdmin } from '@/lib/auth'
+
+// Defensive — `dateShipped` is a Postgres DATE (Drizzle returns YYYY-MM-DD
+// string), but if anything else creeps in (Date, null, undefined) we still
+// produce a valid YYYY-MM-DD string instead of crashing the page render.
+function toIsoDate(v: unknown): string {
+  if (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}/.test(v)) return v.slice(0, 10)
+  if (v instanceof Date && !isNaN(v.getTime())) return v.toISOString().slice(0, 10)
+  return new Date().toISOString().slice(0, 10)
+}
+
+function toIsoDateTime(v: unknown): string {
+  if (v instanceof Date && !isNaN(v.getTime())) return v.toISOString()
+  if (typeof v === 'string') return v
+  return new Date().toISOString()
+}
+
 import { db } from '@/lib/db'
 import { customers, improvements } from '@/lib/schema'
 import { eq, desc } from 'drizzle-orm'
@@ -49,11 +65,11 @@ export default async function ReasonsPage() {
               id:               r.id,
               title:            r.title,
               description:      r.description,
-              dateShipped:      r.dateShipped instanceof Date ? r.dateShipped.toISOString().slice(0, 10) : r.dateShipped as unknown as string,
+              dateShipped:      toIsoDate(r.dateShipped),
               status:           r.status as 'published' | 'archived',
               addressesPattern: r.addressesPattern ?? null,
               preempted:        r.preempted,
-              createdAt:        (r.createdAt as Date).toISOString(),
+              createdAt:        toIsoDateTime(r.createdAt),
             }))} />
           </div>
         </div>

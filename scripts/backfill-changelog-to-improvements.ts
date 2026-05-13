@@ -46,11 +46,12 @@ async function main() {
       ? text.slice(0, DESCRIPTION_MAX - 1) + '…'
       : text
 
+    const dateShipped = (c.createdAt ?? new Date()).toISOString().slice(0, 10)
     await db.insert(improvements).values({
       customerId:       c.id,
       title:            IMPORT_TITLE,
       description,
-      dateShipped:      c.createdAt ?? new Date(),
+      dateShipped,
       addressesPattern: null,
       preempted:        true,
     })

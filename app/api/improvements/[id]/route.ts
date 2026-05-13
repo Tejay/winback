@@ -63,7 +63,7 @@ export async function PATCH(
   const updates: Record<string, unknown> = { updatedAt: new Date() }
   if (parsed.data.title !== undefined)            updates.title = parsed.data.title
   if (parsed.data.description !== undefined)      updates.description = parsed.data.description
-  if (parsed.data.dateShipped !== undefined)      updates.dateShipped = new Date(parsed.data.dateShipped)
+  if (parsed.data.dateShipped !== undefined)      updates.dateShipped = parsed.data.dateShipped
   if (parsed.data.addressesPattern !== undefined) updates.addressesPattern = parsed.data.addressesPattern
 
   const [row] = await db

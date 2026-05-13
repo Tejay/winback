@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, integer, bigint, boolean, decimal, timestamp, jsonb, index, uniqueIndex, primaryKey } from 'drizzle-orm/pg-core'
+import { pgTable, uuid, text, integer, bigint, boolean, decimal, timestamp, date, jsonb, index, uniqueIndex, primaryKey } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
 
 export const users = pgTable('wb_users', {
@@ -210,7 +210,10 @@ export const improvements = pgTable('wb_improvements', {
   customerId:       uuid('customer_id').notNull().references(() => customers.id, { onDelete: 'cascade' }),
   title:            text('title').notNull(),
   description:      text('description').notNull(),
-  dateShipped:      timestamp('date_shipped', { mode: 'date' }).notNull(),
+  // Postgres DATE column (date-only, no time). Drizzle's `date` returns
+  // ISO string ('YYYY-MM-DD') in string mode — simpler than dealing with
+  // partial Date objects on the server-rendered side.
+  dateShipped:      date('date_shipped', { mode: 'string' }).notNull(),
   // 'published' | 'archived'. No 'draft' state — single Save = Publish.
   status:           text('status').notNull().default('published'),
   // Free-text label of the customer-demand pattern this addresses, or null

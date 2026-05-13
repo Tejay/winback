@@ -103,7 +103,7 @@ export async function POST(req: Request) {
       customerId,
       title:            parsed.data.title,
       description:      parsed.data.description,
-      dateShipped:      new Date(parsed.data.dateShipped),
+      dateShipped:      parsed.data.dateShipped,  // YYYY-MM-DD string, Drizzle date column
       addressesPattern: parsed.data.addressesPattern ?? null,
       preempted:        parsed.data.preempted ?? !parsed.data.addressesPattern,
     })
