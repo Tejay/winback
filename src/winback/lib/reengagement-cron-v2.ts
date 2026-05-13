@@ -46,26 +46,28 @@ import type { SubscriberSignals } from './types'
 const BATCH_LIMIT = 50
 
 export interface CronV2Stats {
-  considered:           number
-  emailed:              number
-  expired:              number
-  skippedLowConfidence: number
-  skippedNoMatch:       number
-  skippedSanity:        number
-  skippedNoImprovements: number
-  errors:               number
+  considered:             number
+  emailed:                number
+  expired:                number
+  skippedCustomerPaused:  number
+  skippedLowConfidence:   number
+  skippedNoMatch:         number
+  skippedSanity:          number
+  skippedNoImprovements:  number
+  errors:                 number
 }
 
 export async function runReengagementCronV2(): Promise<CronV2Stats> {
   const stats: CronV2Stats = {
-    considered:            0,
-    emailed:               0,
-    expired:               0,
-    skippedLowConfidence:  0,
-    skippedNoMatch:        0,
-    skippedSanity:         0,
-    skippedNoImprovements: 0,
-    errors:                0,
+    considered:             0,
+    emailed:                0,
+    expired:                0,
+    skippedCustomerPaused:  0,
+    skippedLowConfidence:   0,
+    skippedNoMatch:         0,
+    skippedSanity:          0,
+    skippedNoImprovements:  0,
+    errors:                 0,
   }
 
   // ============================================================
@@ -118,8 +120,8 @@ export async function runReengagementCronV2(): Promise<CronV2Stats> {
       // ----------------------------------------------------------
       // 3. Customer-level pause checks (win-back cohort, billing pause)
       // ----------------------------------------------------------
-      if (await isCustomerPausedForWinback(sub.id))             continue
-      if (await isCustomerPausedForBillingByCustomerId(sub.customerId)) continue
+      if (await isCustomerPausedForWinback(sub.id))                     { stats.skippedCustomerPaused++; continue }
+      if (await isCustomerPausedForBillingByCustomerId(sub.customerId)) { stats.skippedCustomerPaused++; continue }
 
       // Customer row (for founder name + active improvements)
       const [customer] = await db
