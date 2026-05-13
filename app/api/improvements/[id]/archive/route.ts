@@ -7,23 +7,20 @@ import { and, eq } from 'drizzle-orm'
 import { logEvent } from '@/src/winback/lib/events'
 
 /**
- * Spec 65 Phase 2 — Archive (soft-delete) an improvement.
+ * Spec 65 Phase 2 — Remove (soft-delete) an improvement.
  *
  * POST /api/improvements/[id]/archive
  *
- * Body MUST contain both confirmation flags:
- *   { confirmFeatureRemoved: true, confirmConsequencesUnderstood: true }
- *
- * Either flag missing → 400. This mirrors the two-checkbox UI in the
- * spec mockup. The DB column `archived_at` is set and `status` flips to
- * 'archived'. Existing wb_improvement_matches rows are preserved so
- * past attribution stays accurate; the cron just skips archived
- * improvements when picking candidates.
+ * Body MUST contain `{ confirmed: true }`. Anything else → 400.
+ * The endpoint name is "archive" because the DB state is 'archived'
+ * (preserving wb_improvement_matches attribution); the merchant-facing
+ * verb is "Remove." Existing match rows are preserved so past
+ * attribution stays accurate; the cron just skips removed improvements
+ * when picking candidates.
  */
 
 const bodySchema = z.object({
-  confirmFeatureRemoved:         z.literal(true),
-  confirmConsequencesUnderstood: z.literal(true),
+  confirmed: z.literal(true),
 })
 
 export async function POST(
@@ -50,7 +47,7 @@ export async function POST(
   const parsed = bodySchema.safeParse(body)
   if (!parsed.success) {
     return NextResponse.json(
-      { error: 'Both confirmFeatureRemoved and confirmConsequencesUnderstood must be true.' },
+      { error: 'Body must include confirmed: true.' },
       { status: 400 },
     )
   }

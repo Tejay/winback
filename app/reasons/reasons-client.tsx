@@ -56,10 +56,10 @@ export function ReasonsClient({ initialImprovements }: Props) {
         <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between flex-wrap gap-3">
           <div>
             <p className="text-xs font-semibold uppercase tracking-widest text-blue-600">
-              {showArchived ? 'Archived improvements' : 'Active improvements'}
+              {showArchived ? 'Removed improvements' : 'Active improvements'}
             </p>
             <h3 className="text-lg font-semibold text-slate-900 mt-1">
-              {showArchived ? `${archived.length} archived` : `${published.length} / ${MAX_ACTIVE} active improvements.`}
+              {showArchived ? `${archived.length} removed` : `${published.length} / ${MAX_ACTIVE} active improvements.`}
             </h3>
             {!showArchived && (
               <p className="text-sm text-slate-500 mt-1">Latest first. Most merchants add one every couple of months.</p>
@@ -70,7 +70,7 @@ export function ReasonsClient({ initialImprovements }: Props) {
               onClick={() => setShowArchived((v) => !v)}
               className="text-sm text-slate-500 hover:text-slate-900 px-3 py-1.5"
             >
-              {showArchived ? '← Active' : `Show archived (${archived.length})`}
+              {showArchived ? '← Active' : `Show removed (${archived.length})`}
             </button>
             <button
               onClick={() => atCap ? setErrorMessage(`You have ${MAX_ACTIVE} active improvements. Archive one to add a new one.`) : setModal({ kind: 'add' })}
@@ -147,7 +147,7 @@ export function ReasonsClient({ initialImprovements }: Props) {
 
 function EmptyState({ showArchived, onAdd }: { showArchived: boolean; onAdd: () => void }) {
   if (showArchived) {
-    return <div className="px-6 py-12 text-center text-sm text-slate-500">No archived improvements.</div>
+    return <div className="px-6 py-12 text-center text-sm text-slate-500">No removed improvements.</div>
   }
   return (
     <div className="px-6 py-12 text-center">
@@ -209,7 +209,7 @@ function ImprovementRow({
           {isArchived ? (
             <button onClick={() => { setMenuOpen(false); onRestore() }} className="w-full text-left px-3 py-1.5 hover:bg-green-50 text-green-700">↺ Restore</button>
           ) : (
-            <button onClick={() => { setMenuOpen(false); onArchive() }} className="w-full text-left px-3 py-1.5 hover:bg-red-50 text-red-600">⌫ Archive</button>
+            <button onClick={() => { setMenuOpen(false); onArchive() }} className="w-full text-left px-3 py-1.5 hover:bg-red-50 text-red-600">⌫ Remove</button>
           )}
         </div>
       )}
@@ -336,22 +336,21 @@ function ArchiveConfirmModal({
   onArchived: () => void
   onError: (msg: string) => void
 }) {
-  const [removed, setRemoved] = useState(false)
-  const [understood, setUnderstood] = useState(false)
+  const [confirmed, setConfirmed] = useState(false)
   const [submitting, setSubmitting] = useState(false)
 
   async function submit() {
-    if (!removed || !understood || submitting) return
+    if (!confirmed || submitting) return
     setSubmitting(true)
     const res = await fetch(`/api/improvements/${improvement.id}/archive`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ confirmFeatureRemoved: true, confirmConsequencesUnderstood: true }),
+      body: JSON.stringify({ confirmed: true }),
     })
     setSubmitting(false)
     if (!res.ok) {
       const errBody = await res.json().catch(() => ({}))
-      onError(errBody.error ?? 'Archive failed')
+      onError(errBody.error ?? 'Remove failed')
       return
     }
     onArchived()
@@ -359,34 +358,27 @@ function ArchiveConfirmModal({
 
   return (
     <Modal onClose={onClose}>
-      <div className="bg-white rounded-2xl max-w-lg w-full p-6">
-        <div className="flex items-start gap-3">
-          <div className="w-10 h-10 rounded-full bg-red-50 border border-red-200 flex items-center justify-center flex-shrink-0">
-            <span className="text-lg">⌫</span>
-          </div>
-          <div className="flex-1">
-            <h4 className="font-semibold text-slate-900">Archive &quot;{improvement.title}&quot;?</h4>
-            <div className="mt-4 space-y-3">
-              <label className="flex items-start gap-3 cursor-pointer">
-                <input type="checkbox" checked={removed} onChange={(e) => setRemoved(e.target.checked)} className="mt-0.5" />
-                <div className="text-sm text-slate-700">
-                  <strong>This feature is no longer in the product</strong>, OR I shipped it but never had customers ask for it, OR I made a mistake adding it.
-                </div>
-              </label>
-              <label className="flex items-start gap-3 cursor-pointer">
-                <input type="checkbox" checked={understood} onChange={(e) => setUnderstood(e.target.checked)} className="mt-0.5" />
-                <div className="text-sm text-slate-700">
-                  I understand customers who already heard about this improvement <strong>cannot be un-told</strong>.
-                </div>
-              </label>
-            </div>
-            <div className="flex items-center justify-end gap-2 mt-5">
-              <button onClick={onClose} className="text-slate-500 text-sm px-4 py-2">Cancel</button>
-              <button onClick={submit} disabled={!removed || !understood || submitting} className="bg-red-600 text-white rounded-full px-5 py-2 text-sm font-medium disabled:bg-slate-200 disabled:text-slate-400">
-                {submitting ? 'Archiving…' : 'Archive improvement'}
-              </button>
-            </div>
-          </div>
+      <div className="bg-white rounded-2xl max-w-md w-full p-6">
+        <h4 className="font-semibold text-slate-900 text-lg">Remove improvement?</h4>
+        <p className="text-sm text-slate-600 mt-2">No new matches after removal. Past emails stay sent.</p>
+        <label className="flex items-start gap-3 cursor-pointer mt-4">
+          <input
+            type="checkbox"
+            checked={confirmed}
+            onChange={(e) => setConfirmed(e.target.checked)}
+            className="mt-0.5"
+          />
+          <span className="text-sm text-slate-700">Confirm removal.</span>
+        </label>
+        <div className="flex items-center justify-end gap-2 mt-5">
+          <button onClick={onClose} className="text-slate-500 text-sm px-4 py-2">Cancel</button>
+          <button
+            onClick={submit}
+            disabled={!confirmed || submitting}
+            className="bg-red-600 text-white rounded-full px-5 py-2 text-sm font-medium disabled:bg-slate-200 disabled:text-slate-400"
+          >
+            {submitting ? 'Removing…' : 'Remove'}
+          </button>
         </div>
       </div>
     </Modal>

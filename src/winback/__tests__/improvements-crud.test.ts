@@ -248,21 +248,21 @@ describe('POST /api/improvements/[id]/archive', () => {
   }
   function params(id: string) { return { params: Promise.resolve({ id }) } }
 
-  it('rejects when either confirmation flag is missing', async () => {
+  it('rejects when confirmed flag is missing', async () => {
     mockAuth.mockResolvedValue({ user: { id: 'user_1' } })
     mockSelect.mockReturnValueOnce(customerLookup('cust_1'))
-    const res = await archive(makeReq({ confirmFeatureRemoved: true }), params('imp_1'))
+    const res = await archive(makeReq({}), params('imp_1'))
     expect(res.status).toBe(400)
   })
 
-  it('rejects when both flags are not literal true', async () => {
+  it('rejects when confirmed is not literal true', async () => {
     mockAuth.mockResolvedValue({ user: { id: 'user_1' } })
     mockSelect.mockReturnValueOnce(customerLookup('cust_1'))
-    const res = await archive(makeReq({ confirmFeatureRemoved: 'yes', confirmConsequencesUnderstood: true }), params('imp_1'))
+    const res = await archive(makeReq({ confirmed: 'yes' }), params('imp_1'))
     expect(res.status).toBe(400)
   })
 
-  it('archives when both flags are true', async () => {
+  it('archives when confirmed is true', async () => {
     mockAuth.mockResolvedValue({ user: { id: 'user_1' } })
     mockSelect.mockReturnValueOnce(customerLookup('cust_1'))
     mockUpdate.mockReturnValue({
@@ -273,10 +273,7 @@ describe('POST /api/improvements/[id]/archive', () => {
       }),
     })
 
-    const res = await archive(
-      makeReq({ confirmFeatureRemoved: true, confirmConsequencesUnderstood: true }),
-      params('imp_1'),
-    )
+    const res = await archive(makeReq({ confirmed: true }), params('imp_1'))
     expect(res.status).toBe(200)
     expect(mockLogEvent).toHaveBeenCalledWith(
       expect.objectContaining({ name: 'improvement_archived' }),
