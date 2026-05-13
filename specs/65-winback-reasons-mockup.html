@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<!-- Winback reasons editor mockup -->
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Winback — Reasons editor</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }
+    .label-blue { color: #2563eb; font-size: 0.75rem; font-weight: 600; letter-spacing: 0.15em; text-transform: uppercase; }
+    .annotation { background: #fffbea; border: 1px solid #facc15; border-radius: 8px; padding: 0.6rem 0.8rem; font-size: 0.78rem; color: #713f12; }
+    .annotation strong { color: #713f12; }
+    .guard { background: #f0fdf4; border: 1px solid #86efac; border-radius: 8px; padding: 0.6rem 0.8rem; font-size: 0.78rem; color: #14532d; }
+    .guard strong { color: #14532d; }
+  </style>
+</head>
+<body class="bg-[#f5f5f5] text-slate-900">
+
+<!-- ============ NAV ============ -->
+<nav class="sticky top-0 z-50 bg-white border-b border-slate-100">
+  <div class="max-w-5xl mx-auto px-6 flex items-center justify-between h-14">
+    <div class="flex items-center gap-2">
+      <div class="w-7 h-7 rounded-xl bg-blue-500 flex items-center justify-center">
+        <svg class="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 20 20"><path d="M11 3 L4 12 H10 L9 17 L16 8 H10 Z"/></svg>
+      </div>
+      <span class="font-semibold text-slate-900">winback</span>
+    </div>
+    <div class="flex items-center gap-1">
+      <a class="text-slate-500 px-4 py-1.5 text-sm font-medium">Dashboard</a>
+      <a class="bg-[#0f172a] text-white rounded-full px-4 py-1.5 text-sm font-medium">Reasons</a>
+      <a class="text-slate-500 px-4 py-1.5 text-sm font-medium">Settings</a>
+    </div>
+    <div class="flex items-center gap-2">
+      <div class="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center text-white text-sm font-medium">T</div>
+      <span class="text-sm text-slate-700 font-medium">Thejas</span>
+    </div>
+  </div>
+</nav>
+
+<!-- ============ PAGE HEADER ============ -->
+<div class="max-w-5xl mx-auto px-6 pt-10 pb-2">
+  <p class="label-blue">Winback</p>
+  <h1 class="text-4xl font-bold mt-1">Winback reasons.</h1>
+  <p class="text-sm text-slate-500 mt-3 max-w-2xl">Real product improvements that go to cancelled customers who asked for them. Each improvement stays live for <strong>12 months</strong>. Max <strong>10 active improvements</strong> at a time.</p>
+</div>
+
+<!-- ============ SECTION 1 · ROADMAP (TOP REASONS CUSTOMERS LEFT) ============ -->
+<section class="max-w-5xl mx-auto px-6 pt-6">
+  <div class="bg-white rounded-2xl border border-slate-100 overflow-hidden">
+    <div class="px-6 py-5 border-b border-slate-100">
+      <p class="label-blue">Roadmap signal</p>
+      <h3 class="text-lg font-semibold mt-1">What your cancelled customers asked for.</h3>
+      <p class="text-sm text-slate-500 mt-1">The most common reasons, last 90 days. Patterns surface when 3+ customers cite something. Use this to decide what to improve next.</p>
+    </div>
+    <ul class="divide-y divide-slate-100">
+      <li class="px-6 py-4 flex items-center gap-4">
+        <div class="w-10 h-10 rounded-full bg-red-50 border border-red-200 flex items-center justify-center flex-shrink-0">
+          <span class="text-lg">🔥</span>
+        </div>
+        <div class="flex-1">
+          <div class="flex items-center gap-2 flex-wrap">
+            <h4 class="font-semibold text-slate-900">Native Slack integration</h4>
+            <span class="rounded-full px-2.5 py-0.5 text-xs font-medium bg-red-50 text-red-700 border border-red-200">5 customers</span>
+          </div>
+          <p class="text-xs text-slate-500 mt-1 italic">"If you ship native Slack integration I'll absolutely come back."</p>
+        </div>
+        <button class="bg-[#0f172a] text-white rounded-full px-4 py-1.5 text-sm font-medium">+ Add as improvement</button>
+      </li>
+      <li class="px-6 py-4 flex items-center gap-4">
+        <div class="w-10 h-10 rounded-full bg-amber-50 border border-amber-200 flex items-center justify-center flex-shrink-0">
+          <span class="text-lg">📊</span>
+        </div>
+        <div class="flex-1">
+          <div class="flex items-center gap-2 flex-wrap">
+            <h4 class="font-semibold text-slate-900">Bulk CSV import / export (uncapped)</h4>
+            <span class="rounded-full px-2.5 py-0.5 text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200">4 customers</span>
+          </div>
+          <p class="text-xs text-slate-500 mt-1 italic">"need bulk CSV import for our 50K customer base"</p>
+        </div>
+        <button class="bg-[#0f172a] text-white rounded-full px-4 py-1.5 text-sm font-medium">+ Add as improvement</button>
+      </li>
+      <li class="px-6 py-4 flex items-center gap-4">
+        <div class="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center flex-shrink-0">
+          <span class="text-lg">🌱</span>
+        </div>
+        <div class="flex-1">
+          <div class="flex items-center gap-2 flex-wrap">
+            <h4 class="font-semibold text-slate-900">Multi-currency support</h4>
+            <span class="rounded-full px-2.5 py-0.5 text-xs font-medium bg-slate-100 text-slate-700 border border-slate-200">3 customers</span>
+          </div>
+          <p class="text-xs text-slate-500 mt-1 italic">"wanted multi-currency, never shipped"</p>
+        </div>
+        <button class="bg-[#0f172a] text-white rounded-full px-4 py-1.5 text-sm font-medium">+ Add as improvement</button>
+      </li>
+    </ul>
+    <div class="px-6 py-3 bg-slate-50 border-t border-slate-100 text-xs text-slate-500 flex justify-between">
+      <span>3 patterns surfaced · 9 single requests filtered out</span>
+      <a class="text-blue-600 font-medium cursor-pointer">Show single requests (9)</a>
+    </div>
+  </div>
+
+  <div class="mt-3 grid grid-cols-2 gap-3">
+    <div class="annotation"><strong>Roadmap signal sits above the editor</strong> so the merchant sees demand before they decide what to ship. Top reasons = best ROI of engineering time.</div>
+    <div class="annotation"><strong>"+ Add as improvement"</strong> pre-fills the form with the pattern title — if you've shipped Slack integration, one click sets up an improvement that auto-matches all 5 customers who cited it.</div>
+  </div>
+</section>
+
+<!-- ============ SECTION 2 · ACTIVE FIXES LIST ============ -->
+<section class="max-w-5xl mx-auto px-6 pt-10">
+  <div class="bg-white rounded-2xl border border-slate-100 overflow-hidden">
+    <div class="px-6 py-5 border-b border-slate-100 flex items-center justify-between">
+      <div>
+        <p class="label-blue">Active improvements</p>
+        <h3 class="text-lg font-semibold mt-1">5 / 10 active improvements.</h3>
+        <p class="text-sm text-slate-500 mt-1">Latest first. Most merchants add one every 2 months. Your last improvement: 18 days ago.</p>
+      </div>
+      <button class="bg-[#0f172a] text-white rounded-full px-5 py-2 text-sm font-medium hover:bg-[#1e293b]">+ Add an improvement</button>
+    </div>
+
+    <!-- Stats strip -->
+    <div class="px-6 py-3 bg-slate-50 border-b border-slate-100 flex items-center gap-6 text-sm">
+      <div><span class="text-xs uppercase tracking-wide text-slate-400">Customers reached:</span> <span class="font-medium ml-1">8 in the last 30 days</span></div>
+      <div><span class="text-xs uppercase tracking-wide text-slate-400">Came back:</span> <span class="font-medium text-green-700 ml-1">3 customers</span></div>
+    </div>
+
+    <ul class="divide-y divide-slate-100">
+      <!-- Improvement 1: recent, healthy -->
+      <li class="px-6 py-4 group hover:bg-slate-50/60">
+        <div class="flex items-start gap-4">
+          <div class="text-xs text-slate-400 w-24 pt-0.5">
+            <div class="font-medium text-slate-700">May 10</div>
+            <div class="text-slate-400">Rolls off May 10, 2027</div>
+          </div>
+          <div class="flex-1">
+            <div class="flex items-center justify-between gap-2">
+              <h4 class="font-medium text-slate-900">Shipped SSO (SAML + Okta + Google Workspace)</h4>
+              <div class="flex items-center gap-2">
+                <span class="rounded-full px-2.5 py-0.5 text-xs font-medium bg-green-50 text-green-700 border border-green-200">matched 4 · 1 recovered</span>
+                <button class="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-slate-700 text-lg leading-none px-1">⋯</button>
+              </div>
+            </div>
+            <p class="text-sm text-slate-500 mt-1">Enterprise tier now supports single sign-on. Works with Okta, Google Workspace, Microsoft Entra.</p>
+            <p class="text-xs text-slate-400 mt-1.5">Addresses: <span class="text-slate-600">"SSO" pattern (5 customers when added)</span></p>
+          </div>
+        </div>
+      </li>
+
+      <!-- Improvement 2: hover menu OPEN visual demo -->
+      <li class="px-6 py-4 bg-slate-50/60 relative">
+        <div class="flex items-start gap-4">
+          <div class="text-xs text-slate-400 w-24 pt-0.5">
+            <div class="font-medium text-slate-700">May 5</div>
+            <div class="text-slate-400">Rolls off May 5, 2027</div>
+          </div>
+          <div class="flex-1">
+            <div class="flex items-center justify-between gap-2">
+              <h4 class="font-medium text-slate-900">Bulk CSV import up to 100K rows</h4>
+              <div class="flex items-center gap-2">
+                <span class="rounded-full px-2.5 py-0.5 text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200">matched 2</span>
+                <button class="text-slate-700 text-lg leading-none px-1">⋯</button>
+              </div>
+            </div>
+            <p class="text-sm text-slate-500 mt-1">Old limit was 1,000 rows. Streams straight to S3 for large imports.</p>
+            <p class="text-xs text-slate-400 mt-1.5">Addresses: <span class="text-slate-600">"Bulk CSV import" pattern (4 customers when added)</span></p>
+          </div>
+        </div>
+        <!-- Hover menu -->
+        <div class="absolute right-6 top-12 w-44 bg-white border border-slate-200 rounded-xl shadow-lg z-10 py-1 text-sm">
+          <button class="w-full text-left px-3 py-1.5 hover:bg-slate-50 text-slate-700">✎ Edit</button>
+          <div class="border-t border-slate-100 my-1"></div>
+          <button class="w-full text-left px-3 py-1.5 hover:bg-red-50 text-red-600">⌫ Remove improvement</button>
+        </div>
+      </li>
+
+      <!-- Improvement 3: about to roll off -->
+      <li class="px-6 py-4 group hover:bg-slate-50/60">
+        <div class="flex items-start gap-4">
+          <div class="text-xs w-24 pt-0.5">
+            <div class="font-medium text-slate-700">Jun 12, 2025</div>
+            <div class="text-amber-700 font-medium">⚠ Rolls off in 30d</div>
+          </div>
+          <div class="flex-1">
+            <div class="flex items-center justify-between gap-2">
+              <h4 class="font-medium text-slate-900">Slack notifications for new orders</h4>
+              <div class="flex items-center gap-2">
+                <span class="rounded-full px-2.5 py-0.5 text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200">matched 8 · 2 recovered</span>
+                <button class="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-slate-700 text-lg leading-none px-1">⋯</button>
+              </div>
+            </div>
+            <p class="text-sm text-slate-500 mt-1">Incoming-webhook style — pick a channel, get a message when new orders come in.</p>
+            <div class="mt-2 text-xs bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-amber-900">
+              ⚠ This improvement has matched everyone in its window. It auto-rolls off in 30 days. If the feature is still in the product, no action needed — newer cancellations may still be addressed by it via the 12-month replay window.
+            </div>
+          </div>
+        </div>
+      </li>
+
+      <li class="px-6 py-4 group hover:bg-slate-50/60">
+        <div class="flex items-start gap-4">
+          <div class="text-xs text-slate-400 w-24 pt-0.5">
+            <div class="font-medium text-slate-700">Mar 12</div>
+            <div class="text-slate-400">Rolls off Mar 12, 2027</div>
+          </div>
+          <div class="flex-1">
+            <div class="flex items-center justify-between gap-2">
+              <h4 class="font-medium text-slate-900">Dashboard load time: 3s → 400ms (p95)</h4>
+              <div class="flex items-center gap-2">
+                <span class="rounded-full px-2.5 py-0.5 text-xs font-medium bg-slate-100 text-slate-500 border border-slate-200">no matches</span>
+                <button class="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-slate-700 text-lg leading-none px-1">⋯</button>
+              </div>
+            </div>
+            <p class="text-sm text-slate-500 mt-1">Major rewrite of the rendering pipeline.</p>
+          </div>
+        </div>
+      </li>
+
+      <li class="px-6 py-4 group hover:bg-slate-50/60">
+        <div class="flex items-start gap-4">
+          <div class="text-xs text-slate-400 w-24 pt-0.5">
+            <div class="font-medium text-slate-700">Feb 8</div>
+            <div class="text-slate-400">Rolls off Feb 8, 2027</div>
+          </div>
+          <div class="flex-1">
+            <div class="flex items-center justify-between gap-2">
+              <h4 class="font-medium text-slate-900">Stripe webhook v2 — async delivery</h4>
+              <div class="flex items-center gap-2">
+                <span class="rounded-full px-2.5 py-0.5 text-xs font-medium bg-slate-100 text-slate-500 border border-slate-200">no matches</span>
+                <button class="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-slate-700 text-lg leading-none px-1">⋯</button>
+              </div>
+            </div>
+            <p class="text-sm text-slate-500 mt-1">Eliminates the 5-minute polling lag.</p>
+          </div>
+        </div>
+      </li>
+    </ul>
+
+    <!-- 2-month nudge bar (when applicable) -->
+    <div class="px-6 py-3 bg-blue-50 border-t border-blue-100 text-sm text-blue-900 flex items-center justify-between">
+      <span>💡 Most merchants add one improvement every 2 months. <strong>You're on track.</strong></span>
+      <span class="text-xs text-blue-700/70">Next nudge: Jul 13 (if no new improvement by then)</span>
+    </div>
+  </div>
+
+  <div class="mt-3 grid grid-cols-2 gap-3">
+    <div class="annotation"><strong>Cap at 10 active improvements</strong> — when the merchant tries to add an 11th, the "Add an improvement" button is disabled with a hint to remove or wait for auto-roll-off.</div>
+    <div class="annotation"><strong>"Rolls off in 30d" warning</strong> appears on improvements ≤ 30 days from their 12-month expiry. No action required by default — just informs.</div>
+    <div class="annotation"><strong>Stats strip shows real outcomes:</strong> who was emailed, who came back, and how many are still in cooldown (prevents merchants from worrying we're spamming).</div>
+    <div class="guard"><strong>"Addresses: pattern (N customers)"</strong> on each improvement — links back to the demand signal that justified shipping it. Audit trail of "we built this for real customer reasons."</div>
+  </div>
+</section>
+
+<!-- ============ SECTION 3 · ADD A FIX (FORM) ============ -->
+<section class="max-w-5xl mx-auto px-6 pt-12">
+  <div class="bg-slate-200/50 rounded-2xl p-4 mb-4">
+    <p class="text-xs font-semibold uppercase tracking-widest text-slate-500">Add improvement · modal contents</p>
+  </div>
+
+  <div class="bg-white rounded-2xl border border-slate-100 p-6">
+    <h3 class="text-xl font-semibold">Add an improvement.</h3>
+    <p class="text-sm text-slate-500 mt-1">An improvement is a real shipped improvement. It will stay live for 12 months and reach cancelled customers who asked for something like it.</p>
+
+    <div class="grid grid-cols-3 gap-6 mt-6">
+      <div class="col-span-2 space-y-4">
+        <div>
+          <label class="block text-xs font-semibold uppercase tracking-widest text-slate-500 mb-1.5">Date shipped</label>
+          <input type="date" value="2026-05-13" class="border border-slate-200 rounded-full px-4 py-2.5 text-sm w-full focus:outline-none focus:ring-2 focus:ring-blue-500" />
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold uppercase tracking-widest text-slate-500 mb-1.5">What did you ship?</label>
+          <input type="text" value="Shipped native Slack integration with channel routing" class="border border-slate-200 rounded-full px-4 py-2.5 text-sm w-full focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          <p class="text-xs text-green-600 mt-1.5">✓ Concrete: names the feature and what it does.</p>
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold uppercase tracking-widest text-slate-500 mb-1.5">Short description</label>
+          <textarea rows="2" class="border border-slate-200 rounded-2xl px-4 py-2.5 text-sm w-full focus:outline-none focus:ring-2 focus:ring-blue-500">Pick a Slack channel; we send a message when new orders come in. Workspaces with multiple Slack orgs get per-team routing.</textarea>
+          <div class="flex justify-between text-xs text-slate-400 mt-1.5">
+            <span>148 / 500 characters</span>
+            <span class="text-green-600">✓ AI quality: passes</span>
+          </div>
+        </div>
+
+        <!-- Linked demand signal -->
+        <div>
+          <label class="block text-xs font-semibold uppercase tracking-widest text-slate-500 mb-1.5">Which customer reason does this address?</label>
+          <p class="text-xs text-slate-500 mb-2">Pick from your top customer reasons. This justifies why you're claiming the improvement and links it to the demand signal.</p>
+          <div class="space-y-2">
+            <label class="flex items-start gap-3 p-3 rounded-xl border border-blue-300 bg-blue-50 cursor-pointer">
+              <input type="checkbox" checked class="mt-0.5" />
+              <div class="flex-1">
+                <div class="text-sm font-medium text-slate-900">Native Slack integration <span class="text-xs text-blue-700 font-normal">— 5 customers, $245/mo at stake</span></div>
+                <div class="text-xs text-slate-500 mt-0.5">5 customers · concrete quotes available in the roadmap above</div>
+              </div>
+            </label>
+            <label class="flex items-start gap-3 p-3 rounded-xl border border-slate-200 hover:bg-slate-50 cursor-pointer">
+              <input type="checkbox" class="mt-0.5" />
+              <div class="flex-1">
+                <div class="text-sm font-medium text-slate-900">Bulk CSV import <span class="text-xs text-slate-500 font-normal">— 4 customers, $196/mo at stake</span></div>
+              </div>
+            </label>
+            <label class="flex items-start gap-3 p-3 rounded-xl border border-slate-200 hover:bg-slate-50 cursor-pointer">
+              <input type="checkbox" class="mt-0.5" />
+              <div class="flex-1">
+                <div class="text-sm font-medium text-slate-900">Multi-currency support <span class="text-xs text-slate-500 font-normal">— 3 customers, $98/mo at stake</span></div>
+              </div>
+            </label>
+          </div>
+          <p class="text-xs text-slate-500 mt-2">No matching reason? <a class="text-blue-600 underline">Add anyway (manual confirmation)</a> — for improvements that pre-empt demand we haven't yet seen.</p>
+        </div>
+
+        <!-- Confirmation -->
+        <div class="rounded-xl border border-amber-200 bg-amber-50 p-4">
+          <label class="flex items-start gap-3 cursor-pointer">
+            <input type="checkbox" checked class="mt-0.5" />
+            <div>
+              <div class="text-sm font-medium text-amber-900">I confirm this is real.</div>
+              <div class="text-xs text-amber-800/90 mt-1">The improvement is in the live product. Customers I claim asked for it (above) genuinely did. Publishing tells cancelled customers who asked for it.</div>
+            </div>
+          </label>
+        </div>
+      </div>
+
+      <!-- Sidebar: single AI estimate -->
+      <div>
+        <p class="text-xs font-semibold uppercase tracking-widest text-slate-500 mb-2">Estimated reach</p>
+
+        <div class="rounded-xl border border-blue-200 bg-blue-50/60 p-5 text-center">
+          <div class="text-4xl font-bold text-slate-900">~8–13</div>
+          <div class="text-sm text-slate-600 mt-1">customers will hear about this improvement over its 12-month life</div>
+          <div class="text-xs text-blue-700 mt-3 px-2">AI estimate based on current customer demand and your typical cancellation rate.</div>
+        </div>
+
+        <p class="text-xs font-semibold uppercase tracking-widest text-slate-500 mt-5 mb-2">Guardrails</p>
+        <ul class="text-xs text-slate-600 space-y-1">
+          <li>· Each customer hears about this at most once.</li>
+          <li>· Customers who came back or opted out are excluded.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="flex items-center gap-2 mt-6 justify-end">
+      <button class="text-slate-500 text-sm px-4 py-2">Cancel</button>
+      <button class="bg-[#0f172a] text-white rounded-full px-5 py-2 text-sm font-medium">Publish improvement &rarr;</button>
+    </div>
+  </div>
+
+  <div class="mt-3 grid grid-cols-2 gap-3">
+    <div class="guard"><strong>Confirmation gate before publish.</strong> Merchant must tick the "I confirm this is real" box. The box explicitly states up to 5 emails will go out. No surprise.</div>
+    <div class="guard"><strong>Required link to demand signal.</strong> Default flow forces the merchant to pick which customer reason this addresses — proves they're shipping based on real feedback. Escape hatch ("Add anyway") exists for pre-emptive improvements.</div>
+    <div class="annotation"><strong>Cap-enforced quality:</strong> only 10 active improvements possible. If at 10/10, the "+ Add an improvement" button disables with a hint to wait for auto-roll-off or remove one manually.</div>
+    <div class="annotation"><strong>Publish button is a clean "Publish improvement →".</strong> Blast radius lives in the sidebar's "Estimated reach" card, not in the button label — the action is publishing, not emailing.</div>
+  </div>
+</section>
+
+<!-- ============ SECTION 4 · REMOVE FIX (CONFIRMATION) ============ -->
+<section class="max-w-5xl mx-auto px-6 pt-12">
+  <div class="bg-slate-200/50 rounded-2xl p-4 mb-4">
+    <p class="text-xs font-semibold uppercase tracking-widest text-slate-500">Remove improvement · confirmation modal</p>
+  </div>
+
+  <div class="bg-white rounded-2xl border border-slate-200 shadow-lg p-6 max-w-2xl mx-auto">
+    <div class="flex items-start gap-3">
+      <div class="w-10 h-10 rounded-full bg-red-50 border border-red-200 flex items-center justify-center flex-shrink-0">
+        <span class="text-lg">⌫</span>
+      </div>
+      <div class="flex-1">
+        <h4 class="font-semibold text-slate-900">Remove "Bulk CSV import up to 100K rows"?</h4>
+
+        <div class="mt-4 rounded-xl bg-slate-50 border border-slate-200 p-3 text-sm">
+          <p class="font-medium text-slate-800">Impact so far:</p>
+          <ul class="mt-1 text-slate-600 space-y-0.5">
+            <li>· Reached <strong>2 customers</strong>; none have come back yet</li>
+            <li>· Originally addressed: "Bulk CSV import" pattern (4 customers)</li>
+            <li>· Removing means future customers asking for this won't hear about it</li>
+          </ul>
+        </div>
+
+        <div class="mt-4 space-y-3">
+          <label class="flex items-start gap-3 cursor-pointer">
+            <input type="checkbox" class="mt-0.5" />
+            <div class="text-sm text-slate-700">
+              <strong>This feature is no longer in the product</strong>, OR I shipped it but never had customers ask for it, OR I made a mistake adding it.
+            </div>
+          </label>
+          <label class="flex items-start gap-3 cursor-pointer">
+            <input type="checkbox" class="mt-0.5" />
+            <div class="text-sm text-slate-700">
+              I understand customers who already heard about this improvement <strong>cannot be un-told</strong>, and future customers asking for it won't be matched here.
+            </div>
+          </label>
+        </div>
+
+        <div class="flex items-center justify-end gap-2 mt-5">
+          <button class="text-slate-500 text-sm px-4 py-2">Cancel</button>
+          <button class="bg-red-600 text-white rounded-full px-5 py-2 text-sm font-medium" disabled style="opacity:0.5">Remove improvement</button>
+        </div>
+        <p class="text-xs text-slate-400 mt-2 text-right">Both boxes must be checked to enable removal.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="mt-3 grid grid-cols-2 gap-3">
+    <div class="guard"><strong>Two checkboxes before removal.</strong> One asserts the feature isn't real anymore; the other acknowledges the consequence. No accidental removes.</div>
+    <div class="guard"><strong>Names the unmatched customers in the pattern.</strong> "2 customers in this pattern have not been matched yet" — makes the merchant feel the cost of removal.</div>
+    <div class="annotation"><strong>No "delete forever" by default.</strong> Removal soft-archives the improvement; past matches stay in history. Restore from version history if needed (the 3 most recent saves are kept).</div>
+  </div>
+</section>
+
+<!-- ============ SECTION 5 · 2-MONTH NUDGE (TOP-OF-DASHBOARD VARIANT) ============ -->
+<section class="max-w-5xl mx-auto px-6 pt-12">
+  <div class="bg-slate-200/50 rounded-2xl p-4 mb-4">
+    <p class="text-xs font-semibold uppercase tracking-widest text-slate-500">Encouragement nudge · 2-month cadence</p>
+  </div>
+
+  <div class="rounded-2xl border border-amber-200 bg-gradient-to-br from-amber-50 to-amber-100/60 p-6 flex items-start gap-4">
+    <div class="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0">
+      <span class="text-xl">🔧</span>
+    </div>
+    <div class="flex-1">
+      <h4 class="font-semibold text-slate-900">It's been 71 days since your last improvement.</h4>
+      <p class="text-sm text-amber-900/90 mt-1">Most merchants ship an improvement every 60 days. You have <strong>12 cancelled customers waiting</strong> on patterns you haven't addressed yet — top one: <strong>Native Slack integration</strong> (5 customers).</p>
+      <div class="flex items-center gap-2 mt-3 flex-wrap">
+        <button class="bg-[#0f172a] text-white rounded-full px-5 py-2 text-sm font-medium">+ Add an improvement</button>
+        <button class="text-amber-900/80 text-sm font-medium px-3 py-2">Nothing this period</button>
+        <span class="ml-auto text-xs text-amber-900/50">Next nudge: Jul 14 (max once per 60 days)</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="mt-3 grid grid-cols-2 gap-3">
+    <div class="guard"><strong>Once every 60 days max.</strong> Dismissing pushes it out another 60 days. Adding an improvement resets the clock.</div>
+    <div class="annotation"><strong>The nudge cites concrete demand.</strong> "12 customers waiting" + the top pattern with $ at stake — the merchant sees this and knows what to ship.</div>
+  </div>
+</section>
+
+<!-- ============ SECTION 6 · RULES SUMMARY ============ -->
+<section class="max-w-5xl mx-auto px-6 py-12">
+  <div class="bg-white rounded-2xl border border-slate-100 p-6">
+    <p class="label-blue">Rules in plain English</p>
+    <ul class="mt-4 space-y-2 text-sm text-slate-700">
+      <li>✅ <strong>An improvement is a real product improvement</strong> — confirmed at add-time, confirmed at remove-time.</li>
+      <li>✅ <strong>Each improvement lives for 12 months, then auto-rolls off.</strong> Older ones go quietly without merchant action.</li>
+      <li>✅ <strong>Up to 10 active improvements at any time.</strong></li>
+      <li>✅ <strong>Every improvement is linked to a customer demand signal</strong> (the roadmap panel). Pre-emptive improvements without a signal require explicit acknowledgement.</li>
+      <li>✅ <strong>Removing requires two checked boxes</strong> — confirming the feature is no longer real AND acknowledging that customers already told can't be un-told.</li>
+      <li>✅ <strong>Merchants nudged at most every 60 days.</strong></li>
+      <li>✅ <strong>The roadmap signal sits above the editor</strong> — improving what customers actually want, not guessing.</li>
+      <li>✅ <strong>Reach shown before publish</strong> — sidebar shows AI-estimated count of customers who'll hear about it over the 12-month life. No individual names.</li>
+      <li>✅ <strong>Each customer hears about an improvement at most once.</strong> The system handles the spacing; the merchant doesn't have to think about it.</li>
+      <li>✅ <strong>Customers see real improvements, not marketing.</strong> AI quality gate at write time blocks vague entries (e.g. "we improved performance").</li>
+    </ul>
+  </div>
+</section>
+
+</body>
+</html>
