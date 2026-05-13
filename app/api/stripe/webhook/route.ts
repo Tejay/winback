@@ -287,7 +287,6 @@ async function processChurn(event: Stripe.Event) {
       {
         founderName: customer.founderName ?? undefined,
         productName: customer.productName ?? undefined,
-        changelog: customer.changelogText ?? undefined,
       },
     )
     subscriberId = existing.id
@@ -301,7 +300,6 @@ async function processChurn(event: Stripe.Event) {
       {
         founderName: customer.founderName ?? undefined,
         productName: customer.productName ?? undefined,
-        changelog: customer.changelogText ?? undefined,
       },
     )
 

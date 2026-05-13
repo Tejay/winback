@@ -5,11 +5,9 @@ import type { ClassificationResult, SubscriberSignals } from './types'
 /**
  * Spec 65 — improvement matcher + email generator + pre-send sanity check.
  *
- * The single-blob `matchChangelogToSubscribers` in `changelog-match.ts` is
- * the pre-Spec-65 path. This module operates on the new wb_improvements
- * per-entry model: ONE subscriber's triggerNeed is compared against EACH
- * active improvement, and we pick the single best match (highest
- * confidence) above a threshold.
+ * Operates on the wb_improvements per-entry model: ONE subscriber's
+ * triggerNeed is compared against EACH active improvement, and we pick
+ * the single best match (highest confidence) above a threshold.
  */
 
 // --------------------------------------------------------------------------

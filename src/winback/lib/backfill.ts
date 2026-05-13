@@ -169,7 +169,6 @@ export async function backfillCancellations(customerId: string): Promise<void> {
         classification = await classifySubscriber(signals, {
           productName: customer.productName ?? undefined,
           founderName: customer.founderName ?? undefined,
-          changelog: customer.changelogText ?? undefined,
         })
         console.log('Backfill LLM classify:', signals.email, 'tier:', classification.tier)
       } else {

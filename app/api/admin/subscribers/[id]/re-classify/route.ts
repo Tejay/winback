@@ -75,7 +75,6 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       customerId: churnedSubscribers.customerId,
       founderName: customers.founderName,
       productName: customers.productName,
-      changelogText: customers.changelogText,
     })
     .from(churnedSubscribers)
     .innerJoin(customers, eq(customers.id, churnedSubscribers.customerId))
@@ -118,7 +117,6 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     fresh = await classifySubscriber(signals, {
       founderName: row.founderName ?? undefined,
       productName: row.productName ?? undefined,
-      changelog: row.changelogText ?? undefined,
     })
   } catch (err) {
     return NextResponse.json(

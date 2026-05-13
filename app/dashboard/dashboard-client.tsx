@@ -1064,11 +1064,6 @@ export function DashboardClient({
               </div>
             )}
 
-            {/* Spec 40 polish — Trigger need. The LLM-extracted product gap
-                that, if shipped, would win this customer back. Drives the
-                changelog-match feature. Worth surfacing prominently because
-                this is *why* the win-back system has any standing power
-                beyond the immediate exit email. */}
             {selected.triggerNeed && (
               <div className="mx-6 mt-4 bg-violet-50 rounded-xl p-4 border border-violet-100">
                 <div className="flex items-start gap-3">
@@ -1083,14 +1078,8 @@ export function DashboardClient({
                       &ldquo;{selected.triggerNeed}&rdquo;
                     </div>
                     <div className="text-[11px] text-violet-700/70 mt-2">
-                      We&apos;ll auto-fire a win-back when your changelog mentions{' '}
-                      {selected.triggerKeyword ? (
-                        <span className="font-mono bg-violet-100 px-1 py-0.5 rounded">
-                          {selected.triggerKeyword}
-                        </span>
-                      ) : (
-                        <span>this</span>
-                      )}.
+                      We&apos;ll auto-fire a win-back when you ship a matching improvement on the{' '}
+                      <a href="/reasons" className="underline">Winback reasons</a> page.
                     </div>
                   </div>
                 </div>

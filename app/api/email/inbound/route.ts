@@ -304,7 +304,6 @@ export async function POST(req: Request) {
     const classification = await classifySubscriber(signals, {
       founderName: customer?.founderName ?? undefined,
       productName: customer?.productName ?? undefined,
-      changelog: customer?.changelogText ?? undefined,
     })
 
     await db

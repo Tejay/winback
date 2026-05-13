@@ -6,10 +6,6 @@ import { customers, churnedSubscribers, recoveries } from '@/lib/schema'
 import { eq, and, inArray } from 'drizzle-orm'
 import { decrypt } from '@/src/winback/lib/encryption'
 import { classifySubscriber } from '@/src/winback/lib/classifier'
-import {
-  matchChangelogToSubscribers,
-  generateWinBackEmail,
-} from '@/src/winback/lib/changelog-match'
 import { appendStandardFooter } from '@/src/winback/lib/email'
 import { buildHandoffNotification } from '@/src/winback/lib/founder-handoff-email'
 import { logEvent } from '@/src/winback/lib/events'
@@ -123,8 +119,6 @@ async function wipeTestSubscribers(stripe: Stripe | null, customerId: string): P
  *                 classify each, return classification + would-be exit email
  *  - reply      — { subscriberId, replyText } simulate a reply, re-classify,
  *                 return new classification + would-be follow-up email
- *  - changelog  — { changelogText } run matcher + email generator across all
- *                 test subscribers, return matched IDs + generated emails
  *  - reset      — delete all test subscribers
  *
  * GET — returns current state of all test subscribers
@@ -388,7 +382,6 @@ async function handlePost(req: Request) {
         classification = await classifySubscriber(signals, {
           founderName: customer.founderName ?? undefined,
           productName: customer.productName ?? undefined,
-          changelog: customer.changelogText ?? undefined,
         })
       } catch (err) {
         classifyError = err instanceof Error ? err.message : String(err)
@@ -638,7 +631,6 @@ async function handlePost(req: Request) {
       classification = await classifySubscriber(signals, {
         founderName: customer.founderName ?? undefined,
         productName: customer.productName ?? undefined,
-        changelog: customer.changelogText ?? undefined,
       })
     } catch (err) {
       return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 })
@@ -731,86 +723,9 @@ async function handlePost(req: Request) {
     })
   }
 
-  if (action === 'changelog') {
-    const changelogText = body.changelogText as string
-    if (!changelogText) {
-      return NextResponse.json({ error: 'changelogText required' }, { status: 400 })
-    }
-
-    const subs = await db
-      .select()
-      .from(churnedSubscribers)
-      .where(
-        and(
-          eq(churnedSubscribers.customerId, customer.id),
-          eq(churnedSubscribers.source, TEST_SOURCE),
-        )
-      )
-
-    const candidates = subs
-      .filter(s => s.triggerNeed || s.triggerKeyword)
-      .map(s => ({
-        id: s.id,
-        need: (s.triggerNeed ?? s.triggerKeyword) as string,
-      }))
-
-    if (candidates.length === 0) {
-      return NextResponse.json({ ok: true, candidatesCount: 0, matchedIds: [], emails: [] })
-    }
-
-    const matchedIds = await matchChangelogToSubscribers(changelogText, candidates)
-
-    const fromName = customer.founderName ?? 'The team'
-    const emails: Array<{
-      subscriberId: string
-      subscriberName: string | null
-      need: string
-      generated: { subject: string; body: string } | null
-    }> = []
-
-    for (const sub of subs) {
-      if (!matchedIds.has(sub.id)) continue
-      const need = sub.triggerNeed ?? sub.triggerKeyword ?? ''
-      const generated = need
-        ? await generateWinBackEmail({
-            changelogText,
-            triggerNeed: need,
-            subscriberName: sub.name,
-            founderName: fromName,
-          })
-        : null
-      emails.push({
-        subscriberId: sub.id,
-        subscriberName: sub.name,
-        need,
-        generated: generated
-          ? {
-              subject: generated.subject,
-              body: appendStandardFooter(generated.body, sub.id, fromName),
-            }
-          : null,
-      })
-    }
-
-    // Show what each candidate's outcome was
-    const verdicts = candidates.map(c => {
-      const sub = subs.find(s => s.id === c.id)!
-      return {
-        subscriberId: c.id,
-        subscriberName: sub.name,
-        need: c.need,
-        matched: matchedIds.has(c.id),
-      }
-    })
-
-    return NextResponse.json({
-      ok: true,
-      candidatesCount: candidates.length,
-      matchedCount: matchedIds.size,
-      verdicts,
-      emails,
-    })
-  }
+  // Spec 65 — the legacy 'changelog' command (V1 matcher) was removed
+  // alongside the V1 reengagement cron. The V2 matcher operates per-improvement
+  // and is verified via scripts/seed-spec65-v2-test.ts + a real cron call.
 
   return NextResponse.json({ error: 'Unknown action' }, { status: 400 })
 }

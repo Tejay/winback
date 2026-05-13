@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 
 /**
  * Dev-only winback flow control panel.
- * Lets you seed 4 churned subscribers, simulate replies, and post a changelog
+ * Lets you seed 4 churned subscribers, simulate replies
  * to see the full pipeline (classify → exit email → reply → re-classify →
  * follow-up → match → win-back).
  *
@@ -69,23 +69,6 @@ interface RecoveryResult {
   billableForInvoice: boolean
 }
 
-interface ChangelogResult {
-  candidatesCount: number
-  matchedCount: number
-  verdicts: Array<{
-    subscriberId: string
-    subscriberName: string | null
-    need: string
-    matched: boolean
-  }>
-  emails: Array<{
-    subscriberId: string
-    subscriberName: string | null
-    need: string
-    generated: { subject: string; body: string } | null
-  }>
-}
-
 const DEFAULT_REPLIES: Record<string, string> = {
   'Alice — Price': "Yeah, $29 was steep. If you had a $9 plan with the basics I'd probably stick around.",
   'Bob — Feature': "Honestly the CSV export is the only thing I needed. Without it I can't share data with my accountant easily.",
@@ -93,13 +76,6 @@ const DEFAULT_REPLIES: Record<string, string> = {
   'Dave — Quality': "It crashed every time I opened the dashboard on Safari. If you've fixed that I might give it another shot.",
   'Eve — Human ask': "Appreciate the note but I really do need to talk to a human — we need custom annual pricing and a SOC 2 letter before I can even bring this back to my team. Can you have someone reach out?",
 }
-
-const DEFAULT_CHANGELOG = `This week we shipped:
-
-- Spreadsheet downloads (CSV format) for any data view
-- A Starter plan at $9/mo for solo users
-- Fixed the Safari dashboard rendering bug that was causing crashes
-- Improved Slack integration with custom alert routing`
 
 export default function WinbackFlowPage() {
   const [loading, setLoading] = useState<string | null>(null)
@@ -112,8 +88,6 @@ export default function WinbackFlowPage() {
   const [emailsSentSignals, setEmailsSentSignals] = useState<Record<string, number>>({})
   const [replyResults, setReplyResults] = useState<Record<string, ReplyResult>>({})
   const [recoveryResults, setRecoveryResults] = useState<Record<string, RecoveryResult>>({})
-  const [changelogText, setChangelogText] = useState(DEFAULT_CHANGELOG)
-  const [changelogResult, setChangelogResult] = useState<ChangelogResult | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   // Initialize default replies once seed results come in
@@ -157,7 +131,6 @@ export default function WinbackFlowPage() {
       setStripeWarning(data.stripeWarning ?? null)
       setReplyResults({})
       setRecoveryResults({})
-      setChangelogResult(null)
     }
   }
 
@@ -166,7 +139,6 @@ export default function WinbackFlowPage() {
     setSeedResults([])
     setReplyResults({})
     setRecoveryResults({})
-    setChangelogResult(null)
     setReplies({})
   }
 
@@ -187,11 +159,6 @@ export default function WinbackFlowPage() {
     }
   }
 
-  async function postChangelog() {
-    const data = await call('changelog', { changelogText })
-    if (data) setChangelogResult(data)
-  }
-
   return (
     <div className="min-h-screen bg-slate-50 py-8 px-6">
       <div className="max-w-6xl mx-auto">
@@ -202,8 +169,7 @@ export default function WinbackFlowPage() {
           <h1 className="text-3xl font-bold text-slate-900 mb-2">Winback Flow.</h1>
           <p className="text-sm text-slate-600 max-w-2xl">
             Seeds 4 simulated churned subscribers (Price, Feature, Competitor, Quality),
-            runs them through the live classifier, lets you simulate replies for re-classification,
-            and tests the new semantic changelog matcher + at-match-time win-back email generation.
+            runs them through the live classifier, lets you simulate replies for re-classification.
             <strong> No real emails are sent</strong> — generated content is shown below for inspection.
           </p>
         </header>
@@ -287,29 +253,6 @@ export default function WinbackFlowPage() {
           </Section>
         )}
 
-        {/* STEP 3 — CHANGELOG */}
-        {seedResults.length > 0 && (
-          <Section
-            step={3}
-            title="Post a changelog (semantic match + at-match-time win-back generation)"
-            subtitle="The matcher is given each subscriber's triggerNeed and the changelog. For each match, a fresh win-back email is generated referencing the actual changelog text."
-          >
-            <textarea
-              value={changelogText}
-              onChange={(e) => setChangelogText(e.target.value)}
-              rows={8}
-              className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm font-mono"
-              placeholder="What did you ship this week?"
-            />
-            <div className="mt-3">
-              <Button onClick={postChangelog} disabled={!!loading} loading={loading === 'changelog'}>
-                Run matcher + generate emails
-              </Button>
-            </div>
-
-            {changelogResult && <ChangelogResultBlock result={changelogResult} />}
-          </Section>
-        )}
       </div>
     </div>
   )
@@ -652,76 +595,6 @@ function HandoffBlock({
         </div>
       )}
     </>
-  )
-}
-
-function ChangelogResultBlock({ result }: { result: ChangelogResult }) {
-  return (
-    <div className="mt-6">
-      <div className="flex gap-2 mb-4 text-sm">
-        <Badge color="slate">{result.candidatesCount} candidates</Badge>
-        <Badge color="green">{result.matchedCount} matched</Badge>
-        <Badge color="amber">{result.candidatesCount - result.matchedCount} not matched</Badge>
-      </div>
-
-      <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
-        LLM matcher verdicts
-      </div>
-      <div className="space-y-2 mb-6">
-        {result.verdicts.map((v) => (
-          <div
-            key={v.subscriberId}
-            className={`border rounded-lg p-3 text-sm ${
-              v.matched
-                ? 'border-green-200 bg-green-50'
-                : 'border-slate-200 bg-slate-50'
-            }`}
-          >
-            <div className="flex items-center justify-between mb-1">
-              <span className="font-semibold">{v.subscriberName}</span>
-              {v.matched ? (
-                <Badge color="green">✓ MATCH</Badge>
-              ) : (
-                <Badge color="slate">no match</Badge>
-              )}
-            </div>
-            <div className="text-xs text-slate-600">
-              <span className="font-mono">need:</span> "{v.need}"
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {result.emails.length > 0 && (
-        <>
-          <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
-            Generated win-back emails (at match time, referencing actual changelog)
-          </div>
-          <div className="space-y-3">
-            {result.emails.map((e) => (
-              <div key={e.subscriberId} className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                <div className="text-xs text-slate-600 mb-2">
-                  → <strong>{e.subscriberName}</strong>{' '}
-                  <span className="font-mono">(need: "{e.need}")</span>
-                </div>
-                {e.generated ? (
-                  <>
-                    <div className="font-semibold text-sm mb-2">
-                      Subject: {e.generated.subject}
-                    </div>
-                    <EmailBody body={e.generated.body} />
-                  </>
-                ) : (
-                  <div className="text-sm italic text-red-600">
-                    Email generation failed (see server logs)
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        </>
-      )}
-    </div>
   )
 }
 
