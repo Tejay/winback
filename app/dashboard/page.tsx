@@ -134,7 +134,6 @@ export default async function DashboardPage() {
       <main className="min-h-screen bg-[#f5f5f5]">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
           <DashboardClient
-            changelog={customer?.changelogText ?? ''}
             isTrial={!billingActive}
             firstRecovery={firstRecovery}
             pilotUntilIso={pilotUntil ? pilotUntil.toISOString() : null}
