@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, integer, bigint, boolean, decimal, timestamp, jsonb, index, uniqueIndex } from 'drizzle-orm/pg-core'
+import { pgTable, uuid, text, integer, bigint, boolean, decimal, timestamp, jsonb, index, uniqueIndex, primaryKey } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
 
 export const users = pgTable('wb_users', {
@@ -160,6 +160,18 @@ export const churnedSubscribers = pgTable('wb_churned_subscribers', {
   // Spec 34 — last decline_code from invoice.last_payment_error.
   // Drives bespoke "why this happened" copy in T1/T2/T3.
   lastDeclineCode:            text('last_decline_code'),
+  // Spec 65 — derived bucket from classifier confidence + triggerNeed
+  // presence. 'high' = eligible for re-engagement matching; 'low' = silent
+  // churn, never matched (still receives the exit email). Migration 039.
+  triggerNeedConfidence:      text('trigger_need_confidence'),  // 'high' | 'low' | null
+  // Spec 65 — cooldown timestamp scoped to changelog-triggered emails only.
+  // Re-engagement matcher won't fire if this is within the last 60 days.
+  // Distinct from reengagementSentAt which was the old single-shot field.
+  lastReengagedAt:            timestamp('last_reengaged_at', { withTimezone: true }),
+  // Spec 65 — set by daily expiry sweep when the subscriber hits 9 months
+  // post-cancellation without recovering. Permanently disqualifies them
+  // from future re-engagement.
+  reengagementExpiredAt:      timestamp('reengagement_expired_at', { withTimezone: true }),
   createdAt:            timestamp('created_at').defaultNow(),
   updatedAt:            timestamp('updated_at').defaultNow(),
 })
@@ -184,7 +196,49 @@ export const emailsSent = pgTable('wb_emails_sent', {
   bodyText:       text('body_text'),
   sentAt:         timestamp('sent_at').defaultNow(),
   repliedAt:      timestamp('replied_at'),
+  // Spec 65 — links re-engagement emails to the improvement that triggered
+  // them. NULL for non-re-engagement emails. Migration 039.
+  improvementId:  uuid('improvement_id'),
 })
+
+// Spec 65 — Winback Reasons. Each row is a single shipped product
+// improvement the merchant wants to communicate to cancelled customers
+// who asked for something like it. Replaces the free-text
+// `customers.changelog_text` blob. Migration 039.
+export const improvements = pgTable('wb_improvements', {
+  id:               uuid('id').primaryKey().defaultRandom(),
+  customerId:       uuid('customer_id').notNull().references(() => customers.id, { onDelete: 'cascade' }),
+  title:            text('title').notNull(),
+  description:      text('description').notNull(),
+  dateShipped:      timestamp('date_shipped', { mode: 'date' }).notNull(),
+  // 'published' | 'archived'. No 'draft' state — single Save = Publish.
+  status:           text('status').notNull().default('published'),
+  // Free-text label of the customer-demand pattern this addresses, or null
+  // when the merchant used "Add anyway" (pre-emptive ship with no signal yet).
+  addressesPattern: text('addresses_pattern'),
+  preempted:        boolean('preempted').notNull().default(false),
+  createdAt:        timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  archivedAt:       timestamp('archived_at', { withTimezone: true }),
+  updatedAt:        timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  customerStatusIdx: index('idx_wb_improvements_customer_status').on(t.customerId, t.status),
+  dateShippedIdx:    index('idx_wb_improvements_date_shipped').on(t.customerId, t.dateShipped),
+}))
+
+// Spec 65 — Records which improvement matched which subscriber. Primary
+// key on (improvement_id, subscriber_id) enforces "each customer hears
+// about an improvement at most once" mechanically. emailed_at is set
+// when the re-engagement email actually sent (NULL if the matcher fired
+// but the email was aborted by the sanity check).
+export const improvementMatches = pgTable('wb_improvement_matches', {
+  improvementId: uuid('improvement_id').notNull().references(() => improvements.id, { onDelete: 'cascade' }),
+  subscriberId:  uuid('subscriber_id').notNull().references(() => churnedSubscribers.id, { onDelete: 'cascade' }),
+  matchedAt:     timestamp('matched_at', { withTimezone: true }).notNull().defaultNow(),
+  emailedAt:     timestamp('emailed_at', { withTimezone: true }),
+}, (t) => ({
+  pk:            primaryKey({ columns: [t.improvementId, t.subscriberId] }),
+  subscriberIdx: index('idx_wb_improvement_matches_subscriber').on(t.subscriberId),
+}))
 
 // Spec 64 — Resend inbound webhook dedup ledger. Primary-keyed on
 // Resend's email_id; a second webhook with the same id conflicts on
