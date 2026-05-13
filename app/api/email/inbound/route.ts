@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { emailsSent, churnedSubscribers, customers, users, inboundEvents } from '@/lib/schema'
-import { eq, count } from 'drizzle-orm'
+import { eq, count, desc } from 'drizzle-orm'
 import { Webhook } from 'svix'
 import { classifySubscriber } from '@/src/winback/lib/classifier'
 import { sendReplyEmail, resolveFounderNotificationEmail } from '@/src/winback/lib/email'
@@ -382,6 +382,32 @@ export async function POST(req: Request) {
       // Don't auto-reply while under pause or handoff
       await finalizeInboundEvent(emailId, 'processed', subscriberId)
       return NextResponse.json({ received: true, processed: true, handedOff: isHandedOff, paused: isPaused })
+    }
+
+    // Spec 65 — if this reply is to a re-engagement email, the conversation
+    // ends with the original outbound. We still re-classify (already done
+    // above) and persist the reply for data quality, but skip the auto-reply
+    // so a "thanks but no" doesn't trigger a chatty AI follow-up that
+    // undercuts the "one shot per improvement" design.
+    const [lastEmail] = await db
+      .select({ type: emailsSent.type, improvementId: emailsSent.improvementId })
+      .from(emailsSent)
+      .where(eq(emailsSent.subscriberId, subscriberId))
+      .orderBy(desc(emailsSent.sentAt))
+      .limit(1)
+
+    if (lastEmail?.type === 'reengagement') {
+      logEvent({
+        name: 'reengagement_reply',
+        properties: {
+          subscriberId,
+          improvementId: lastEmail.improvementId,
+          replyTextLength: replyText.length,
+        },
+      })
+      console.log('Reply to re-engagement email — silent re-classify, no auto-reply:', subscriberId)
+      await finalizeInboundEvent(emailId, 'processed', subscriberId)
+      return NextResponse.json({ received: true, processed: true, silent: true, reason: 'reply_to_reengagement' })
     }
 
     // Send follow-up email in the same thread with the re-classified content.
