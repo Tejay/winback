@@ -309,7 +309,7 @@ function ImprovementFormModal({
           <label className="flex items-start gap-3 cursor-pointer rounded-xl bg-amber-50 border border-amber-200 p-4">
             <input type="checkbox" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} className="mt-0.5" />
             <span className="text-sm text-amber-900">
-              <strong>I confirm this is real.</strong> The feature is in the live product. Publishing tells cancelled customers who asked for something like this.
+              <strong>I confirm this is real.</strong> The feature is in the live product. Publishing informs cancelled customers who asked for something like this.
             </span>
           </label>
         </div>
