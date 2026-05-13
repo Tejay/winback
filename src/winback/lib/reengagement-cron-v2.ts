@@ -258,10 +258,16 @@ export async function runReengagementCronV2(): Promise<CronV2Stats> {
           name:       'email_sanity_check_failed',
           customerId: customer.id,
           properties: {
-            subscriberId:  sub.id,
-            improvementId: best.improvement.id,
-            reason:        sanity.reason,
-            confidence:    best.match.confidence,
+            subscriberId:           sub.id,
+            improvementId:          best.improvement.id,
+            improvementTitle:       best.improvement.title,
+            improvementDescription: best.improvement.description.slice(0, 200),
+            triggerNeed,
+            matchConfidence:        best.match.confidence,
+            matchReasoning:         best.match.reasoning,
+            draftedSubject:         draft.subject,
+            draftedBody:            draft.body.slice(0, 500),
+            sanityReason:           sanity.reason,
           },
         })
         // Record the match attempt without an emailed_at — so we know we
@@ -319,9 +325,13 @@ export async function runReengagementCronV2(): Promise<CronV2Stats> {
         name:       'reengagement_email_sent',
         customerId: customer.id,
         properties: {
-          subscriberId:    sub.id,
-          improvementId:   best.improvement.id,
-          matchConfidence: best.match.confidence,
+          subscriberId:       sub.id,
+          improvementId:      best.improvement.id,
+          improvementTitle:   best.improvement.title,
+          triggerNeed,
+          matchConfidence:    best.match.confidence,
+          matchReasoning:     best.match.reasoning,
+          subject:            draft.subject,
           improvementAgeDays: Math.floor(
             (Date.now() - new Date(best.improvement.dateShipped + 'T00:00:00Z').getTime()) / (24 * 60 * 60 * 1000),
           ),
