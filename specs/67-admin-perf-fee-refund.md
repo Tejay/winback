@@ -22,10 +22,16 @@ exposing it as an admin action.
 
 ## Goals
 
-- New "Recent charged win-back fees" section on `/admin/billing`
-  listing fees charged in the last 30 days, with status (charged /
-  refunded / item-missing), refund button on each refundable row, and
-  a "View in Stripe" link per row.
+- New "Charged win-back fees" section on `/admin/billing` listing the
+  200 most recent charged fees (no time cut-off — admin should be able
+  to refund any individual charge regardless of age), with status
+  (charged / refunded / item-missing), refund button on each
+  refundable row, and a "View in Stripe" link per row.
+- Page-level customer filter — a single search input near the top of
+  `/admin/billing` that does a case-insensitive substring match against
+  product name / customer email and live-filters BOTH the Outstanding
+  and Charged sections. Client-side only (operates on the already-
+  fetched payload).
 - New `POST /api/admin/billing/recoveries/[id]/refund` endpoint that:
   - Requires admin auth (existing `requireAdmin`)
   - Requires a typed `confirm` string ("REFUND") to gate accidental
@@ -79,7 +85,7 @@ POST { confirm: "REFUND" }
 
 ### New query
 
-**`lib/admin/billing-queries.ts`** — add `recentChargedPerfFees(days = 30)`:
+**`lib/admin/billing-queries.ts`** — add `chargedPerfFees(limit = 200)`:
 
 ```ts
 SELECT recoveries.id, customer_id, recovered_at, perf_fee_charged_at,
@@ -88,10 +94,16 @@ SELECT recoveries.id, customer_id, recovered_at, perf_fee_charged_at,
 FROM   wb_recoveries
 JOIN   wb_customers ON ...
 JOIN   wb_users     ON ...
-WHERE  perf_fee_charged_at >= NOW() - INTERVAL '30 days'
+WHERE  perf_fee_charged_at IS NOT NULL
+  AND  recovery_type = 'win_back'
 ORDER BY perf_fee_charged_at DESC
 LIMIT 200;
 ```
+
+No date cut-off — admin can refund any individual charge, including
+old ones (per support policy). The 200-row LIMIT prevents accidental
+unbounded queries; if/when we have more than 200 charged fees in
+flight, add a search box (separate spec).
 
 Returns rows with derived fields `withinRefundWindow` (charged within
 14 days) and `stripeMode` ('test' | 'live', based on `STRIPE_SECRET_KEY`
