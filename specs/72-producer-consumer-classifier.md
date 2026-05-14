@@ -85,6 +85,17 @@ to know what didn't land. Even one line is enough — I read every reply.
 The word "recently" is deliberate — no specific date reference, so the same copy works at 5 days post-cancel as at 80 days. That lets us widen the recency window to 90 days for silent churn (vs 7 days for signal-bearing exit emails, which DO reference specifics and feel stale after a week). Two recency constants in the file: `EXIT_EMAIL_RECENCY_DAYS = 7` and `SILENT_CHURN_RECENCY_DAYS = 90`.
 
 When a subscriber replies, the inbound webhook re-classifies with the new text → tier potentially flips to 1/2 → re-engagement opportunity opens.
+
+## 250-character body cap (added during implementation)
+
+All outbound email bodies — `firstMessage.body` and the legacy `winBackBody` — capped at **250 characters** including greeting and sign-off. Newlines count. Reactivation link and unsubscribe footer are appended by our system AFTER the body and don't count.
+
+Enforced two places (belt + suspenders):
+
+1. **Classifier system prompt**: a `LENGTH CAP` section at the top of MESSAGE WRITING explains the rule and the rationale ("pick the one fact that matters most").
+2. **Zod schema**: `z.string().max(250, ...)` on `firstMessage.body` and `winBackBody`. An LLM that ignores the prompt rule fails validation → row gets retried → dead-lettered after 3 attempts → admin sees in the dead-letter tile and can investigate prompt drift.
+
+Why 250: short enough to read in 5 seconds on mobile, long enough for greeting + one concrete fact + one ask + sign-off in founder voice. Tested against 5 representative examples (Tier 1 price/feature/competitor, Tier 2 enum-only, Tier 1 support-failure) — all fit comfortably.
 - **Backwards compat with the 60-second exit-email SLA.** Explicitly
   relaxed.
 

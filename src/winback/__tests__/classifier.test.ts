@@ -413,4 +413,56 @@ describe('classifySubscriber', () => {
     expect(result.tier).toBe(4)
     expect(ClassificationSchema.safeParse(result).success).toBe(true)
   })
+
+  // ─── Spec 72 — 250-char body cap ───────────────────────────────────────
+
+  it('system prompt includes the 250-character LENGTH CAP rule', async () => {
+    const signals = makeSignals()
+    mockLLMResponse({
+      tier: 3, tierReason: 't', cancellationReason: 'r', cancellationCategory: 'Other',
+      confidence: 0.5, suppress: false,
+      firstMessage: { subject: 's', body: 'b', sendDelaySecs: 60 },
+      triggerKeyword: null, winBackSubject: 'w', winBackBody: 'b',
+    })
+    await classifySubscriber(signals, {})
+    const systemPrompt = mockCreate.mock.calls[0][0].system as string
+    expect(systemPrompt).toContain('LENGTH CAP')
+    expect(systemPrompt).toContain('250')
+  })
+
+  it('schema rejects firstMessage.body > 250 chars (Spec 72)', () => {
+    const bodyTooLong = 'a'.repeat(251)
+    const result = ClassificationSchema.safeParse({
+      tier: 1, tierReason: 't', cancellationReason: 'r', cancellationCategory: 'Price',
+      confidence: 0.9, suppress: false,
+      firstMessage: { subject: 's', body: bodyTooLong, sendDelaySecs: 60 },
+      triggerKeyword: null, triggerNeed: null,
+      winBackSubject: '', winBackBody: '',
+    })
+    expect(result.success).toBe(false)
+  })
+
+  it('schema rejects winBackBody > 250 chars (Spec 72)', () => {
+    const bodyTooLong = 'a'.repeat(251)
+    const result = ClassificationSchema.safeParse({
+      tier: 1, tierReason: 't', cancellationReason: 'r', cancellationCategory: 'Price',
+      confidence: 0.9, suppress: false,
+      firstMessage: null,
+      triggerKeyword: null, triggerNeed: null,
+      winBackSubject: '', winBackBody: bodyTooLong,
+    })
+    expect(result.success).toBe(false)
+  })
+
+  it('schema accepts firstMessage.body exactly at 250 chars (Spec 72)', () => {
+    const bodyAtCap = 'a'.repeat(250)
+    const result = ClassificationSchema.safeParse({
+      tier: 1, tierReason: 't', cancellationReason: 'r', cancellationCategory: 'Price',
+      confidence: 0.9, suppress: false,
+      firstMessage: { subject: 's', body: bodyAtCap, sendDelaySecs: 60 },
+      triggerKeyword: null, triggerNeed: null,
+      winBackSubject: '', winBackBody: '',
+    })
+    expect(result.success).toBe(true)
+  })
 })

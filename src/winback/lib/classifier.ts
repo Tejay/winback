@@ -43,15 +43,20 @@ const ClassificationSchema = z.object({
   // the strict z.string().optional() rejects null and the whole
   // classification fails.
   suppressReason:       z.string().nullable().optional(),
+  // Spec 72 — every outbound email body capped at 250 chars (greeting +
+  // body + sign-off, excludes reactivate link + unsubscribe footer which
+  // are appended by our system). Schema enforces it so an LLM that
+  // ignores the prompt rule fails validation → row gets retried, then
+  // dead-lettered after 3 attempts → admin sees in the dead-letter tile.
   firstMessage:         z.object({
     subject:       z.string(),
-    body:          z.string(),
+    body:          z.string().max(250, 'Body exceeds 250-character cap (Spec 72)'),
     sendDelaySecs: z.number().default(60),
   }).nullable().default(null),
   triggerKeyword: z.string().nullable().default(null),  // Legacy (spec 19b)
   triggerNeed:    z.string().nullable().default(null),  // Rich description (spec 19b)
   winBackSubject: z.string().default(''),                // Deprecated (spec 19c)
-  winBackBody:    z.string().default(''),                // Deprecated (spec 19c)
+  winBackBody:    z.string().max(250, 'winBackBody exceeds 250-character cap (Spec 72)').default(''),
   // AI-decided hand-off judgment. The classifier itself (not a rule) decides
   // on every pass whether this subscriber is better served by another AI
   // email or by a personal reply from the founder.
@@ -84,6 +89,15 @@ RULES:
 - Return ONLY valid JSON with no preamble and no markdown code fences
 
 MESSAGE WRITING (firstMessage.body) — HARD CONSTRAINTS:
+
+LENGTH CAP (applies to firstMessage.body AND winBackBody — every outbound email):
+  Body MUST be 250 characters or fewer, counted as the literal string in the
+  field including greeting, sentences, and sign-off. Newlines count as
+  characters. The reactivation link and unsubscribe footer are appended by
+  our system AFTER the body and are NOT part of the body — don't try to
+  include them. If you can't say it in 250 chars, drop the second clause,
+  drop adjectives, pick the one fact that matters most. Going over the
+  limit is treated as a hard schema violation.
 
 Shape:
   Line 1:  "Hi <firstName>," (first name only, no surname, no title)
