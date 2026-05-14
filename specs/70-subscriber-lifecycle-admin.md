@@ -121,6 +121,13 @@ with a small dropdown + edit button. Dropdown defaults to the
 current value. "Save" prompts for the note inline. No-op if status
 unchanged.
 
+**Revive on flip-away-from-`lost`**: when admin changes status from
+`lost` (or any value where `reengagement_expired_at` is non-null)
+to anything else, also clear `reengagement_expired_at` in the same
+update. Otherwise the 9-month wall stays armed on the row and the
+send-now / cron pipelines keep rejecting it. The endpoint logs
+`revived: true` on the audit-log row when this happens.
+
 ### #4 — Send re-engagement now
 
 **`src/winback/lib/reengagement-cron-v2.ts`** — extract the

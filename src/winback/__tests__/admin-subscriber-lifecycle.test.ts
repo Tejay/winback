@@ -165,7 +165,9 @@ describe('POST /api/admin/subscribers/[id]/force-status', () => {
   })
 
   it('happy path: updates row + logs subscriber_force_status admin_action', async () => {
-    mockSelect.mockReturnValue(selectChain([{ status: 'lost', customerId: 'cust_1' }]))
+    mockSelect.mockReturnValue(selectChain([{
+      status: 'lost', customerId: 'cust_1', reengagementExpiredAt: null,
+    }]))
     mockUpdate.mockReturnValue(updateChain())
 
     const res = await statusPOST(
@@ -190,6 +192,54 @@ describe('POST /api/admin/subscribers/[id]/force-status', () => {
         note: 'subscriber emailed founder, wants to return',
       }),
     }))
+  })
+
+  it('reviving (flip away from lost AND expired_at is set): clears reengagement_expired_at + flags revived:true in audit', async () => {
+    const setMock = vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) })
+    mockSelect.mockReturnValue(selectChain([{
+      status: 'lost',
+      customerId: 'cust_1',
+      reengagementExpiredAt: new Date(),  // 9-month wall is armed
+    }]))
+    mockUpdate.mockReturnValue({ set: setMock })
+
+    const res = await statusPOST(
+      makeReq({ status: 'pending', note: 'subscriber emailed back, wants to come back' }),
+      params,
+    )
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.revived).toBe(true)
+
+    // The update.set() payload must include reengagementExpiredAt: null
+    // so the next send-now / cron pass treats this row as eligible.
+    expect(setMock).toHaveBeenCalledWith(expect.objectContaining({
+      status: 'pending',
+      reengagementExpiredAt: null,
+    }))
+    expect(mockLogEvent).toHaveBeenCalledWith(expect.objectContaining({
+      properties: expect.objectContaining({ revived: true }),
+    }))
+  })
+
+  it('flipping TO lost does not clear reengagement_expired_at', async () => {
+    const setMock = vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) })
+    mockSelect.mockReturnValue(selectChain([{
+      status: 'contacted',
+      customerId: 'cust_1',
+      reengagementExpiredAt: null,
+    }]))
+    mockUpdate.mockReturnValue({ set: setMock })
+
+    await statusPOST(
+      makeReq({ status: 'lost', note: 'subscriber confirmed they will not return' }),
+      params,
+    )
+    // The set payload should NOT contain reengagementExpiredAt at all
+    // (we only clear it on revive).
+    const setArg = setMock.mock.calls[0][0]
+    expect(setArg.status).toBe('lost')
+    expect('reengagementExpiredAt' in setArg).toBe(false)
   })
 })
 

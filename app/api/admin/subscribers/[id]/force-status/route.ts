@@ -53,7 +53,11 @@ export async function POST(
   }
 
   const [existing] = await db
-    .select({ status: churnedSubscribers.status, customerId: churnedSubscribers.customerId })
+    .select({
+      status: churnedSubscribers.status,
+      customerId: churnedSubscribers.customerId,
+      reengagementExpiredAt: churnedSubscribers.reengagementExpiredAt,
+    })
     .from(churnedSubscribers)
     .where(eq(churnedSubscribers.id, id))
     .limit(1)
@@ -69,9 +73,21 @@ export async function POST(
     )
   }
 
+  // Revive: when admin changes status away from 'lost' AND the 9-month
+  // wall timestamp is set, clear it too. Otherwise the send-now and cron
+  // pipelines would keep treating this subscriber as expired (gated by
+  // reengagement_expired_at, not by status).
+  const reviving = status !== 'lost' && existing.reengagementExpiredAt !== null
+  const updateSet: {
+    status: string
+    updatedAt: Date
+    reengagementExpiredAt?: Date | null
+  } = { status, updatedAt: new Date() }
+  if (reviving) updateSet.reengagementExpiredAt = null
+
   await db
     .update(churnedSubscribers)
-    .set({ status, updatedAt: new Date() })
+    .set(updateSet)
     .where(eq(churnedSubscribers.id, id))
 
   await logEvent({
@@ -84,8 +100,14 @@ export async function POST(
       oldStatus: existing.status,
       newStatus: status,
       note,
+      revived: reviving,
     },
   })
 
-  return NextResponse.json({ ok: true, oldStatus: existing.status, newStatus: status })
+  return NextResponse.json({
+    ok: true,
+    oldStatus: existing.status,
+    newStatus: status,
+    revived: reviving,
+  })
 }
