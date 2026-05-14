@@ -196,7 +196,11 @@ in progress (one tick per customer per scheduled fire).
 Picks unclassified rows in batches. Sized to fit a Vercel tick budget.
 
 ```ts
-const BATCH_PER_TICK = 30   // ~30 × 1.5s = 45s, well under 300s ceiling
+// Note: BATCH was 30 in the original draft; load testing showed
+// Anthropic latency is ~4-5s/call (not ~1.5s). Worst-case all-signal
+// batches at 30 took ~145s — too close to a Vercel 60s default. After
+// the load test we set maxDuration = 300 on the route and BATCH = 20.
+const BATCH_PER_TICK = 20   // ~20 × 5s = 100s worst case, safely under 300s ceiling
 
 async function classifierTick(): Promise<TickResult> {
   const rows = await db.select().from(churnedSubscribers)

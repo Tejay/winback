@@ -2,7 +2,11 @@ import { NextRequest } from 'next/server'
 import { runClassifierTick } from '@/src/winback/lib/classifier-tick'
 import { withCron } from '@/src/winback/lib/cron-wrap'
 
-export const maxDuration = 60
+// Spec 72 — bumped from 60s to 300s after load testing. Empirically
+// Anthropic latency is ~4-5s per LLM call (not the ~1.5s I originally
+// estimated). A batch of 20 all-signal rows = ~100s; the safety margin
+// to 300s tolerates Anthropic slow-day spikes.
+export const maxDuration = 300
 
 /**
  * Spec 72 — classifier cron. Picks unclassified rows (regardless of
@@ -10,8 +14,11 @@ export const maxDuration = 60
  * runs the LLM + downstream actions (exit email when recent + AI
  * approves).
  *
- * Schedule: every 2 minutes via vercel.json. Bounded batch of 30
- * rows/tick × ~1.5s LLM = ~45s — well under Vercel's 300s ceiling.
+ * Schedule: every 2 minutes via vercel.json.
+ * Batch = 20 rows/tick. Worst case (all-signal) ≈ 100s at ~5s/LLM
+ * call; safely under the 300s function ceiling. Typical mixed batches
+ * (most rows are silent-churn = no LLM) run in ~20-40s.
+ *
  * Auth: Bearer ${CRON_SECRET} via withCron.
  */
 export const GET = (req: NextRequest) =>

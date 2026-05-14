@@ -23,7 +23,12 @@ import { buildConversationThread } from './conversation'
  *   - The cron itself never throws — failures are per-row.
  */
 
-const BATCH_PER_TICK = 30
+// Spec 72 — dropped from 30 → 20 after load testing. Anthropic latency
+// is ~4-5s per LLM call (worse than my original ~1.5s estimate). A
+// fully-signal batch of 20 takes ~100s, comfortably under the 300s
+// function ceiling. A batch of 30 could spike to ~150s+ and risk a
+// Vercel timeout on the worst-case batch composition.
+const BATCH_PER_TICK = 20
 const DEAD_LETTER_THRESHOLD = 3
 const EXIT_EMAIL_RECENCY_DAYS = 7
 
