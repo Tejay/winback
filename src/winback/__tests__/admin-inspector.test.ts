@@ -38,9 +38,16 @@ vi.mock('drizzle-orm', () => ({
 import { buildInspectorPayload } from '../../../lib/admin/inspector-queries'
 
 function selectChain(rows: unknown[]) {
-  // The select chain is .from().innerJoin().innerJoin().where().limit() OR
-  // .from().where().orderBy()
+  // Chains used:
+  //   .from().innerJoin().innerJoin().where().limit()         (subscriber row)
+  //   .from().where().orderBy()                                (emails, outcomeEvents)
+  //   .from().where().orderBy().limit()                        (cronDecisions — Spec 70)
   const terminal = vi.fn().mockResolvedValue(rows)
+  const orderByWithLimit = vi.fn().mockReturnValue({
+    limit: terminal,
+    then: (resolve: (v: unknown) => unknown, reject: (e: unknown) => unknown) =>
+      Promise.resolve(rows).then(resolve, reject),
+  })
   return {
     from: vi.fn().mockReturnValue({
       innerJoin: vi.fn().mockReturnValue({
@@ -51,7 +58,7 @@ function selectChain(rows: unknown[]) {
         }),
       }),
       where: vi.fn().mockReturnValue({
-        orderBy: terminal,
+        orderBy: orderByWithLimit,
       }),
     }),
   }
