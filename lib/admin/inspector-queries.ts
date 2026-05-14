@@ -31,6 +31,18 @@ export interface InspectorOutcomeEvent {
   properties: Record<string, unknown>
 }
 
+/**
+ * Spec 70 — recent cron decisions for this subscriber. Surfaces the
+ * answer to "why didn't subscriber X get an email?" by exposing the
+ * per-subscriber skip / sanity-fail / send events the V2 cron now emits.
+ */
+export interface InspectorCronDecision {
+  id: string
+  name: string                  // 'reengagement_skipped' | 'reengagement_email_sent' | 'email_sanity_check_failed'
+  createdAt: Date
+  properties: Record<string, unknown>
+}
+
 export interface InspectorPayload {
   subscriber: {
     id: string
@@ -71,6 +83,7 @@ export interface InspectorPayload {
   } | null
   emails: InspectorEmail[]
   outcomeEvents: InspectorOutcomeEvent[]
+  cronDecisions: InspectorCronDecision[]
 }
 
 /** The set of event names we surface in the timeline as outcome markers. */
@@ -84,6 +97,13 @@ const OUTCOME_EVENT_NAMES = [
   'ai_paused',
   'ai_resumed',
   'proactive_nudge_sent',
+] as const
+
+/** Spec 70 — cron-decision events surfaced on the inspector. */
+const CRON_DECISION_EVENT_NAMES = [
+  'reengagement_skipped',
+  'reengagement_email_sent',
+  'email_sanity_check_failed',
 ] as const
 
 /**
@@ -135,10 +155,10 @@ export async function buildInspectorPayload(subscriberId: string): Promise<Inspe
     .limit(1)
 
   if (!subRow) {
-    return { subscriber: null, emails: [], outcomeEvents: [] }
+    return { subscriber: null, emails: [], outcomeEvents: [], cronDecisions: [] }
   }
 
-  const [emails, outcomeEvents] = await Promise.all([
+  const [emails, outcomeEvents, cronDecisions] = await Promise.all([
     ro
       .select({
         id: emailsSentTable.id,
@@ -168,11 +188,30 @@ export async function buildInspectorPayload(subscriberId: string): Promise<Inspe
         ),
       )
       .orderBy(desc(wbEvents.createdAt)),
+    // Spec 70 — last 20 cron decisions for this subscriber. Newest first;
+    // the UI reverses for chronological reading.
+    ro
+      .select({
+        id: wbEvents.id,
+        name: wbEvents.name,
+        createdAt: wbEvents.createdAt,
+        properties: wbEvents.properties,
+      })
+      .from(wbEvents)
+      .where(
+        and(
+          inArray(wbEvents.name, CRON_DECISION_EVENT_NAMES as unknown as string[]),
+          sql`${wbEvents.properties}->>'subscriberId' = ${subscriberId}`,
+        ),
+      )
+      .orderBy(desc(wbEvents.createdAt))
+      .limit(20),
   ])
 
   return {
     subscriber: subRow,
     emails,
     outcomeEvents,
+    cronDecisions,
   }
 }

@@ -19,6 +19,13 @@ interface OutcomeEvent {
   properties: Record<string, unknown>
 }
 
+interface CronDecision {
+  id: string
+  name: string  // 'reengagement_skipped' | 'reengagement_email_sent' | 'email_sanity_check_failed'
+  createdAt: string
+  properties: Record<string, unknown>
+}
+
 interface Subscriber {
   id: string
   customerId: string
@@ -58,6 +65,7 @@ interface Payload {
   subscriber: Subscriber | null
   emails: Email[]
   outcomeEvents: OutcomeEvent[]
+  cronDecisions: CronDecision[]
 }
 
 interface ReclassifyDiff {
@@ -96,6 +104,10 @@ export function InspectorClient({ subscriberId }: { subscriberId: string }) {
   const [reclassify, setReclassify] = useState<ReclassifyDiff | null>(null)
   const [reclassifyBusy, setReclassifyBusy] = useState(false)
   const [reclassifyMsg, setReclassifyMsg] = useState<string | null>(null)
+  // Spec 70 #4 — "Send re-engagement now"
+  const [sendNowOpen, setSendNowOpen] = useState(false)
+  // Spec 70 #3 — force-status editing
+  const [statusEditing, setStatusEditing] = useState(false)
 
   const load = useCallback(async () => {
     try {
@@ -266,12 +278,18 @@ export function InspectorClient({ subscriberId }: { subscriberId: string }) {
         </p>
       </Section>
 
+      {/* CRON DECISIONS — Spec 70 #1 */}
+      <Section title="Cron decisions">
+        <CronDecisionsList decisions={data.cronDecisions} />
+      </Section>
+
       {/* TIMELINE */}
       <Section title="Conversation timeline">
         {data.emails.length === 0 ? (
           <div className="text-sm text-slate-400 italic">No emails sent yet.</div>
         ) : (
           <Timeline
+            subscriberId={subscriberId}
             emails={data.emails}
             outcomeEvents={data.outcomeEvents}
             cancelledAt={s.cancelledAt}
@@ -283,7 +301,12 @@ export function InspectorClient({ subscriberId }: { subscriberId: string }) {
 
       {/* OUTCOME */}
       <Section title="Final outcome">
-        <FinalOutcome subscriber={s} outcomeEvents={data.outcomeEvents} aiState={aiState} />
+        <FinalOutcome
+          subscriber={s}
+          outcomeEvents={data.outcomeEvents}
+          aiState={aiState}
+          onEditStatus={() => setStatusEditing(true)}
+        />
       </Section>
 
       {/* ACTIONS */}
@@ -296,8 +319,14 @@ export function InspectorClient({ subscriberId }: { subscriberId: string }) {
           >
             {reclassifyBusy ? '…' : 'Re-run classifier (~$0.003)'}
           </button>
+          <button
+            onClick={() => setSendNowOpen(true)}
+            className="border border-red-200 bg-red-50 text-red-800 rounded-full px-4 py-2 text-sm font-medium hover:bg-red-100"
+          >
+            Send re-engagement now (~$0.006)
+          </button>
           <span className="text-xs text-slate-400">
-            Live API call. No DB write — just shows the diff.
+            Live API calls. Re-classify is read-only. Send-now bypasses cooldown and may send a real email.
           </span>
         </div>
         {reclassifyMsg && (
@@ -313,6 +342,24 @@ export function InspectorClient({ subscriberId }: { subscriberId: string }) {
         )}
         {reclassify && <ReclassifyDiffPanel diff={reclassify} />}
       </Section>
+
+      {sendNowOpen && (
+        <SendNowModal
+          subscriberId={subscriberId}
+          subscriberEmail={s.email}
+          onClose={() => setSendNowOpen(false)}
+          onDone={() => { setSendNowOpen(false); load() }}
+        />
+      )}
+
+      {statusEditing && (
+        <ForceStatusModal
+          subscriberId={subscriberId}
+          currentStatus={s.status ?? 'pending'}
+          onClose={() => setStatusEditing(false)}
+          onDone={() => { setStatusEditing(false); load() }}
+        />
+      )}
     </div>
   )
 }
@@ -360,18 +407,43 @@ function KV({ k, v, mono = false }: { k: string; v: string; mono?: boolean }) {
 }
 
 function Timeline({
+  subscriberId,
   emails,
   outcomeEvents,
   cancelledAt,
   expanded,
   onToggle,
 }: {
+  subscriberId: string
   emails: Email[]
   outcomeEvents: OutcomeEvent[]
   cancelledAt: string | null
   expanded: Set<string>
   onToggle: (id: string) => void
 }) {
+  const [flaggedEmailIds, setFlaggedEmailIds] = useState<Set<string>>(new Set())
+  const [flagging, setFlagging] = useState<string | null>(null)
+
+  async function flagEmail(emailId: string) {
+    const note = window.prompt('Flag this email for prompt-tuning review. Add a note (optional):') ?? ''
+    if (note === null) return  // user hit Cancel — but prompt returns '' not null on empty
+    setFlagging(emailId)
+    try {
+      const res = await fetch(`/api/admin/subscribers/${subscriberId}/flag-email`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ emailId, note: note.trim() || undefined }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`)
+      setFlaggedEmailIds((prev) => new Set(prev).add(emailId))
+    } catch (e) {
+      alert(`Flag failed: ${e instanceof Error ? e.message : String(e)}`)
+    } finally {
+      setFlagging(null)
+    }
+  }
+
   // Build merged + chronological event list: emails (out + reply marker) + outcome events.
   type Item =
     | { kind: 'email'; at: string; email: Email }
@@ -397,15 +469,30 @@ function Timeline({
 
         if (it.kind === 'email') {
           const isOpen = expanded.has(it.email.id)
+          const isFlagged = flaggedEmailIds.has(it.email.id)
+          const isFlagging = flagging === it.email.id
           return (
             <div key={`${idx}-email-${it.email.id}`} className="border-l-2 border-blue-300 pl-4">
               <div className="text-xs text-slate-400">{dayLabel} → outgoing ({it.email.type})</div>
-              <button
-                onClick={() => onToggle(it.email.id)}
-                className="text-sm font-medium text-slate-900 hover:underline text-left"
-              >
-                {it.email.subject ?? '(no subject)'} {isOpen ? '▾' : '▸'}
-              </button>
+              <div className="flex items-baseline gap-2">
+                <button
+                  onClick={() => onToggle(it.email.id)}
+                  className="text-sm font-medium text-slate-900 hover:underline text-left"
+                >
+                  {it.email.subject ?? '(no subject)'} {isOpen ? '▾' : '▸'}
+                </button>
+                {isFlagged ? (
+                  <span className="text-xs text-red-600">🚩 flagged</span>
+                ) : (
+                  <button
+                    onClick={() => flagEmail(it.email.id)}
+                    disabled={isFlagging}
+                    className="text-xs text-slate-400 hover:text-red-600 disabled:opacity-50"
+                  >
+                    {isFlagging ? '…' : '🚩 flag'}
+                  </button>
+                )}
+              </div>
               {isOpen && (
                 <div className="mt-2 bg-slate-50 border border-slate-100 rounded-lg p-3 text-xs whitespace-pre-wrap font-mono text-slate-700 max-h-96 overflow-y-auto">
                   {it.email.bodyText
@@ -441,10 +528,12 @@ function FinalOutcome({
   subscriber,
   outcomeEvents,
   aiState,
+  onEditStatus,
 }: {
   subscriber: Subscriber
   outcomeEvents: OutcomeEvent[]
   aiState: string
+  onEditStatus: () => void
 }) {
   const handoffEvent = outcomeEvents.find((e) => e.name === 'founder_handoff_triggered')
   const recoveredEvent = outcomeEvents.find((e) => e.name === 'subscriber_recovered')
@@ -452,7 +541,15 @@ function FinalOutcome({
 
   return (
     <div className="space-y-2 text-sm">
-      <KV k="Status" v={subscriber.status ?? 'pending'} />
+      <div className="flex items-center gap-2">
+        <KV k="Status" v={subscriber.status ?? 'pending'} />
+        <button
+          onClick={onEditStatus}
+          className="text-xs text-blue-600 hover:underline"
+        >
+          override →
+        </button>
+      </div>
       <KV k="AI state" v={aiState} />
       {handoffEvent && (
         <>
@@ -540,6 +637,296 @@ function Badge({ color, children }: { color: BadgeColor; children: React.ReactNo
       {children}
     </span>
   )
+}
+
+/**
+ * Spec 70 #4 — admin "Send re-engagement now" modal. Three LLM calls,
+ * bypasses cooldown, may send a real email if the matcher fires.
+ */
+function SendNowModal({
+  subscriberId,
+  subscriberEmail,
+  onClose,
+  onDone,
+}: {
+  subscriberId: string
+  subscriberEmail: string | null
+  onClose: () => void
+  onDone: () => void
+}) {
+  const [confirmText, setConfirmText] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [outcome, setOutcome] = useState<{ kind: string; reason?: string; improvementId?: string } | null>(null)
+  const ready = confirmText === 'SEND' && !submitting
+
+  async function submit() {
+    setSubmitting(true)
+    setError(null)
+    try {
+      const res = await fetch(`/api/admin/subscribers/${subscriberId}/send-reengagement-now`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ confirm: 'SEND' }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`)
+      setOutcome(json.outcome)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30 p-4" onClick={onClose}>
+      <div
+        className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-md w-full p-6"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="text-lg font-semibold text-slate-900 mb-1">
+          Send re-engagement now?
+        </div>
+        <p className="text-sm text-slate-600 mb-4">
+          Runs the full match-and-send pipeline for this subscriber, bypassing the 60-day cooldown.
+          Three LLM calls (~$0.006). If an improvement matches and passes the sanity check, a real
+          email goes to <strong>{subscriberEmail ?? '(no email)'}</strong>.
+        </p>
+        <p className="text-xs text-slate-500 mb-4">
+          Customer pause and 9-month expiry gates still apply. Per-improvement-once stays — if the
+          only matchable improvement was already sent, this will skip with no_match / no_improvements.
+        </p>
+
+        {outcome ? (
+          <div className={`text-sm rounded-lg p-3 mb-4 ${
+            outcome.kind === 'emailed'
+              ? 'bg-green-50 border border-green-200 text-green-800'
+              : outcome.kind === 'skipped'
+              ? 'bg-amber-50 border border-amber-200 text-amber-800'
+              : 'bg-red-50 border border-red-200 text-red-800'
+          }`}>
+            <div className="font-medium">Result: {outcome.kind}</div>
+            {outcome.reason && <div>Reason: <code>{outcome.reason}</code></div>}
+            {outcome.improvementId && <div>Improvement: <code>{outcome.improvementId.slice(0, 8)}</code></div>}
+          </div>
+        ) : (
+          <>
+            <label className="block text-xs font-semibold uppercase tracking-widest text-slate-500 mb-1.5">
+              Type SEND to confirm
+            </label>
+            <input
+              value={confirmText}
+              onChange={(e) => setConfirmText(e.target.value)}
+              className="border border-slate-200 rounded-full px-4 py-2.5 text-sm w-full focus:outline-none focus:ring-2 focus:ring-red-500 mb-4"
+              placeholder="SEND"
+              autoFocus
+              autoComplete="off"
+            />
+          </>
+        )}
+
+        {error && (
+          <div className="bg-red-50 border border-red-200 text-red-800 rounded-lg p-3 text-sm mb-4">
+            {error}
+          </div>
+        )}
+
+        <div className="flex justify-end gap-2">
+          <button
+            onClick={outcome ? onDone : onClose}
+            className="border border-slate-200 bg-white text-slate-700 rounded-full px-5 py-2 text-sm font-medium"
+          >
+            {outcome ? 'Close' : 'Cancel'}
+          </button>
+          {!outcome && (
+            <button
+              onClick={submit}
+              disabled={!ready}
+              className={
+                ready
+                  ? 'bg-red-600 text-white hover:bg-red-700 rounded-full px-5 py-2 text-sm font-medium'
+                  : 'bg-slate-200 text-slate-400 rounded-full px-5 py-2 text-sm font-medium cursor-not-allowed'
+              }
+            >
+              {submitting ? 'Sending…' : 'Send now'}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Spec 70 #3 — force-status dropdown modal. Override the auto-attributed
+ * status with a mandatory note. Doesn't touch billing.
+ */
+function ForceStatusModal({
+  subscriberId,
+  currentStatus,
+  onClose,
+  onDone,
+}: {
+  subscriberId: string
+  currentStatus: string
+  onClose: () => void
+  onDone: () => void
+}) {
+  const [newStatus, setNewStatus] = useState(currentStatus)
+  const [note, setNote] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const changed = newStatus !== currentStatus
+  const ready = changed && note.trim().length >= 5 && !submitting
+
+  async function submit() {
+    setSubmitting(true)
+    setError(null)
+    try {
+      const res = await fetch(`/api/admin/subscribers/${subscriberId}/force-status`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus, note: note.trim() }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`)
+      onDone()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30 p-4" onClick={onClose}>
+      <div
+        className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-md w-full p-6"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="text-lg font-semibold text-slate-900 mb-1">
+          Override subscriber status
+        </div>
+        <p className="text-sm text-slate-600 mb-4">
+          Current status: <code>{currentStatus}</code>. Changing this updates the row immediately
+          and audit-logs the override. <strong>Doesn&apos;t touch billing</strong> — refunds and
+          perf-fee charges flow through their own paths.
+        </p>
+
+        <label className="block text-xs font-semibold uppercase tracking-widest text-slate-500 mb-1.5">
+          New status
+        </label>
+        <select
+          value={newStatus}
+          onChange={(e) => setNewStatus(e.target.value)}
+          className="border border-slate-200 rounded-full px-4 py-2.5 text-sm w-full mb-4 bg-white"
+        >
+          <option value="pending">pending</option>
+          <option value="contacted">contacted</option>
+          <option value="recovered">recovered</option>
+          <option value="lost">lost</option>
+        </select>
+
+        <label className="block text-xs font-semibold uppercase tracking-widest text-slate-500 mb-1.5">
+          Why? (audit-logged, required, min 5 chars)
+        </label>
+        <textarea
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          className="border border-slate-200 rounded-xl px-4 py-2.5 text-sm w-full focus:outline-none focus:ring-2 focus:ring-blue-500 mb-4 min-h-[5rem]"
+          placeholder="e.g. Merchant confirmed via email — subscriber reactivated yesterday on their own"
+        />
+
+        {error && (
+          <div className="bg-red-50 border border-red-200 text-red-800 rounded-lg p-3 text-sm mb-4">
+            {error}
+          </div>
+        )}
+
+        <div className="flex justify-end gap-2">
+          <button
+            onClick={onClose}
+            className="border border-slate-200 bg-white text-slate-700 rounded-full px-5 py-2 text-sm font-medium"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={submit}
+            disabled={!ready}
+            className={
+              ready
+                ? 'bg-[#0f172a] text-white hover:bg-[#1e293b] rounded-full px-5 py-2 text-sm font-medium'
+                : 'bg-slate-200 text-slate-400 rounded-full px-5 py-2 text-sm font-medium cursor-not-allowed'
+            }
+          >
+            {submitting ? 'Saving…' : 'Save override'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Spec 70 #1 — surface the V2 cron's per-subscriber decisions so support
+ * can answer "why didn't subscriber X get an email?" without leaving the
+ * inspector. Newest first; expandable for raw properties.
+ */
+function CronDecisionsList({ decisions }: { decisions: CronDecision[] }) {
+  if (decisions.length === 0) {
+    return (
+      <div className="text-sm text-slate-400 italic">
+        The re-engagement cron hasn&apos;t considered this subscriber yet
+        (or these records pre-date Spec 70 instrumentation).
+      </div>
+    )
+  }
+  return (
+    <div className="space-y-2">
+      {decisions.map((d) => {
+        const ts = new Date(d.createdAt).toLocaleString()
+        const { headline, tone } = describeCronDecision(d)
+        return (
+          <details key={d.id} className="border border-slate-100 rounded-lg group">
+            <summary className="cursor-pointer list-none px-3 py-2 flex items-center gap-3 hover:bg-slate-50 rounded-lg">
+              <span className="text-slate-400 text-xs group-open:rotate-90 transition-transform inline-block w-3">▸</span>
+              <span className="text-xs text-slate-500 min-w-[10rem]">{ts}</span>
+              <span className={`text-sm ${tone === 'good' ? 'text-green-700' : tone === 'bad' ? 'text-red-700' : 'text-slate-700'}`}>
+                {headline}
+              </span>
+            </summary>
+            <pre className="px-3 pb-2 text-[11px] text-slate-500 whitespace-pre-wrap font-mono">
+              {JSON.stringify(d.properties, null, 2)}
+            </pre>
+          </details>
+        )
+      })}
+    </div>
+  )
+}
+
+function describeCronDecision(d: CronDecision): { headline: string; tone: 'good' | 'bad' | 'neutral' } {
+  const props = d.properties as Record<string, unknown>
+  if (d.name === 'reengagement_email_sent') {
+    const subject = typeof props.subject === 'string' ? props.subject : '(no subject)'
+    return { headline: `Emailed → "${subject}"`, tone: 'good' }
+  }
+  if (d.name === 'email_sanity_check_failed') {
+    const reason = typeof props.sanityReason === 'string' ? props.sanityReason : 'sanity check vetoed'
+    return { headline: `Sanity-check failed — ${reason}`, tone: 'bad' }
+  }
+  // reengagement_skipped
+  const reason = typeof props.reason === 'string' ? props.reason : 'unknown'
+  const map: Record<string, string> = {
+    customer_paused:  'Skipped — customer is paused for win-back/billing',
+    low_confidence:   'Skipped — classifier confidence too low to match',
+    no_match:         'Skipped — no active improvement matched the trigger need',
+    no_improvements:  'Skipped — no eligible improvements for this subscriber',
+    sanity_failed:    'Skipped — sanity check vetoed the drafted email',
+    cooldown:         'Skipped — within the 60-day cooldown',
+    expired:          'Skipped — past the 9-month wall',
+  }
+  return { headline: map[reason] ?? `Skipped — ${reason}`, tone: 'neutral' }
 }
 
 function statusColor(status: string): BadgeColor {
