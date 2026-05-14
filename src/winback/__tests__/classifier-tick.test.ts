@@ -145,19 +145,52 @@ describe('runClassifierTick', () => {
     expect(mockClassify).not.toHaveBeenCalled()
   })
 
-  it('silent-churn row: skips LLM call, marks classified, no exit email (firstMessage is null)', async () => {
+  it('silent-churn row: skips LLM call, marks classified, sends generic "asking why" email', async () => {
     mockSelect
       .mockReturnValueOnce(selectChain([rowSilentChurn()]))    // pick rows
-      .mockReturnValueOnce(selectChain([{ id: 'cust_1', founderName: 'Alex' }]))  // customer
+      .mockReturnValueOnce(selectChain([{ id: 'cust_1', founderName: 'Alex', productName: 'Acme' }]))
     mockUpdate.mockReturnValue(updateChain())
 
     const stats = await runClassifierTick()
     expect(stats.picked).toBe(1)
     expect(stats.classified).toBe(1)
     expect(mockClassify).not.toHaveBeenCalled()  // silent-churn skips LLM
-    // Silent-churn classification has firstMessage = null — nothing to send.
-    expect(mockScheduleExit).not.toHaveBeenCalled()
+    // Silent churn now sends a generic "asking why" exit email so we
+    // can elicit signal from the otherwise-silent cohort.
+    expect(mockScheduleExit).toHaveBeenCalledOnce()
+    expect(stats.exitEmailsSent).toBe(1)
+    const scheduleCall = mockScheduleExit.mock.calls[0][0] as {
+      classification: { firstMessage: { subject: string; body: string } | null }
+    }
+    expect(scheduleCall.classification.firstMessage?.subject).toContain('A quick question')
+    expect(scheduleCall.classification.firstMessage?.body).toContain('Acme')   // productName
+    expect(scheduleCall.classification.firstMessage?.body).toContain('Alex')   // founderName
+    expect(scheduleCall.classification.firstMessage?.body).toContain('recently')
+  })
+
+  it('silent-churn row: sends ask email within the 90-day window (not just 7d like signal-bearing)', async () => {
+    const FORTY_DAYS_AGO = new Date(Date.now() - 40 * 24 * 60 * 60 * 1000)
+    mockSelect
+      .mockReturnValueOnce(selectChain([rowSilentChurn({ cancelledAt: FORTY_DAYS_AGO })]))
+      .mockReturnValueOnce(selectChain([{ id: 'cust_1', founderName: 'Alex', productName: 'Acme' }]))
+    mockUpdate.mockReturnValue(updateChain())
+
+    const stats = await runClassifierTick()
+    // 40 days > the 7-day signal-bearing window, but well within
+    // the 90-day silent-churn window. Email should still send.
+    expect(stats.exitEmailsSent).toBe(1)
+  })
+
+  it('silent-churn row: outside the 90-day window — no email', async () => {
+    const HUNDRED_DAYS_AGO = new Date(Date.now() - 100 * 24 * 60 * 60 * 1000)
+    mockSelect
+      .mockReturnValueOnce(selectChain([rowSilentChurn({ cancelledAt: HUNDRED_DAYS_AGO })]))
+      .mockReturnValueOnce(selectChain([{ id: 'cust_1', founderName: 'Alex', productName: 'Acme' }]))
+    mockUpdate.mockReturnValue(updateChain())
+
+    const stats = await runClassifierTick()
     expect(stats.exitEmailsSent).toBe(0)
+    expect(stats.classified).toBe(1)  // still gets classified
   })
 
   it('signal-bearing row: calls LLM, marks classified', async () => {

@@ -30,7 +30,15 @@ import { buildConversationThread } from './conversation'
 // Vercel timeout on the worst-case batch composition.
 const BATCH_PER_TICK = 20
 const DEAD_LETTER_THRESHOLD = 3
+// Signal-bearing exit emails reference what we know about the subscriber
+// (their stated reason); after 7 days, that reference can feel stale.
 const EXIT_EMAIL_RECENCY_DAYS = 7
+// Silent-churn "asking why" emails don't reference specifics — they
+// just ask. The copy uses "recently" so we can plausibly send up to
+// 90 days post-cancel without sounding stale or creepy. This is our
+// only chance to elicit signal from the ~90% of cancellations Stripe
+// captures no reason for.
+const SILENT_CHURN_RECENCY_DAYS = 90
 
 export interface ClassifierTickStats {
   picked:          number
@@ -104,10 +112,29 @@ export async function runClassifierTick(): Promise<ClassifierTickStats> {
         throw new Error(`customer ${sub.customerId} not found`)
       }
 
-      // Skip the LLM call when there's no signal to interpret.
+      // Skip the LLM call when there's no signal to interpret. Track
+      // the path so we can apply the right recency window + populate
+      // the silent-churn ask template downstream.
+      const isSilentChurn = !hasSignalForLLM({ stripeEnum: sub.stripeEnum, stripeComment: sub.stripeComment })
       let classification: ClassificationResult
-      if (!hasSignalForLLM({ stripeEnum: sub.stripeEnum, stripeComment: sub.stripeComment })) {
-        classification = classifySilentChurn()
+      if (isSilentChurn) {
+        const base = classifySilentChurn()
+        // Even with no signal, we send a generic "would love to know
+        // why you left" exit email. Reply rate is low (industry: 5-15%)
+        // but every reply is gold — it gives the inbound webhook a real
+        // string to re-classify against. No LLM call here; tier-3 voice
+        // rules are baked into the template directly.
+        const firstName = (sub.name?.split(' ')[0]) ?? 'there'
+        const productName = customer.productName ?? 'us'
+        const founderName = customer.founderName ?? 'The team'
+        classification = {
+          ...base,
+          firstMessage: {
+            subject: `A quick question, ${firstName}`,
+            body: `Hi ${firstName},\n\nSaw you cancelled ${productName} recently. If you have a minute, I'd love to know what didn't land. Even one line is enough — I read every reply.\n\n— ${founderName}\n`,
+            sendDelaySecs: 60,
+          },
+        }
       } else {
         const signals: SubscriberSignals = {
           stripeCustomerId:     sub.stripeCustomerId,
@@ -162,11 +189,15 @@ export async function runClassifierTick(): Promise<ClassifierTickStats> {
       })
 
       // Downstream: schedule exit email when the cancellation is recent
-      // and the AI didn't suppress. Older cancellations get classified
-      // only and wait for the V2 re-engagement cron + improvement match.
+      // and the AI didn't suppress. Silent-churn rows get a generous
+      // 90-day window (the "asking why" copy uses "recently" rather
+      // than specific dates so it stays plausible). Signal-bearing rows
+      // get the original 7-day window since their copy references the
+      // stated reason which can feel stale after a week.
       const cancelledAt = sub.cancelledAt
+      const recencyDays = isSilentChurn ? SILENT_CHURN_RECENCY_DAYS : EXIT_EMAIL_RECENCY_DAYS
       const isRecent = !!cancelledAt &&
-        (Date.now() - cancelledAt.getTime()) < EXIT_EMAIL_RECENCY_DAYS * 24 * 60 * 60 * 1000
+        (Date.now() - cancelledAt.getTime()) < recencyDays * 24 * 60 * 60 * 1000
       const shouldEmail = classification.tier !== 4
         && !classification.suppress
         && classification.firstMessage !== null

@@ -64,6 +64,27 @@ and ships dashboard status messaging so merchants see progress.
 - **Replay/reclassify of existing rows.** Existing classified rows
   stay as-is. The new `classified_at` column gets backfilled to
   `updated_at` for them.
+
+## Silent-churn ask email (added during implementation)
+
+Silent-churn previously got `firstMessage: null` from `classifySilentChurn()` — no exit email ever went out, even though they're the largest segment (90% of typical merchant cohort per the load test's tier distribution). That was a missed signal opportunity: every cancellation is a chance to ask "why?", and reply rate even at 5-15% is hugely valuable when scaled across the silent pool.
+
+The classifier-tick now populates `firstMessage` for silent-churn rows with a deterministic template (no LLM call):
+
+```
+Subject: A quick question, {firstName}
+
+Hi {firstName},
+
+Saw you cancelled {productName} recently. If you have a minute, I'd love
+to know what didn't land. Even one line is enough — I read every reply.
+
+— {founderName}
+```
+
+The word "recently" is deliberate — no specific date reference, so the same copy works at 5 days post-cancel as at 80 days. That lets us widen the recency window to 90 days for silent churn (vs 7 days for signal-bearing exit emails, which DO reference specifics and feel stale after a week). Two recency constants in the file: `EXIT_EMAIL_RECENCY_DAYS = 7` and `SILENT_CHURN_RECENCY_DAYS = 90`.
+
+When a subscriber replies, the inbound webhook re-classifies with the new text → tier potentially flips to 1/2 → re-engagement opportunity opens.
 - **Backwards compat with the 60-second exit-email SLA.** Explicitly
   relaxed.
 
