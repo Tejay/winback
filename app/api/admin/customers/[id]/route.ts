@@ -34,6 +34,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
   const [identityRow] = await ro
     .select({
       id: customers.id,
+      userId: customers.userId,
       email: users.email,
       founderName: customers.founderName,
       productName: customers.productName,

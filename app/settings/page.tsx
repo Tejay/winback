@@ -4,6 +4,7 @@ import { db } from '@/lib/db'
 import { customers } from '@/lib/schema'
 import { eq } from 'drizzle-orm'
 import { TopNav } from '@/components/top-nav'
+import { ImpersonationBanner } from '@/components/impersonation-banner'
 import { DisconnectButton } from './disconnect-button'
 import { DangerZone } from './danger-zone'
 import { NotificationEmailForm } from './notification-email-form'
@@ -63,6 +64,7 @@ export default async function SettingsPage({
 
   return (
     <>
+      <ImpersonationBanner />
       <TopNav userName={session.user.name} isAdmin={isAdmin} />
       <main className="min-h-screen bg-[#f5f5f5]">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6 sm:py-8">

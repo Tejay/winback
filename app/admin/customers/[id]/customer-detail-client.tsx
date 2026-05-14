@@ -6,6 +6,7 @@ import Link from 'next/link'
 interface Detail {
   identity: {
     id: string
+    userId: string
     email: string
     founderName: string | null
     productName: string | null
@@ -48,6 +49,7 @@ export function CustomerDetailClient({ customerId }: { customerId: string }) {
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [actionMsg, setActionMsg] = useState<string | null>(null)
+  const [showImpersonate, setShowImpersonate] = useState(false)
 
   const load = useCallback(async () => {
     setError(null)
@@ -216,8 +218,117 @@ export function CustomerDetailClient({ customerId }: { customerId: string }) {
           >
             Resolve {data.openHandoffs} open handoff{data.openHandoffs === 1 ? '' : 's'}
           </button>
+          <button
+            onClick={() => setShowImpersonate(true)}
+            disabled={busy !== null}
+            className="border border-red-200 bg-red-50 text-red-800 rounded-full px-4 py-2 text-sm font-medium hover:bg-red-100 disabled:opacity-50"
+          >
+            Impersonate
+          </button>
         </div>
       </section>
+
+      {showImpersonate && (
+        <ImpersonateModal
+          targetUserId={id.userId}
+          targetEmail={id.email}
+          onClose={() => setShowImpersonate(false)}
+        />
+      )}
+    </div>
+  )
+}
+
+function ImpersonateModal({
+  targetUserId,
+  targetEmail,
+  onClose,
+}: {
+  targetUserId: string
+  targetEmail: string
+  onClose: () => void
+}) {
+  const [confirmEmail, setConfirmEmail] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const ready = confirmEmail.trim().toLowerCase() === targetEmail.toLowerCase() && !submitting
+
+  async function submit() {
+    setSubmitting(true)
+    setError(null)
+    try {
+      const res = await fetch('/api/admin/actions/impersonate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ targetUserId, confirmEmail: confirmEmail.trim() }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`)
+      // Hard reload to /dashboard so the new session cookie is read by all
+      // server components.
+      window.location.href = json.redirect ?? '/dashboard'
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30 p-4" onClick={onClose}>
+      <div
+        className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-md w-full p-6"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="text-lg font-semibold text-slate-900 mb-1">
+          Impersonate {targetEmail}?
+        </div>
+        <p className="text-sm text-slate-600 mb-4">
+          You&apos;ll see the app exactly as this merchant does, with all the same actions
+          available. A red banner stays on top of every page while active. Click
+          &quot;Stop impersonating&quot; in the banner to return.
+        </p>
+        <p className="text-xs text-slate-500 mb-4">
+          Session auto-expires in 30 minutes. Start and stop are audit-logged.
+        </p>
+
+        <label className="block text-xs font-semibold uppercase tracking-widest text-slate-500 mb-1.5">
+          Type the merchant email to confirm
+        </label>
+        <input
+          value={confirmEmail}
+          onChange={(e) => setConfirmEmail(e.target.value)}
+          className="border border-slate-200 rounded-full px-4 py-2.5 text-sm w-full focus:outline-none focus:ring-2 focus:ring-red-500 mb-4"
+          placeholder={targetEmail}
+          autoFocus
+          autoComplete="off"
+        />
+
+        {error && (
+          <div className="bg-red-50 border border-red-200 text-red-800 rounded-lg p-3 text-sm mb-4">
+            {error}
+          </div>
+        )}
+
+        <div className="flex justify-end gap-2">
+          <button
+            onClick={onClose}
+            className="border border-slate-200 bg-white text-slate-700 rounded-full px-5 py-2 text-sm font-medium"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={submit}
+            disabled={!ready}
+            className={
+              ready
+                ? 'bg-red-600 text-white hover:bg-red-700 rounded-full px-5 py-2 text-sm font-medium'
+                : 'bg-slate-200 text-slate-400 rounded-full px-5 py-2 text-sm font-medium cursor-not-allowed'
+            }
+          >
+            {submitting ? 'Starting…' : 'Impersonate'}
+          </button>
+        </div>
+      </div>
     </div>
   )
 }

@@ -57,14 +57,36 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   callbacks: {
     jwt({ token, user }) {
       if (user) token.id = user.id
+      // Spec 68 — impersonation: the start/stop endpoints mutate the
+      // session cookie directly via next-auth/jwt encode(). This callback
+      // is only invoked on credentials-signin and on subsequent same-token
+      // refreshes; in both cases `token.impersonator` (if present) is
+      // already in the payload from the prior issuance and we pass it
+      // through unchanged.
       return token
     },
     session({ session, token }) {
       if (session.user) session.user.id = token.id as string
+      if (token.impersonator) session.impersonator = token.impersonator
       return session
     },
   },
 })
+
+/**
+ * Spec 68 — NextAuth v5 picks the session cookie name based on whether
+ * the request URL is HTTPS. Helper centralises the detection so both
+ * the impersonate-start and stop-impersonating endpoints encode against
+ * the same cookie NextAuth itself reads from.
+ */
+export function getSessionCookieName(reqUrl?: string): string {
+  const url = reqUrl
+    ? new URL(reqUrl)
+    : new URL(process.env.NEXTAUTH_URL || 'http://localhost')
+  return url.protocol === 'https:'
+    ? '__Secure-authjs.session-token'
+    : 'authjs.session-token'
+}
 
 /**
  * Spec 25 — Admin gate for /admin pages and /api/admin/* routes.

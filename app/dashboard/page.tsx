@@ -4,6 +4,7 @@ import { db } from '@/lib/db'
 import { customers, recoveries, churnedSubscribers, wbEvents } from '@/lib/schema'
 import { eq, and, ne, or, isNull, inArray, sql } from 'drizzle-orm'
 import { TopNav } from '@/components/top-nav'
+import { ImpersonationBanner } from '@/components/impersonation-banner'
 import { DashboardClient } from './dashboard-client'
 
 const DUNNING_REASON = 'Payment failed'
@@ -130,6 +131,7 @@ export default async function DashboardPage() {
 
   return (
     <>
+      <ImpersonationBanner />
       <TopNav userName={session.user.name} isAdmin={isAdmin} />
       <main className="min-h-screen bg-[#f5f5f5]">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
