@@ -23,6 +23,20 @@ interface OutstandingRow {
   customerEmail: string | null
 }
 
+interface ChargedRow {
+  recoveryId: string
+  customerId: string
+  recoveredAt: string | null
+  chargedAt: string | null
+  refundedAt: string | null
+  stripeItemId: string | null
+  feeCents: number
+  planMrrCents: number
+  productName: string | null
+  customerEmail: string | null
+  withinRefundWindow: boolean
+}
+
 interface MrrPoint {
   week: string
   attributionType: string
@@ -33,6 +47,8 @@ interface MrrPoint {
 interface Payload {
   outstanding: OutstandingRow[]
   mrrTrend: MrrPoint[]
+  charged: ChargedRow[]
+  stripeMode: 'test' | 'live'
 }
 
 export function BillingClient() {
@@ -56,6 +72,8 @@ export function BillingClient() {
 
   useEffect(() => { load() }, [load])
 
+  const [filter, setFilter] = useState('')
+
   if (loading && !data) return <p className="text-sm text-slate-500">Loading…</p>
   if (error && !data) {
     return (
@@ -66,8 +84,17 @@ export function BillingClient() {
   }
   if (!data) return null
 
-  const totalOutstandingCents = data.outstanding.reduce((a, b) => a + b.feeCents, 0)
-  const totalOutstandingMrr = data.outstanding.reduce((a, b) => a + b.planMrrCents, 0)
+  const filterPredicate = (row: { productName: string | null; customerEmail: string | null }) => {
+    const q = filter.trim().toLowerCase()
+    if (!q) return true
+    const hay = `${row.productName ?? ''} ${row.customerEmail ?? ''}`.toLowerCase()
+    return hay.includes(q)
+  }
+  const filteredOutstanding = data.outstanding.filter(filterPredicate)
+  const filteredCharged = data.charged.filter(filterPredicate)
+
+  const totalOutstandingCents = filteredOutstanding.reduce((a, b) => a + b.feeCents, 0)
+  const totalOutstandingMrr = filteredOutstanding.reduce((a, b) => a + b.planMrrCents, 0)
 
   return (
     <div className="space-y-8">
@@ -82,6 +109,22 @@ export function BillingClient() {
         </p>
       </header>
 
+      {/* Customer filter (client-side, applies to both sections) */}
+      <div>
+        <input
+          type="text"
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+          placeholder="Filter by customer (product name or email)…"
+          className="border border-slate-200 rounded-full px-4 py-2.5 text-sm w-full max-w-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+        />
+        {filter && (
+          <span className="ml-3 text-xs text-slate-500">
+            {filteredOutstanding.length} outstanding · {filteredCharged.length} charged
+          </span>
+        )}
+      </div>
+
       {/* Outstanding win-back fees (queued, not yet billed) */}
       <section className="bg-white rounded-2xl border border-slate-200 p-5">
         <div className="flex items-center justify-between mb-3">
@@ -95,8 +138,10 @@ export function BillingClient() {
             </div>
           )}
         </div>
-        {data.outstanding.length === 0 ? (
-          <div className="text-sm text-slate-400 italic">No queued win-back fees — every strong recovery has been charged.</div>
+        {filteredOutstanding.length === 0 ? (
+          <div className="text-sm text-slate-400 italic">
+            {filter ? 'No outstanding fees match the filter.' : 'No queued win-back fees — every strong recovery has been charged.'}
+          </div>
         ) : (
           <table className="w-full text-sm">
             <thead className="text-xs font-semibold uppercase tracking-wide text-slate-400">
@@ -109,7 +154,7 @@ export function BillingClient() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {data.outstanding.map((r) => (
+              {filteredOutstanding.map((r) => (
                 <tr key={r.recoveryId} className="hover:bg-slate-50">
                   <td className="py-2">
                     <Link href={`/admin/customers/${r.customerId}`} className="text-blue-600 hover:underline">
@@ -129,6 +174,15 @@ export function BillingClient() {
         )}
       </section>
 
+      {/* Charged win-back fees — Spec 67 */}
+      <ChargedSection
+        rows={filteredCharged}
+        totalUnfiltered={data.charged.length}
+        filterActive={filter.trim().length > 0}
+        stripeMode={data.stripeMode}
+        onRefunded={load}
+      />
+
       {/* MRR recovered trend */}
       <section className="bg-white rounded-2xl border border-slate-200 p-5">
         <div className="text-xs font-semibold uppercase tracking-widest text-slate-500 mb-3">
@@ -136,6 +190,235 @@ export function BillingClient() {
         </div>
         <MrrTrend points={data.mrrTrend} />
       </section>
+    </div>
+  )
+}
+
+function stripeItemUrl(itemId: string, mode: 'test' | 'live'): string {
+  const prefix = mode === 'test' ? '/test' : ''
+  return `https://dashboard.stripe.com${prefix}/invoice-items/${itemId}`
+}
+
+function ChargedSection({
+  rows,
+  totalUnfiltered,
+  filterActive,
+  stripeMode,
+  onRefunded,
+}: {
+  rows: ChargedRow[]
+  totalUnfiltered: number
+  filterActive: boolean
+  stripeMode: 'test' | 'live'
+  onRefunded: () => void
+}) {
+  const [refundTarget, setRefundTarget] = useState<ChargedRow | null>(null)
+  const atLimit = totalUnfiltered >= 200
+
+  return (
+    <section className="bg-white rounded-2xl border border-slate-200 p-5">
+      <div className="flex items-center justify-between mb-3">
+        <div className="text-xs font-semibold uppercase tracking-widest text-slate-500">
+          Charged win-back fees
+        </div>
+        <div className="text-xs text-slate-400">
+          {filterActive
+            ? `${rows.length} match${rows.length === 1 ? '' : 'es'}`
+            : atLimit
+              ? 'showing 200 most recent'
+              : `${rows.length} ${rows.length === 1 ? 'row' : 'rows'}`}
+        </div>
+      </div>
+      {rows.length === 0 ? (
+        <div className="text-sm text-slate-400 italic">
+          {filterActive ? 'No charged fees match the filter.' : 'No win-back fees have been charged yet.'}
+        </div>
+      ) : (
+        <table className="w-full text-sm">
+          <thead className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+            <tr>
+              <th className="text-left py-2">Customer</th>
+              <th className="text-left py-2">Charged</th>
+              <th className="text-right py-2">Fee</th>
+              <th className="text-left py-2 pl-4">Status</th>
+              <th className="text-right py-2">Actions</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {rows.map((r) => {
+              const refundable = !r.refundedAt && !!r.stripeItemId
+              const stripeUrl = r.stripeItemId ? stripeItemUrl(r.stripeItemId, stripeMode) : null
+              return (
+                <tr key={r.recoveryId} className="hover:bg-slate-50">
+                  <td className="py-2">
+                    <Link href={`/admin/customers/${r.customerId}`} className="text-blue-600 hover:underline">
+                      {r.productName ?? r.customerEmail ?? r.customerId.slice(0, 8)}
+                    </Link>
+                  </td>
+                  <td className="py-2 text-xs text-slate-500">
+                    {r.chargedAt ? new Date(r.chargedAt).toLocaleDateString() : '—'}
+                  </td>
+                  <td className="py-2 text-right tabular-nums font-semibold">
+                    ${(r.feeCents / 100).toFixed(2)}
+                  </td>
+                  <td className="py-2 pl-4">
+                    {r.refundedAt ? (
+                      <span className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium bg-slate-100 text-slate-500 border border-slate-200">
+                        Refunded
+                      </span>
+                    ) : !r.stripeItemId ? (
+                      <span
+                        className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200"
+                        title="Charged but no Stripe item recorded — resolve via Stripe Dashboard directly"
+                      >
+                        Item missing
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium bg-green-50 text-green-700 border border-green-200">
+                        Charged
+                        {r.withinRefundWindow && (
+                          <span className="text-green-600/60 font-normal"> · within 14d</span>
+                        )}
+                      </span>
+                    )}
+                  </td>
+                  <td className="py-2 text-right whitespace-nowrap">
+                    {stripeUrl && (
+                      <a
+                        href={stripeUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-blue-600 hover:underline mr-3"
+                      >
+                        View in Stripe ↗
+                      </a>
+                    )}
+                    {refundable && (
+                      <button
+                        onClick={() => setRefundTarget(r)}
+                        className="text-xs px-3 py-1 rounded-full border border-slate-200 hover:bg-slate-50 text-slate-700"
+                      >
+                        Refund
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      )}
+
+      {refundTarget && (
+        <RefundModal
+          row={refundTarget}
+          onClose={() => setRefundTarget(null)}
+          onSuccess={() => { setRefundTarget(null); onRefunded() }}
+        />
+      )}
+    </section>
+  )
+}
+
+function RefundModal({
+  row,
+  onClose,
+  onSuccess,
+}: {
+  row: ChargedRow
+  onClose: () => void
+  onSuccess: () => void
+}) {
+  const [confirmText, setConfirmText] = useState('')
+  const [acknowledged, setAcknowledged] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const customerLabel = row.productName ?? row.customerEmail ?? row.customerId.slice(0, 8)
+  const dollars = `$${(row.feeCents / 100).toFixed(2)}`
+  const outsideWindow = !row.withinRefundWindow
+  const ready = acknowledged && confirmText === 'REFUND' && !submitting
+
+  async function submit() {
+    setSubmitting(true)
+    setError(null)
+    try {
+      const res = await fetch(`/api/admin/billing/recoveries/${row.recoveryId}/refund`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ confirm: 'REFUND' }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`)
+      onSuccess()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30 p-4" onClick={onClose}>
+      <div
+        className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-md w-full p-6"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="text-lg font-semibold text-slate-900 mb-1">
+          Refund {dollars} to {customerLabel}?
+        </div>
+        <p className="text-sm text-slate-600 mb-4">
+          {outsideWindow
+            ? `This recovery was charged on ${row.chargedAt ? new Date(row.chargedAt).toLocaleDateString() : 'an unknown date'} — outside the 14-day refund policy. Confirm only if support has approved an out-of-window refund.`
+            : 'Issues a Stripe credit note (or deletes the pending invoice item if not yet finalized) and marks the recovery refunded in our DB.'}
+        </p>
+
+        <label className="flex items-start gap-2 mb-3 text-sm text-slate-700 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={acknowledged}
+            onChange={(e) => setAcknowledged(e.target.checked)}
+            className="mt-0.5"
+          />
+          <span>This subscriber re-cancelled within 14 days OR support has approved an out-of-window refund.</span>
+        </label>
+
+        <label className="block text-xs font-semibold uppercase tracking-widest text-slate-500 mb-1.5">
+          Type REFUND to confirm
+        </label>
+        <input
+          value={confirmText}
+          onChange={(e) => setConfirmText(e.target.value)}
+          className="border border-slate-200 rounded-full px-4 py-2.5 text-sm w-full focus:outline-none focus:ring-2 focus:ring-blue-500 mb-4"
+          placeholder="REFUND"
+          autoFocus
+        />
+
+        {error && (
+          <div className="bg-red-50 border border-red-200 text-red-800 rounded-lg p-3 text-sm mb-4">
+            {error}
+          </div>
+        )}
+
+        <div className="flex justify-end gap-2">
+          <button
+            onClick={onClose}
+            className="border border-slate-200 bg-white text-slate-700 rounded-full px-5 py-2 text-sm font-medium"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={submit}
+            disabled={!ready}
+            className={
+              ready
+                ? 'bg-[#0f172a] text-white hover:bg-[#1e293b] rounded-full px-5 py-2 text-sm font-medium'
+                : 'bg-slate-200 text-slate-400 rounded-full px-5 py-2 text-sm font-medium cursor-not-allowed'
+            }
+          >
+            {submitting ? 'Refunding…' : 'Refund'}
+          </button>
+        </div>
+      </div>
     </div>
   )
 }

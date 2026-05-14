@@ -3,6 +3,8 @@ import { requireAdmin } from '@/lib/auth'
 import {
   outstandingObligations,
   mrrRecoveredWeeklyTrend,
+  chargedPerfFees,
+  detectStripeMode,
 } from '@/lib/admin/billing-queries'
 
 /**
@@ -15,9 +17,15 @@ export async function GET() {
   if ('error' in auth) {
     return NextResponse.json({ error: auth.error }, { status: auth.status })
   }
-  const [outstanding, mrrTrend] = await Promise.all([
+  const [outstanding, mrrTrend, charged] = await Promise.all([
     outstandingObligations(),
     mrrRecoveredWeeklyTrend(13),
+    chargedPerfFees(200),
   ])
-  return NextResponse.json({ outstanding, mrrTrend })
+  return NextResponse.json({
+    outstanding,
+    mrrTrend,
+    charged,
+    stripeMode: detectStripeMode(),
+  })
 }

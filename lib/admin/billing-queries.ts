@@ -9,9 +9,11 @@
  * dashboard are gone; Stripe Subscriptions handle their own dunning.
  */
 
-import { sql, and, eq, desc, gte, isNull } from 'drizzle-orm'
+import { sql, and, eq, desc, gte, isNull, isNotNull } from 'drizzle-orm'
 import { getDbReadOnly } from '../db'
 import { customers, users, recoveries } from '../schema'
+
+const REFUND_WINDOW_DAYS = 14
 
 export interface OutstandingObligationRow {
   recoveryId: string
@@ -65,6 +67,82 @@ export async function outstandingObligations(): Promise<OutstandingObligationRow
     productName: r.productName,
     customerEmail: r.customerEmail,
   }))
+}
+
+export interface ChargedPerfFeeRow {
+  recoveryId: string
+  customerId: string
+  recoveredAt: Date | null
+  chargedAt: Date | null
+  refundedAt: Date | null
+  stripeItemId: string | null
+  feeCents: number
+  planMrrCents: number
+  productName: string | null
+  customerEmail: string | null
+  withinRefundWindow: boolean
+}
+
+/**
+ * Spec 67 — the N most recent charged perf fees, no time cut-off. Drives
+ * the admin Refund button + Stripe-invoice-link list. Includes refunded
+ * rows so support has full context (and an audit link to the credit note).
+ *
+ * Admin must be able to refund any individual charge regardless of age
+ * (the 14-day refund policy is a customer-facing default; support can
+ * override out-of-window with a confirmation warning). LIMIT 200 caps
+ * the query; when in-flight volume crosses that, add a search box.
+ *
+ * `withinRefundWindow` is derived server-side from
+ * `perf_fee_charged_at >= NOW() - 14d AND perf_fee_refunded_at IS NULL`,
+ * so the UI doesn't have to compute it.
+ */
+export async function chargedPerfFees(limit = 200): Promise<ChargedPerfFeeRow[]> {
+  const refundCutoff = new Date(Date.now() - REFUND_WINDOW_DAYS * 24 * 60 * 60 * 1000)
+
+  const rows = await getDbReadOnly()
+    .select({
+      recoveryId:    recoveries.id,
+      customerId:    recoveries.customerId,
+      recoveredAt:   recoveries.recoveredAt,
+      chargedAt:     recoveries.perfFeeChargedAt,
+      refundedAt:    recoveries.perfFeeRefundedAt,
+      stripeItemId:  recoveries.perfFeeStripeItemId,
+      feeCents:      recoveries.perfFeeAmountCents,
+      planMrrCents:  recoveries.planMrrCents,
+      productName:   customers.productName,
+      customerEmail: users.email,
+    })
+    .from(recoveries)
+    .innerJoin(customers, eq(customers.id, recoveries.customerId))
+    .innerJoin(users, eq(users.id, customers.userId))
+    .where(and(
+      isNotNull(recoveries.perfFeeChargedAt),
+      eq(recoveries.recoveryType, 'win_back'),
+    ))
+    .orderBy(desc(recoveries.perfFeeChargedAt))
+    .limit(limit)
+
+  return rows.map((r) => ({
+    recoveryId:   r.recoveryId,
+    customerId:   r.customerId,
+    recoveredAt:  r.recoveredAt,
+    chargedAt:    r.chargedAt,
+    refundedAt:   r.refundedAt,
+    stripeItemId: r.stripeItemId,
+    // perf_fee_amount_cents fell back to plan_mrr_cents for ancient rows.
+    feeCents:     r.feeCents ?? r.planMrrCents,
+    planMrrCents: r.planMrrCents,
+    productName:  r.productName,
+    customerEmail: r.customerEmail,
+    withinRefundWindow: !r.refundedAt && !!r.chargedAt && r.chargedAt >= refundCutoff,
+  }))
+}
+
+/** Test-vs-live mode for building Stripe Dashboard URLs in the admin UI. */
+export function detectStripeMode(): 'test' | 'live' {
+  const key = process.env.STRIPE_SECRET_KEY ?? ''
+  return key.startsWith('sk_live_') ? 'live' : 'test'
 }
 
 /**
