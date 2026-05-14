@@ -1,6 +1,7 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { runDrainTick } from '@/src/winback/lib/pause-drain'
 import { logEvent } from '@/src/winback/lib/events'
+import { withCron } from '@/src/winback/lib/cron-wrap'
 
 export const maxDuration = 60
 
@@ -19,31 +20,24 @@ export const maxDuration = 60
  *
  * See specs/54-drain-on-subscribe.md.
  *
- * Schedule: every 5 minutes via vercel.json (cron path
- * /api/cron/drain-paused-queue, schedule `* /5 * * * *`).
+ * Schedule: every 5 minutes via vercel.json. Auth: Bearer ${CRON_SECRET}
+ * via withCron (Spec 69).
  */
-export async function GET(req: NextRequest) {
-  const authHeader = req.headers.get('authorization')
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+const PER_TICK_LIMIT = 50
 
-  // Per-tick budget. 50 × ~120ms throttle = ~6s, well under maxDuration.
-  const PER_TICK_LIMIT = 50
-
-  try {
-    const summary = await runDrainTick(PER_TICK_LIMIT)
-    return NextResponse.json(summary)
-  } catch (err) {
-    // runDrainTick already catches per-row errors. A throw here is a
-    // route-level / infra-level failure (DB outage, etc.) — log so we can
-    // see it in wb_events and Vercel logs.
-    const message = err instanceof Error ? err.message : String(err)
-    console.error('[pause-drain cron] tick threw:', message)
-    await logEvent({
-      name: 'pause_drain_tick_failed',
-      properties: { error: message },
-    }).catch(() => {})
-    return NextResponse.json({ error: 'drain_failed', detail: message }, { status: 500 })
-  }
-}
+export const GET = (req: NextRequest) =>
+  withCron('drain-paused-queue', req, async () => {
+    try {
+      return await runDrainTick(PER_TICK_LIMIT)
+    } catch (err) {
+      // Preserve the existing pause-drain-specific failure event in addition
+      // to the generic cron_run event that withCron will emit.
+      const message = err instanceof Error ? err.message : String(err)
+      console.error('[pause-drain cron] tick threw:', message)
+      await logEvent({
+        name: 'pause_drain_tick_failed',
+        properties: { error: message },
+      }).catch(() => {})
+      throw err
+    }
+  })

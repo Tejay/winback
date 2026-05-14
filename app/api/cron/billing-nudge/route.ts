@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { db } from '@/lib/db'
 import { customers, churnedSubscribers } from '@/lib/schema'
 import { and, eq, isNotNull, isNull, lt, or, count, sql } from 'drizzle-orm'
@@ -8,6 +8,7 @@ import {
   sendBillingMonthlyReportEmail,
 } from '@/src/winback/lib/billing-notifications'
 import { logEvent } from '@/src/winback/lib/events'
+import { withCron } from '@/src/winback/lib/cron-wrap'
 
 export const maxDuration = 60
 
@@ -30,16 +31,11 @@ export const maxDuration = 60
  *
  * Schedule: daily at 10:00 UTC via vercel.json (offset from other crons).
  *
- * Auth: Bearer ${CRON_SECRET}.
+ * Auth: Bearer ${CRON_SECRET} via withCron (Spec 69).
  *
  * `?dryRun=1` skips sends, returns counts only.
  */
-export async function GET(req: Request) {
-  const authHeader = req.headers.get('authorization')
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
-
+export const GET = (req: NextRequest) => withCron('billing-nudge', req, async () => {
   const dryRun = new URL(req.url).searchParams.get('dryRun') === '1'
   const now = Date.now()
   const day7Cutoff = new Date(now - 7 * 24 * 60 * 60 * 1000)
@@ -224,11 +220,10 @@ export async function GET(req: Request) {
     monthlySent++
   }
 
-  return NextResponse.json({
-    ok: true,
+  return {
     dryRun,
     day7: day7Sent,
     day30: day30Sent,
     monthly: monthlySent,
-  })
-}
+  }
+})

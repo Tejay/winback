@@ -149,6 +149,11 @@ describe('GET /api/cron/billing-nudge', () => {
     expect(mockSendDay7).not.toHaveBeenCalled()
     expect(mockSendDay30).not.toHaveBeenCalled()
     expect(mockSendMonthly).not.toHaveBeenCalled()
-    expect(mockLogEvent).not.toHaveBeenCalled()
+    // Spec 69 — withCron emits one cron_run event per invocation regardless
+    // of dryRun. Verify nothing OTHER than that fired.
+    const nonCronRunCalls = mockLogEvent.mock.calls.filter(
+      (c) => (c[0] as { name?: string }).name !== 'cron_run',
+    )
+    expect(nonCronRunCalls).toHaveLength(0)
   })
 })

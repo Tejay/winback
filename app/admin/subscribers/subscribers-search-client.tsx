@@ -1,7 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
+import { useSearchParams, useRouter } from 'next/navigation'
 
 interface Row {
   id: string
@@ -24,6 +25,10 @@ interface Row {
 }
 
 export function SubscribersSearchClient() {
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const customerIdFilter = searchParams.get('customerId')
+
   const [email, setEmail] = useState('')
   const [submitted, setSubmitted] = useState<string | null>(null)
   const [rows, setRows] = useState<Row[]>([])
@@ -34,6 +39,43 @@ export function SubscribersSearchClient() {
   // Spec 26 — bulk DNC: track selected subscriber ids for the multi-select.
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [bulkBusy, setBulkBusy] = useState(false)
+  // Spec 69 — when the URL has ?customerId=X, fetch the customer-scoped
+  // list on mount and display a "Filtered to X" pill with a clear-filter
+  // button that strips the query param.
+  const [customerLabel, setCustomerLabel] = useState<string | null>(null)
+
+  const fetchCustomerScoped = useCallback(async (id: string) => {
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await fetch(`/api/admin/subscribers/search?customerId=${encodeURIComponent(id)}`)
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error ?? 'Search failed')
+      setRows(json.rows)
+      const first = json.rows[0] as Row | undefined
+      setCustomerLabel(
+        first?.customerProductName ?? first?.customerFounderName ?? first?.customerEmail ?? id.slice(0, 8),
+      )
+      setSubmitted(null)
+      setSelected(new Set())
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (customerIdFilter) {
+      fetchCustomerScoped(customerIdFilter)
+    } else {
+      setCustomerLabel(null)
+    }
+  }, [customerIdFilter, fetchCustomerScoped])
+
+  function clearCustomerFilter() {
+    router.push('/admin/subscribers')
+  }
 
   function toggleSelected(id: string) {
     setSelected((prev) => {
@@ -65,7 +107,7 @@ export function SubscribersSearchClient() {
       if (!res.ok) throw new Error(json.error ?? 'Bulk DNC failed')
       setActionMsg(`✓ Marked ${json.count} subscriber${json.count === 1 ? '' : 's'} as DNC`)
       clearSelection()
-      if (submitted) await searchEmail(submitted)
+      await refreshCurrentView()
     } catch (e) {
       setActionMsg(`✗ ${e instanceof Error ? e.message : String(e)}`)
     } finally {
@@ -121,7 +163,7 @@ export function SubscribersSearchClient() {
       if (!res.ok) throw new Error(json.error ?? 'Action failed')
       setActionMsg(`✓ ${action === 'dsr-delete' ? 'Deleted' : 'Marked DNC'}: ${row.email}`)
       // Re-search to refresh the row state
-      if (submitted) await searchEmail(submitted)
+      await refreshCurrentView()
     } catch (e) {
       setActionMsg(`✗ ${e instanceof Error ? e.message : String(e)}`)
     } finally {
@@ -133,6 +175,19 @@ export function SubscribersSearchClient() {
     const res = await fetch(`/api/admin/subscribers/search?email=${encodeURIComponent(q)}`)
     const json = await res.json()
     if (res.ok) setRows(json.rows)
+  }
+
+  /**
+   * Spec 69 — re-pull the current view after a row action mutates state.
+   * Routes to the customer-scoped fetch if the URL filter is active, else
+   * re-runs the last email search.
+   */
+  async function refreshCurrentView() {
+    if (customerIdFilter) {
+      await fetchCustomerScoped(customerIdFilter)
+    } else if (submitted) {
+      await searchEmail(submitted)
+    }
   }
 
   function exportRow(row: Row) {
@@ -151,9 +206,24 @@ export function SubscribersSearchClient() {
         </div>
         <h1 className="text-3xl font-bold text-slate-900">Subscribers.</h1>
         <p className="text-sm text-slate-500">
-          Find a churned subscriber across every Winback customer's campaign — for complaint triage and GDPR requests.
+          Find a churned subscriber across every Winback customer&apos;s campaign — for complaint triage and GDPR requests.
         </p>
       </header>
+
+      {customerIdFilter && (
+        <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-2.5 text-sm flex items-center justify-between">
+          <span className="text-blue-900">
+            Filtered to <strong>{customerLabel ?? customerIdFilter.slice(0, 8)}</strong>
+            <span className="ml-2 text-xs text-blue-700/70">— showing all subscribers for this customer</span>
+          </span>
+          <button
+            onClick={clearCustomerFilter}
+            className="text-xs text-blue-700 hover:text-blue-900 font-medium"
+          >
+            × clear filter
+          </button>
+        </div>
+      )}
 
       <form onSubmit={search} className="flex gap-2">
         <input
