@@ -1,6 +1,22 @@
 export type SubscriberStatus = 'pending' | 'contacted' | 'recovered' | 'lost' | 'skipped'
 export type EmailType        = 'exit' | 'win_back' | 'followup' | 'reengagement'
 
+/**
+ * Spec 71 — one turn in the subscriber's conversation, used by the
+ * classifier to read the full thread (vs. just the latest reply).
+ * `kind: 'outbound'` is an email we sent; `kind: 'reply'` is the
+ * subscriber's response. Bodies are truncated to ~3 KB at builder time
+ * so the rendered prompt stays under ~30 KB even at the 10-turn max.
+ */
+export interface ConversationTurn {
+  kind:        'outbound' | 'reply'
+  at:          Date
+  emailType?:  string  // only on outbound: 'exit' | 'followup' | 'reengagement' | 'dunning'
+  subject?:    string  // only on outbound
+  body:        string
+  truncated?:  boolean // true if we clipped this turn's body to fit
+}
+
 export interface SubscriberSignals {
   stripeCustomerId:     string
   stripeSubscriptionId: string
@@ -16,7 +32,14 @@ export interface SubscriberSignals {
   previousSubs:         number
   stripeEnum:           string | null
   stripeComment:        string | null
-  replyText?:           string | null
+  /**
+   * Spec 71 — chronological conversation thread (most-recent last,
+   * capped at 10 turns by the builder). Replaces the old single-string
+   * `replyText` field; classifier prompt renders this as a block.
+   * Empty / undefined → no conversation context yet (first-pass
+   * classification at cancel time).
+   */
+  conversationThread?: ConversationTurn[]
   billingPortalClicked?: boolean
   cancelledAt:          Date
   /**

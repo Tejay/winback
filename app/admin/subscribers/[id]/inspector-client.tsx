@@ -26,6 +26,14 @@ interface CronDecision {
   properties: Record<string, unknown>
 }
 
+interface Reply {
+  id: string
+  body: string
+  fromEmail: string | null
+  receivedAt: string
+  inReplyToEmailId: string | null
+}
+
 interface Subscriber {
   id: string
   customerId: string
@@ -51,7 +59,6 @@ interface Subscriber {
   paymentFailures: number | null
   previousSubs: number | null
   billingPortalClickedAt: string | null
-  replyText: string | null
   tier: number | null
   confidence: string | null
   cancellationReason: string | null
@@ -66,6 +73,7 @@ interface Payload {
   emails: Email[]
   outcomeEvents: OutcomeEvent[]
   cronDecisions: CronDecision[]
+  replies: Reply[]
 }
 
 interface ReclassifyDiff {
@@ -237,14 +245,9 @@ export function InspectorClient({ subscriberId }: { subscriberId: string }) {
                 </div>
               </div>
             )}
-            {s.replyText && (
-              <div className="md:col-span-2">
-                <div className="text-xs text-slate-500 mt-2 mb-1">latest reply (only most recent is preserved)</div>
-                <div className="text-sm italic bg-slate-50 rounded-lg p-2 border border-slate-100">
-                  &ldquo;{s.replyText}&rdquo;
-                </div>
-              </div>
-            )}
+            <p className="text-xs text-slate-400 italic md:col-span-2 mt-1">
+              Full conversation history (replies + bodies) is in the timeline below.
+            </p>
           </div>
         )}
       </Section>
@@ -285,12 +288,13 @@ export function InspectorClient({ subscriberId }: { subscriberId: string }) {
 
       {/* TIMELINE */}
       <Section title="Conversation timeline">
-        {data.emails.length === 0 ? (
+        {data.emails.length === 0 && data.replies.length === 0 ? (
           <div className="text-sm text-slate-400 italic">No emails sent yet.</div>
         ) : (
           <Timeline
             subscriberId={subscriberId}
             emails={data.emails}
+            replies={data.replies}
             outcomeEvents={data.outcomeEvents}
             cancelledAt={s.cancelledAt}
             expanded={expandedEmails}
@@ -409,6 +413,7 @@ function KV({ k, v, mono = false }: { k: string; v: string; mono?: boolean }) {
 function Timeline({
   subscriberId,
   emails,
+  replies,
   outcomeEvents,
   cancelledAt,
   expanded,
@@ -416,6 +421,7 @@ function Timeline({
 }: {
   subscriberId: string
   emails: Email[]
+  replies: Reply[]
   outcomeEvents: OutcomeEvent[]
   cancelledAt: string | null
   expanded: Set<string>
@@ -444,15 +450,18 @@ function Timeline({
     }
   }
 
-  // Build merged + chronological event list: emails (out + reply marker) + outcome events.
+  // Build merged + chronological event list: outgoing emails + inbound replies
+  // (Spec 71 — full bodies from wb_subscriber_replies) + outcome events.
   type Item =
-    | { kind: 'email'; at: string; email: Email }
-    | { kind: 'reply'; at: string; email: Email }
+    | { kind: 'email';   at: string; email: Email }
+    | { kind: 'reply';   at: string; reply: Reply }
     | { kind: 'outcome'; at: string; event: OutcomeEvent }
   const items: Item[] = []
   for (const e of emails) {
     if (e.sentAt) items.push({ kind: 'email', at: e.sentAt, email: e })
-    if (e.repliedAt) items.push({ kind: 'reply', at: e.repliedAt, email: e })
+  }
+  for (const r of replies) {
+    items.push({ kind: 'reply', at: r.receivedAt, reply: r })
   }
   for (const ev of outcomeEvents) {
     items.push({ kind: 'outcome', at: ev.createdAt, event: ev })
@@ -504,10 +513,32 @@ function Timeline({
           )
         }
         if (it.kind === 'reply') {
+          const isOpen = expanded.has(`reply-${it.reply.id}`)
+          const threaded = !!it.reply.inReplyToEmailId
           return (
-            <div key={`${idx}-reply-${it.email.id}`} className="border-l-2 border-amber-300 pl-4">
-              <div className="text-xs text-slate-400">{dayLabel} ← subscriber replied</div>
-              <div className="text-xs italic text-slate-600">(reply tracked on email row; latest reply text shown in Signals)</div>
+            <div key={`${idx}-reply-${it.reply.id}`} className="border-l-2 border-amber-300 pl-4">
+              <div className="text-xs text-slate-400">
+                {dayLabel} ← subscriber replied
+                {!threaded && (
+                  <span className="ml-2 text-amber-700" title="In-Reply-To header missing or didn't match a known outbound">
+                    ⚠ thread unknown
+                  </span>
+                )}
+              </div>
+              <button
+                onClick={() => onToggle(`reply-${it.reply.id}`)}
+                className="text-sm font-medium text-slate-900 hover:underline text-left"
+              >
+                {it.reply.body.length > 80
+                  ? `${it.reply.body.slice(0, 80).replace(/\s+/g, ' ').trim()}…`
+                  : it.reply.body.replace(/\s+/g, ' ').trim()
+                } {isOpen ? '▾' : '▸'}
+              </button>
+              {isOpen && (
+                <div className="mt-2 bg-amber-50 border border-amber-100 rounded-lg p-3 text-xs whitespace-pre-wrap font-mono text-slate-700 max-h-96 overflow-y-auto">
+                  {it.reply.body}
+                </div>
+              )}
             </div>
           )
         }

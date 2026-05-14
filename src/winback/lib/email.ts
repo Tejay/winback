@@ -8,6 +8,7 @@ import { logEvent } from './events'
 import { callWithRetry } from './retry'
 import { renderDunningEmailHtml } from './email-html'
 import { declineCodeToCopy, DeclineCopy } from './decline-codes'
+import { getLatestReply } from './conversation'
 
 /**
  * Spec 28 — Postgres unique-violation error code. The partial unique index
@@ -303,6 +304,9 @@ async function triggerFounderHandoff(params: {
       return
     }
     const { buildHandoffNotification } = await import('./founder-handoff-email')
+    // Spec 71 — latest reply now lives in wb_subscriber_replies, not on
+    // the subscriber row. Fetch here for the handoff-notification copy.
+    const replyText = await getLatestReply(sub.id)
     const { subject, body } = await buildHandoffNotification({
       subscriber: {
         id: sub.id,
@@ -314,7 +318,7 @@ async function triggerFounderHandoff(params: {
         triggerNeed: sub.triggerNeed,
         cancelledAt: sub.cancelledAt,
         stripeComment: sub.stripeComment,
-        replyText: sub.replyText,
+        replyText,
       },
       founderName: fromName,
       handoffReasoning:   classification.handoffReasoning,

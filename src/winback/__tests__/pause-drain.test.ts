@@ -32,6 +32,7 @@ vi.mock('@/lib/schema', () => ({
   customers: 'wb_customers',
   churnedSubscribers: 'wb_churned_subscribers',
   emailsSent: 'wb_emails_sent',
+  subscriberReplies: 'wb_subscriber_replies',
 }))
 
 vi.mock('drizzle-orm', () => ({
@@ -49,6 +50,10 @@ vi.mock('drizzle-orm', () => ({
 }))
 
 vi.mock('../lib/classifier', () => ({ classifySubscriber: mockClassify }))
+vi.mock('../lib/conversation', () => ({
+  buildConversationThread: vi.fn().mockResolvedValue([]),
+  getLatestReply: vi.fn().mockResolvedValue(null),
+}))
 vi.mock('../lib/email', () => ({
   scheduleExitEmail:        mockScheduleExit,
   sendDunningEmail:         mockSendDunning,
@@ -135,7 +140,6 @@ function fakeCancellationSubscriber(overrides: Record<string, unknown> = {}) {
       previousSubs: 0,
       stripeEnum: 'too_expensive',
       stripeComment: null,
-      replyText: null,
       billingPortalClickedAt: null,
       cancelledAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000),
       dunningTouchCount: 0,

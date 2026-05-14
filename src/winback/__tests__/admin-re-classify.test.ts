@@ -49,7 +49,6 @@ vi.mock('@/lib/schema', () => ({
     previousSubs: 'previous_subs',
     stripeEnum: 'stripe_enum',
     stripeComment: 'stripe_comment',
-    replyText: 'reply_text',
     billingPortalClickedAt: 'billing_portal_clicked_at',
     cancelledAt: 'cancelled_at',
     tier: 'tier',
@@ -77,6 +76,10 @@ vi.mock('@/src/winback/lib/classifier', () => ({
   classifySubscriber: mockClassify,
 }))
 
+vi.mock('@/src/winback/lib/conversation', () => ({
+  buildConversationThread: vi.fn().mockResolvedValue([]),
+}))
+
 vi.mock('@/src/winback/lib/events', () => ({
   logEvent: mockLogEvent,
 }))
@@ -100,7 +103,6 @@ const SUBSCRIBER_ROW = {
   previousSubs: 0,
   stripeEnum: 'too_expensive',
   stripeComment: 'CSV cap was limiting',
-  replyText: null,
   billingPortalClickedAt: null,
   cancelledAt: new Date('2026-04-20'),
   storedTier: 1,
@@ -203,7 +205,6 @@ describe('POST /api/admin/subscribers/[id]/re-classify', () => {
     expect(mockClassify).toHaveBeenCalledTimes(1)
     const [signals, ctx] = mockClassify.mock.calls[0]
     expect(signals.stripeCustomerId).toBe('cus_test')
-    expect(signals.replyText).toBeNull()
     expect(signals.emailsSent).toBe(2)
     expect(ctx.founderName).toBe('Alex')
     expect(ctx.productName).toBe('Acme')

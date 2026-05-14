@@ -19,7 +19,6 @@ interface Subscriber {
   tenureDays: number | null
   stripeEnum: string | null
   stripeComment: string | null
-  replyText: string | null
   triggerKeyword: string | null
   triggerNeed: string | null
   tier: number | null

@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { SubscriberSignals, ClassificationResult } from './types'
 import { logEvent } from './events'
 import { callWithRetry } from './retry'
+import { renderThreadForPrompt } from './conversation'
 
 function getClient() {
   // process.env.ANTHROPIC_API_KEY may be empty string locally
@@ -63,7 +64,7 @@ const SYSTEM_PROMPT = `You are a win-back classification engine for subscription
 Analyse a cancelled subscriber's signals and return a JSON decision.
 
 TIER DEFINITIONS:
-1 — Explicit stated reason in stripe_comment or reply_text. Send targeted message.
+1 — Explicit stated reason in stripe_comment or anywhere in the conversation thread (most recent reply carries the most weight). Send targeted message.
 2 — Stripe enum only (e.g. too_expensive), no free text. Send directional message asking for more detail.
 3 — Billing signals only. Generic honest re-engagement. NEVER claim to know why they left.
 4 — Suppress. No email. Use ONLY when: email is null. Every subscriber with an email should receive at least one message, regardless of tenure.
@@ -187,11 +188,13 @@ BAD EXAMPLES — do NOT write anything like these:
   "Hi Pat, I hope this finds you well. I was just wondering if you might possibly consider giving us another chance?"
     (AI-tell opener, excessive hedging, zero specificity, begging)
 
-RE-CLASSIFICATION (when reply_text is present):
-- When reply_text is provided, this is a RE-CLASSIFICATION. The subscriber replied to our earlier email.
-  Read their reply carefully — it is the highest-signal input. Re-assess tier, reason, and generate a
-  new firstMessage that directly responds to what they said. The new firstMessage will be sent as a
-  follow-up in the same email thread.
+RE-CLASSIFICATION (when CONVERSATION SO FAR is present):
+- The presence of any "SUBSCRIBER REPLIED" turn means this is a RE-CLASSIFICATION. The subscriber
+  has replied to one or more of our emails. Read the entire thread; the MOST RECENT reply carries
+  the most weight, but earlier turns add context (e.g. "they softened over the conversation" vs
+  "they hardened"). Re-assess tier, reason, and generate a new firstMessage that directly responds
+  to where the conversation has landed. The new firstMessage will be sent as a follow-up in the
+  same email thread.
 - When billing_portal_clicked is true, the subscriber clicked the reactivation link but did not complete.
   This indicates high intent blocked by friction. Factor this into your tier and message — a gentle
   follow-up addressing potential friction is appropriate.
@@ -340,7 +343,6 @@ SUBSCRIBER SIGNALS:
 - previous_subs: ${signals.previousSubs}
 - stripe_enum: ${signals.stripeEnum ?? 'not_provided'}
 - stripe_comment: ${signals.stripeComment ?? 'not_provided'}
-- reply_text: ${signals.replyText ?? 'not_provided'}
 - billing_portal_clicked: ${signals.billingPortalClicked ?? false}
 - cancelled_at: ${signals.cancelledAt.toISOString()}
 - emails_sent: ${signals.emailsSent ?? 0}   (0 = nothing sent yet; 3 is the maximum we will ever send)${
@@ -349,7 +351,10 @@ SUBSCRIBER SIGNALS:
 - days_elapsed_since_event: ${signals.daysElapsedSinceEvent}   (spec 54: this subscriber's email was blocked during the merchant's paused window; now being processed by the drain. Factor time decay into your tier + handoff judgement — a "missing feature" cancellation decays fast, a "too expensive" one decays slowly. If the elapsed time has made the email feel stale or weird, set suppress=true with a brief suppressReason. If the recent changelog now addresses their stated need, that's a strong signal to send.)`
       : ''
   }
-
+${(() => {
+  const rendered = renderThreadForPrompt(signals.conversationThread, signals.cancelledAt)
+  return rendered ? `\n${rendered}\n` : ''
+})()}
 BUSINESS CONTEXT:
 - product_name: ${context.productName ?? 'not_provided'}
 - founder_name: ${context.founderName ?? 'not_provided'}

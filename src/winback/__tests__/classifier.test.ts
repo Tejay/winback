@@ -70,8 +70,13 @@ describe('classifySubscriber', () => {
     expect(opts.apiKey).toBe('sk-test-key')
   })
 
-  it('includes reply_text in prompt when provided', async () => {
-    const signals = makeSignals({ replyText: 'I left because the API was too slow' })
+  it('includes conversation thread in prompt when provided (Spec 71)', async () => {
+    const signals = makeSignals({
+      conversationThread: [
+        { kind: 'outbound', at: new Date('2026-01-01'), emailType: 'exit', subject: 'Sorry to see you go', body: 'We just shipped X.' },
+        { kind: 'reply',    at: new Date('2026-01-04'), body: 'I left because the API was too slow' },
+      ],
+    })
     mockLLMResponse({
       tier: 1,
       tierReason: 'Reply with explicit reason',
@@ -81,17 +86,18 @@ describe('classifySubscriber', () => {
       suppress: false,
       firstMessage: { subject: 'About the API speed', body: 'We heard you...', sendDelaySecs: 60 },
       triggerKeyword: 'api speed',
-
       winBackSubject: 'API just got faster',
       winBackBody: 'We rebuilt the API...',
     })
     await classifySubscriber(signals, {})
     const userPrompt = mockCreate.mock.calls[0][0].messages[0].content as string
-    expect(userPrompt).toContain('reply_text: I left because the API was too slow')
-    expect(userPrompt).not.toContain('reply_text: not_provided')
+    expect(userPrompt).toContain('CONVERSATION SO FAR')
+    expect(userPrompt).toContain('WE SENT (exit)')
+    expect(userPrompt).toContain('SUBSCRIBER REPLIED')
+    expect(userPrompt).toContain('I left because the API was too slow')
   })
 
-  it('defaults reply_text to not_provided when absent', async () => {
+  it('omits the conversation block when no thread provided (Spec 71)', async () => {
     const signals = makeSignals()
     mockLLMResponse({
       tier: 3, tierReason: 't', cancellationReason: 'r', cancellationCategory: 'Other',
@@ -101,7 +107,7 @@ describe('classifySubscriber', () => {
     })
     await classifySubscriber(signals, {})
     const userPrompt = mockCreate.mock.calls[0][0].messages[0].content as string
-    expect(userPrompt).toContain('reply_text: not_provided')
+    expect(userPrompt).not.toContain('CONVERSATION SO FAR')
   })
 
   it('includes billing_portal_clicked in prompt', async () => {
@@ -150,8 +156,13 @@ describe('classifySubscriber', () => {
     expect(systemPrompt).toMatch(/no exclamation marks/i)
   })
 
-  it('includes re-classification rules in system prompt when reply_text present', async () => {
-    const signals = makeSignals({ replyText: 'Some reply' })
+  it('includes re-classification rules in system prompt when conversation thread present', async () => {
+    const signals = makeSignals({
+      conversationThread: [
+        { kind: 'outbound', at: new Date('2026-01-01'), emailType: 'exit', body: 'We just shipped X.' },
+        { kind: 'reply',    at: new Date('2026-01-04'), body: 'Some reply' },
+      ],
+    })
     mockLLMResponse({
       tier: 1, tierReason: 't', cancellationReason: 'r', cancellationCategory: 'Other',
       confidence: 0.9, suppress: false,
@@ -161,7 +172,7 @@ describe('classifySubscriber', () => {
     await classifySubscriber(signals, {})
     const systemPrompt = mockCreate.mock.calls[0][0].system as string
     expect(systemPrompt).toContain('RE-CLASSIFICATION')
-    expect(systemPrompt).toContain('highest-signal input')
+    expect(systemPrompt).toContain('MOST RECENT reply carries')
   })
 
   it('Scenario A — Tier 1, feature complaint in stripe_comment', async () => {
@@ -289,7 +300,11 @@ describe('classifySubscriber', () => {
   })
 
   it('parses handoff + handoffReasoning + recoveryLikelihood when the LLM emits them', async () => {
-    const signals = makeSignals({ replyText: 'Can I talk to your founder about enterprise pricing?' })
+    const signals = makeSignals({
+      conversationThread: [
+        { kind: 'reply', at: new Date(), body: 'Can I talk to your founder about enterprise pricing?' },
+      ],
+    })
     mockLLMResponse({
       tier: 1,
       tierReason: 'Explicit pricing negotiation request in reply',

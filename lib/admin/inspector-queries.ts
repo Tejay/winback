@@ -12,6 +12,7 @@ import {
   customers,
   users,
   emailsSent as emailsSentTable,
+  subscriberReplies,
   wbEvents,
 } from '../schema'
 
@@ -43,6 +44,18 @@ export interface InspectorCronDecision {
   properties: Record<string, unknown>
 }
 
+/**
+ * Spec 71 — inbound replies threaded under the timeline. One row per
+ * inbound reply, body included (capped at 20 KB at write-time).
+ */
+export interface InspectorReply {
+  id: string
+  body: string
+  fromEmail: string | null
+  receivedAt: Date
+  inReplyToEmailId: string | null   // NULL when threading didn't resolve
+}
+
 export interface InspectorPayload {
   subscriber: {
     id: string
@@ -70,8 +83,6 @@ export interface InspectorPayload {
     paymentFailures: number | null
     previousSubs: number | null
     billingPortalClickedAt: Date | null
-    // most recent reply (limitation noted in UI — earlier replies aren't preserved)
-    replyText: string | null
     // latest classifier output
     tier: number | null
     confidence: string | null
@@ -84,6 +95,7 @@ export interface InspectorPayload {
   emails: InspectorEmail[]
   outcomeEvents: InspectorOutcomeEvent[]
   cronDecisions: InspectorCronDecision[]
+  replies: InspectorReply[]
 }
 
 /** The set of event names we surface in the timeline as outcome markers. */
@@ -139,7 +151,6 @@ export async function buildInspectorPayload(subscriberId: string): Promise<Inspe
       paymentFailures: churnedSubscribers.paymentFailures,
       previousSubs: churnedSubscribers.previousSubs,
       billingPortalClickedAt: churnedSubscribers.billingPortalClickedAt,
-      replyText: churnedSubscribers.replyText,
       tier: churnedSubscribers.tier,
       confidence: churnedSubscribers.confidence,
       cancellationReason: churnedSubscribers.cancellationReason,
@@ -155,10 +166,10 @@ export async function buildInspectorPayload(subscriberId: string): Promise<Inspe
     .limit(1)
 
   if (!subRow) {
-    return { subscriber: null, emails: [], outcomeEvents: [], cronDecisions: [] }
+    return { subscriber: null, emails: [], outcomeEvents: [], cronDecisions: [], replies: [] }
   }
 
-  const [emails, outcomeEvents, cronDecisions] = await Promise.all([
+  const [emails, outcomeEvents, cronDecisions, replies] = await Promise.all([
     ro
       .select({
         id: emailsSentTable.id,
@@ -206,6 +217,20 @@ export async function buildInspectorPayload(subscriberId: string): Promise<Inspe
       )
       .orderBy(desc(wbEvents.createdAt))
       .limit(20),
+    // Spec 71 — inbound replies in chronological order. Inspector merges
+    // these into the existing timeline; each row carries the full body
+    // (capped at 20 KB at write time).
+    ro
+      .select({
+        id: subscriberReplies.id,
+        body: subscriberReplies.body,
+        fromEmail: subscriberReplies.fromEmail,
+        receivedAt: subscriberReplies.receivedAt,
+        inReplyToEmailId: subscriberReplies.inReplyToEmailId,
+      })
+      .from(subscriberReplies)
+      .where(eq(subscriberReplies.subscriberId, subscriberId))
+      .orderBy(asc(subscriberReplies.receivedAt)),
   ])
 
   return {
@@ -213,5 +238,6 @@ export async function buildInspectorPayload(subscriberId: string): Promise<Inspe
     emails,
     outcomeEvents,
     cronDecisions,
+    replies,
   }
 }
