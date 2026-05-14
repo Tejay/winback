@@ -290,6 +290,24 @@ for the cron.
 - `/admin/subscribers` and `/admin/subscribers/[id]` — add a small badge for `classifiedAt IS NULL` rows: "pending classification." Subtle, doesn't change the layout.
 - `wb_events` gets new names: `backfill_row_inserted`, `classify_failed`, `classify_dead_lettered`, `subscriber_classified`. Surfaces in the existing events page.
 
+### Dead-letter monitoring
+
+- **`/admin` Overview tile — "Dead-lettered rows"**: a small counter
+  card next to the existing red-lights / cron-health sections. Shows
+  total rows where `classified_at IS NULL AND classify_attempts >= 3`.
+  Click → events page filtered to `classify_dead_lettered`.
+  Implementation: one query in the Overview API route, one tile in
+  the client.
+- **Inspector banner on dead-lettered rows**: when the row's
+  `classify_attempts >= 3` AND `classified_at IS NULL`, render a red
+  banner above the existing sections: "⚠ Classification failed 3
+  times. Last error: <message>. [Reset attempts]". Button POSTs to a
+  new admin action that clears `classify_attempts` back to 0 (cron
+  picks it up on next tick). Audit-logged.
+- **New endpoint**: `POST /api/admin/subscribers/[id]/reset-classify`
+  — requireAdmin, sets `classify_attempts = 0`, logs `admin_action`
+  with action `reset_classify_attempts`.
+
 ## Edge cases
 
 - **Vercel kills a tick mid-run.** Lock stays held until 10-min stale recovery. Next tick claims, picks up at the persisted cursor. Rows already inserted are skipped by the UNIQUE-index dedup.
@@ -313,6 +331,7 @@ for the cron.
   6. After 3 attempts, row drops out of the WHERE clause + `classify_dead_lettered` event emitted
   7. Webhook handler inserts raw row with `classified_at = null` and does NOT call classifier inline
   8. UNIQUE compound index rejects duplicate `(customer_id, stripe_customer_id)` insert
+  9. `POST /reset-classify` zeroes classify_attempts + logs admin_action
 - [ ] Manual smoke on dev:
   - Apply migration 042
   - Drop a fresh test customer with no Stripe connection; connect; verify dashboard shows "Importing… 0 imported" within seconds
