@@ -43,7 +43,10 @@ interface OverviewRollup {
   redLights: Array<{ metric: string; today: number; median7d: number }>
   cronHealth: Array<{
     name: string
+    displayName: string
     label: string
+    purpose: string
+    staleImpact: string
     status: 'ok' | 'failed' | 'stale' | 'never-run'
     lastRunAt: string | null
     durationMs: number | null
@@ -221,45 +224,43 @@ function CronHealthSection({ rows }: { rows: OverviewRollup['cronHealth'] }) {
       <div className="text-xs font-semibold uppercase tracking-widest text-slate-500 mb-3">
         Cron health
       </div>
-      <table className="w-full text-sm">
-        <thead className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-          <tr>
-            <th className="text-left py-2">Cron</th>
-            <th className="text-left py-2">Schedule</th>
-            <th className="text-left py-2">Status</th>
-            <th className="text-left py-2">Last run</th>
-            <th className="text-right py-2">Duration</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-slate-100">
-          {rows.map((r) => {
-            const b = badge(r.status)
-            return (
-              <tr key={r.name} className="hover:bg-slate-50">
-                <td className="py-2 font-mono text-xs">{r.name}</td>
-                <td className="py-2 text-xs text-slate-500">{r.label}</td>
-                <td className="py-2">
-                  <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium border ${b.cls}`}>
-                    {b.label}
-                  </span>
-                  {r.status === 'failed' && r.errorMessage && (
-                    <div
-                      className="text-xs text-red-700 mt-1 max-w-md truncate"
-                      title={r.errorMessage}
-                    >
-                      {r.errorMessage}
-                    </div>
+      <div className="divide-y divide-slate-100">
+        {rows.map((r) => {
+          const b = badge(r.status)
+          const isBad = r.status === 'failed' || r.status === 'stale'
+          return (
+            <details key={r.name} className="group py-2.5 first:pt-0 last:pb-0">
+              <summary className="cursor-pointer list-none flex items-center gap-3 flex-wrap hover:bg-slate-50 -mx-2 px-2 py-1 rounded-lg">
+                <span className="text-slate-400 text-xs group-open:rotate-90 transition-transform inline-block w-3">▸</span>
+                <span className="text-sm text-slate-700 font-medium min-w-[14rem]">{r.displayName}</span>
+                <span className="text-xs text-slate-500 min-w-[10rem]">{r.label}</span>
+                <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium border ${b.cls}`}>
+                  {b.label}
+                </span>
+                <span className="text-xs text-slate-500 ml-auto">
+                  {r.lastRunAt ? `last run ${relative(r.lastRunAt)}` : ''}
+                  {r.durationMs !== null && (
+                    <span className="text-slate-400 tabular-nums"> · {r.durationMs}ms</span>
                   )}
-                </td>
-                <td className="py-2 text-xs text-slate-500">{relative(r.lastRunAt)}</td>
-                <td className="py-2 text-right text-xs text-slate-500 tabular-nums">
-                  {r.durationMs !== null ? `${r.durationMs}ms` : '—'}
-                </td>
-              </tr>
-            )
-          })}
-        </tbody>
-      </table>
+                </span>
+              </summary>
+              <div className="pl-8 pr-2 pt-2 pb-1 space-y-1.5">
+                <div className="text-xs text-slate-600 max-w-3xl">
+                  {r.purpose}
+                </div>
+                <div className={`text-xs max-w-3xl ${isBad ? 'text-amber-700' : 'text-slate-500'}`}>
+                  <span className="font-medium">If stale:</span> {r.staleImpact}
+                </div>
+                {r.status === 'failed' && r.errorMessage && (
+                  <div className="text-xs text-red-700 max-w-3xl">
+                    <span className="font-medium">Error:</span> {r.errorMessage}
+                  </div>
+                )}
+              </div>
+            </details>
+          )
+        })}
+      </div>
     </section>
   )
 }

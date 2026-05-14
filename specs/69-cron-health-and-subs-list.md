@@ -26,6 +26,9 @@ plumbing pre-launch.)
    - Last run timestamp + status badge (ok / failed / stale)
    - Last run duration (ms)
    - Stale rule: no run within (schedule expected interval × 1.5)
+   - **Plain-English purpose + stale-impact** rendered as muted text
+     under each row, so a support hire can answer "what does this do?
+     does it matter if it's broken?" without asking engineering.
 2. **`cron_run` event** emitted by every cron route via a thin
    wrapper helper. Carries `{ name, durationMs, ok, errorMessage? }`
    in `properties`. Drives the widget. Existing per-cron events
@@ -126,20 +129,16 @@ human-readable schedule labels + expected-interval-in-seconds
 (derived from `vercel.json`). Used by the widget for the stale
 heuristic.
 
-```ts
-export const CRON_SCHEDULES = [
-  { name: 'reengagement',       cron: '0 9 * * *',  label: 'Daily 09:00 UTC',   maxIntervalSecs: 86400 * 1.5 },
-  { name: 'onboarding-followup',cron: '30 9 * * *', label: 'Daily 09:30 UTC',   maxIntervalSecs: 86400 * 1.5 },
-  { name: 'dunning-followup',   cron: '0 8 * * *',  label: 'Daily 08:00 UTC',   maxIntervalSecs: 86400 * 1.5 },
-  { name: 'cumulative-revenue', cron: '0 3 * * *',  label: 'Daily 03:00 UTC',   maxIntervalSecs: 86400 * 1.5 },
-  { name: 'billing-nudge',      cron: '0 10 * * *', label: 'Daily 10:00 UTC',   maxIntervalSecs: 86400 * 1.5 },
-  { name: 'drain-paused-queue', cron: '*/5 * * * *', label: 'Every 5 minutes',  maxIntervalSecs: 60 * 15 },
-]
-```
+Each `CRON_SCHEDULES` entry carries `name`, `label`, `maxIntervalSecs`,
+plus two prose fields surfaced in the UI:
 
-(Mirrors `vercel.json` — could be derived programmatically, but a
-hand-maintained const is clearer for the 6 known crons. If we add a
-7th, both files get edited together.)
+- `purpose`: one sentence on what the cron does.
+- `staleImpact`: one sentence on what happens if it stops running, so
+  support can judge urgency.
+
+Both are sent through the API payload alongside status/last-run.
+Mirrors `vercel.json` — hand-maintained for the 6 known crons. If we
+add a 7th, both files get edited together.
 
 ### UI
 

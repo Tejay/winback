@@ -14,7 +14,10 @@ export type CronStatus = 'ok' | 'failed' | 'stale' | 'never-run'
 
 export interface CronHealthRow {
   name: string
+  displayName: string
   label: string
+  purpose: string
+  staleImpact: string
   status: CronStatus
   lastRunAt: Date | null
   durationMs: number | null
@@ -51,7 +54,10 @@ export async function getCronHealth(): Promise<CronHealthRow[]> {
     if (!latest) {
       return {
         name: c.name,
+        displayName: c.displayName ?? c.name,
         label: c.label,
+        purpose: c.purpose,
+        staleImpact: c.staleImpact,
         status: 'never-run' as CronStatus,
         lastRunAt: null,
         durationMs: null,
@@ -65,7 +71,10 @@ export async function getCronHealth(): Promise<CronHealthRow[]> {
     else status = 'ok'
     return {
       name: c.name,
+      displayName: c.displayName ?? c.name,
       label: c.label,
+      purpose: c.purpose,
+      staleImpact: c.staleImpact,
       status,
       lastRunAt: latest.createdAt,
       durationMs: latest.durationMs,
