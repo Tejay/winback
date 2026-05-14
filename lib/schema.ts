@@ -105,7 +105,8 @@ export const churnedSubscribers = pgTable('wb_churned_subscribers', {
   previousSubs:         integer('previous_subs').default(0),
   stripeEnum:           text('stripe_enum'),
   stripeComment:        text('stripe_comment'),
-  replyText:            text('reply_text'),
+  // Spec 71 — `reply_text` column dropped in migration 041. Replies are
+  // now in their own table `wb_subscriber_replies` (one row per inbound).
   cancellationReason:   text('cancellation_reason'),
   cancellationCategory: text('cancellation_category'),
   tier:                 integer('tier'),
@@ -200,6 +201,28 @@ export const emailsSent = pgTable('wb_emails_sent', {
   // them. NULL for non-re-engagement emails. Migration 039.
   improvementId:  uuid('improvement_id'),
 })
+
+// Spec 71 — append-only inbound reply history. One row per inbound reply
+// the subscriber sends. Replaces the overwritten `reply_text` column on
+// wb_churned_subscribers so we keep the full conversation. Migration 041.
+export const subscriberReplies = pgTable('wb_subscriber_replies', {
+  id:                 uuid('id').primaryKey().defaultRandom(),
+  subscriberId:       uuid('subscriber_id').notNull().references(() => churnedSubscribers.id, { onDelete: 'cascade' }),
+  body:               text('body').notNull(),
+  fromEmail:          text('from_email'),
+  receivedAt:         timestamp('received_at', { withTimezone: true }).notNull().defaultNow(),
+  // Resend's inbound email_id; UNIQUE constraint at the DB layer is a
+  // second line of defense against double-insert beyond Spec 64's
+  // wb_inbound_events idempotency token.
+  resendEmailId:      text('resend_email_id').unique(),
+  // The outbound this was a reply to, matched via RFC822 In-Reply-To
+  // header. NULL when threading didn't resolve.
+  inReplyToEmailId:   uuid('in_reply_to_email_id').references(() => emailsSent.id, { onDelete: 'set null' }),
+  createdAt:          timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  subscriberReceivedIdx: index('idx_wb_subscriber_replies_subscriber_received')
+    .on(t.subscriberId, t.receivedAt),
+}))
 
 // Spec 65 — Winback Reasons. Each row is a single shipped product
 // improvement the merchant wants to communicate to cancelled customers

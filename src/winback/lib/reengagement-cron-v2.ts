@@ -22,6 +22,7 @@ import {
 } from './improvement-match'
 import { logEvent } from './events'
 import type { SubscriberSignals } from './types'
+import { buildConversationThread } from './conversation'
 
 /**
  * Spec 65 Phase 3 — V2 re-engagement cron pipeline.
@@ -151,7 +152,7 @@ export async function processSubscriberForReengagement(
         previousSubs:         sub.previousSubs ?? 0,
         stripeEnum:           sub.stripeEnum,
         stripeComment:        sub.stripeComment,
-        replyText:            sub.replyText,
+        conversationThread:   await buildConversationThread(sub.id),
         billingPortalClicked: !!sub.billingPortalClickedAt,
         cancelledAt:          sub.cancelledAt ?? new Date(),
       }

@@ -20,6 +20,7 @@ vi.mock('@/lib/schema', () => ({
   customers: { id: 'cust_id', userId: 'user_id', productName: 'product_name', founderName: 'founder_name' },
   users: { id: 'user_id_col', email: 'email' },
   emailsSent: { subscriberId: 'subscriber_id', sentAt: 'sent_at' },
+  subscriberReplies: { id: 'id', subscriberId: 'subscriber_id', body: 'body', fromEmail: 'from_email', receivedAt: 'received_at', inReplyToEmailId: 'in_reply_to_email_id' },
   wbEvents: { name: 'name', customerId: 'customer_id', createdAt: 'created_at', properties: 'properties' },
 }))
 

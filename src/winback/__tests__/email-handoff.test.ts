@@ -48,6 +48,13 @@ vi.mock('drizzle-orm', () => ({
 const mockLogEvent = vi.hoisted(() => vi.fn())
 vi.mock('../lib/events', () => ({ logEvent: mockLogEvent }))
 
+// Spec 71 — email.ts now fetches latest reply via the conversation helper.
+const mockGetLatestReply = vi.hoisted(() => vi.fn().mockResolvedValue('Can I talk to your founder?'))
+vi.mock('../lib/conversation', () => ({
+  getLatestReply: mockGetLatestReply,
+  buildConversationThread: vi.fn().mockResolvedValue([]),
+}))
+
 // Stub founder-handoff-email to avoid pulling its DB-backed conversation loader.
 const mockBuildHandoffNotification = vi.hoisted(() => vi.fn().mockResolvedValue({
   subject: '[Winback] Action needed — subscriber',
@@ -128,7 +135,6 @@ const subscriberRow = {
   triggerNeed: null,
   cancelledAt: new Date('2026-04-01'),
   stripeComment: null,
-  replyText: 'Can I talk to your founder?',
   founderHandoffAt: null,
   aiPausedUntil: null,
 }

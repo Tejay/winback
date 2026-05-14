@@ -194,7 +194,6 @@ async function seed() {
         previousSubs:          0,
         stripeEnum:            null,
         stripeComment:         s.triggerNeed,
-        replyText:             null,
         cancelledAt:           s.cancelledAt,
         status:                'contacted',
         doNotContact:          s.doNotContact ?? false,

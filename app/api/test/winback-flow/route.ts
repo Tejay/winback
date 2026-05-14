@@ -2,12 +2,13 @@ import { NextResponse } from 'next/server'
 import Stripe from 'stripe'
 import { requireAdmin } from '@/lib/auth'
 import { db } from '@/lib/db'
-import { customers, churnedSubscribers, recoveries } from '@/lib/schema'
+import { customers, churnedSubscribers, recoveries, subscriberReplies } from '@/lib/schema'
 import { eq, and, inArray } from 'drizzle-orm'
 import { decrypt } from '@/src/winback/lib/encryption'
 import { classifySubscriber } from '@/src/winback/lib/classifier'
 import { appendStandardFooter } from '@/src/winback/lib/email'
 import { buildHandoffNotification } from '@/src/winback/lib/founder-handoff-email'
+import { buildConversationThread, getLatestReply } from '@/src/winback/lib/conversation'
 import { logEvent } from '@/src/winback/lib/events'
 import { ensureActivation } from '@/src/winback/lib/activation'
 import { getConnectStripe } from '@/src/winback/lib/stripe'
@@ -239,13 +240,21 @@ export async function GET() {
       )
     )
 
+  // Spec 71 — fetch each subscriber's latest reply from wb_subscriber_replies
+  // (the old replyText column is gone). N small queries here is fine for the
+  // admin test harness; not on a hot path.
+  const subscribersWithReplies = await Promise.all(subs.map(async (s) => ({
+    s,
+    replyText: await getLatestReply(s.id),
+  })))
+
   return NextResponse.json({
     customer: {
       id: ctx.customer.id,
       founderName: ctx.customer.founderName,
       productName: ctx.customer.productName,
     },
-    subscribers: subs.map(s => ({
+    subscribers: subscribersWithReplies.map(({ s, replyText }) => ({
       id: s.id,
       email: s.email,
       name: s.name,
@@ -253,7 +262,7 @@ export async function GET() {
       mrrCents: s.mrrCents,
       stripeEnum: s.stripeEnum,
       stripeComment: s.stripeComment,
-      replyText: s.replyText,
+      replyText,
       cancellationReason: s.cancellationReason,
       cancellationCategory: s.cancellationCategory,
       tier: s.tier,
@@ -605,6 +614,15 @@ async function handlePost(req: Request) {
       return NextResponse.json({ error: 'Test subscriber not found' }, { status: 404 })
     }
 
+    // Spec 71 — persist the simulated reply into wb_subscriber_replies so
+    // the canonical thread (built next) includes it. Mirrors what the real
+    // inbound webhook does. resend_email_id NULL — this is a synthetic.
+    await db.insert(subscriberReplies).values({
+      subscriberId,
+      body: replyText,
+      fromEmail: sub.email,
+    })
+
     const signals: SubscriberSignals = {
       stripeCustomerId: sub.stripeCustomerId,
       stripeSubscriptionId: sub.stripeSubscriptionId ?? '',
@@ -620,7 +638,7 @@ async function handlePost(req: Request) {
       previousSubs: sub.previousSubs ?? 0,
       stripeEnum: sub.stripeEnum,
       stripeComment: sub.stripeComment,
-      replyText,
+      conversationThread: await buildConversationThread(subscriberId),
       billingPortalClicked: !!sub.billingPortalClickedAt,
       cancelledAt: sub.cancelledAt ?? new Date(),
       emailsSent: emailsSentSignal,
@@ -639,7 +657,6 @@ async function handlePost(req: Request) {
     await db
       .update(churnedSubscribers)
       .set({
-        replyText,
         tier: classification.tier,
         confidence: String(classification.confidence),
         cancellationReason: classification.cancellationReason,

@@ -4,6 +4,7 @@ import { db } from '@/lib/db'
 import { churnedSubscribers, customers, emailsSent } from '@/lib/schema'
 import { eq, count } from 'drizzle-orm'
 import { classifySubscriber } from '@/src/winback/lib/classifier'
+import { buildConversationThread } from '@/src/winback/lib/conversation'
 import { logEvent } from '@/src/winback/lib/events'
 import type { SubscriberSignals } from '@/src/winback/lib/types'
 
@@ -60,7 +61,6 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       previousSubs: churnedSubscribers.previousSubs,
       stripeEnum: churnedSubscribers.stripeEnum,
       stripeComment: churnedSubscribers.stripeComment,
-      replyText: churnedSubscribers.replyText,
       billingPortalClickedAt: churnedSubscribers.billingPortalClickedAt,
       cancelledAt: churnedSubscribers.cancelledAt,
       // stored classification (for the diff)
@@ -106,7 +106,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     previousSubs: row.previousSubs ?? 0,
     stripeEnum: row.stripeEnum,
     stripeComment: row.stripeComment,
-    replyText: row.replyText,
+    conversationThread: await buildConversationThread(id),
     billingPortalClicked: !!row.billingPortalClickedAt,
     cancelledAt: row.cancelledAt ?? new Date(),
     emailsSent: sentRow?.n ?? 0,

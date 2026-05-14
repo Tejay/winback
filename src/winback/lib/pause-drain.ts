@@ -20,9 +20,10 @@
  *     /billing/success UX line
  */
 import { db } from '@/lib/db'
-import { customers, churnedSubscribers, emailsSent } from '@/lib/schema'
+import { customers, churnedSubscribers, emailsSent, subscriberReplies } from '@/lib/schema'
 import { and, eq, isNull, isNotNull, ne, or, sql, lte } from 'drizzle-orm'
 import { classifySubscriber } from './classifier'
+import { buildConversationThread } from './conversation'
 import {
   scheduleExitEmail,
   sendDunningEmail,
@@ -116,7 +117,9 @@ export async function getPausedQueueCounts(customerId: string): Promise<QueueCou
       isNotNull(customers.activatedAt),
       isNotNull(customers.stripeSubscriptionId),
       isNull(churnedSubscribers.pauseDrainProcessedAt),
-      isNotNull(churnedSubscribers.replyText),
+      // Spec 71 — replaced isNotNull(replyText) with EXISTS against the
+      // new wb_subscriber_replies table.
+      sql`EXISTS (SELECT 1 FROM ${subscriberReplies} WHERE ${subscriberReplies.subscriberId} = ${churnedSubscribers.id})`,
       isNotNull(churnedSubscribers.lastEngagementAt),
       isNotNull(churnedSubscribers.email),
       eq(churnedSubscribers.doNotContact, false),
@@ -272,7 +275,9 @@ async function selectReplyQueue(limit: number): Promise<SubscriberRow[]> {
       isNotNull(customers.activatedAt),
       isNotNull(customers.stripeSubscriptionId),
       isNull(churnedSubscribers.pauseDrainProcessedAt),
-      isNotNull(churnedSubscribers.replyText),
+      // Spec 71 — replaced isNotNull(replyText) with EXISTS against the
+      // new wb_subscriber_replies table.
+      sql`EXISTS (SELECT 1 FROM ${subscriberReplies} WHERE ${subscriberReplies.subscriberId} = ${churnedSubscribers.id})`,
       isNotNull(churnedSubscribers.lastEngagementAt),
       isNotNull(churnedSubscribers.email),
       eq(churnedSubscribers.doNotContact, false),
@@ -317,7 +322,7 @@ async function processCancellationItem(sub: SubscriberRow): Promise<DrainItem> {
     previousSubs: sub.previousSubs ?? 0,
     stripeEnum: sub.stripeEnum,
     stripeComment: sub.stripeComment,
-    replyText: sub.replyText,
+    conversationThread: await buildConversationThread(sub.id),
     billingPortalClicked: !!sub.billingPortalClickedAt,
     cancelledAt,
     daysElapsedSinceEvent,
@@ -452,7 +457,7 @@ async function processReplyItem(sub: SubscriberRow): Promise<DrainItem> {
     previousSubs: sub.previousSubs ?? 0,
     stripeEnum: sub.stripeEnum,
     stripeComment: sub.stripeComment,
-    replyText: sub.replyText,
+    conversationThread: await buildConversationThread(sub.id),
     billingPortalClicked: !!sub.billingPortalClickedAt,
     cancelledAt: sub.cancelledAt ?? new Date(),
     daysElapsedSinceEvent,

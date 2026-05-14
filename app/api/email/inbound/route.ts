@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { emailsSent, churnedSubscribers, customers, users, inboundEvents } from '@/lib/schema'
-import { eq, count, desc } from 'drizzle-orm'
+import { emailsSent, churnedSubscribers, customers, users, inboundEvents, subscriberReplies } from '@/lib/schema'
+import { eq, count, desc, and } from 'drizzle-orm'
 import { Webhook } from 'svix'
 import { classifySubscriber } from '@/src/winback/lib/classifier'
 import { sendReplyEmail, resolveFounderNotificationEmail } from '@/src/winback/lib/email'
@@ -9,6 +9,7 @@ import { buildReplyAfterHandoffNotification } from '@/src/winback/lib/founder-ha
 import { Resend } from 'resend'
 import { SubscriberSignals } from '@/src/winback/lib/types'
 import { logEvent } from '@/src/winback/lib/events'
+import { buildConversationThread } from '@/src/winback/lib/conversation'
 
 type InboundOutcome =
   | 'processed'
@@ -114,30 +115,59 @@ export function parseSubscriberIdFromTo(to: string): string | null {
 }
 
 /**
- * Fetch the actual body text of an inbound email from Resend's API.
- * Resend's webhook envelope is metadata-only; the body lives behind a
- * separate GET /emails/receiving/{id} call (per Resend docs).
+ * Fetch the actual body text + threading headers of an inbound email
+ * from Resend's API. The webhook envelope is metadata-only; the body and
+ * headers live behind a separate GET /emails/receiving/{id} call.
  *
- * Returns the plain-text body, or empty string on failure (caller treats
- * empty as "skip this reply" gracefully).
+ * Returns { text, inReplyTo }. The `inReplyTo` is the RFC822 In-Reply-To
+ * header (stripped of <>) — used to thread the reply to a specific
+ * outbound (Spec 71). Returns empty strings on failure (caller treats
+ * empty text as "skip this reply" gracefully).
+ *
+ * IMPORTANT: We never read attachments. `json.text` is plain-text only.
  */
-async function fetchInboundBody(emailId: string): Promise<string> {
+async function fetchInboundBody(emailId: string): Promise<{ text: string; inReplyTo: string | null }> {
   const apiKey = process.env.RESEND_API_KEY
-  if (!apiKey || !emailId) return ''
+  if (!apiKey || !emailId) return { text: '', inReplyTo: null }
   try {
     const res = await fetch(`https://api.resend.com/emails/receiving/${emailId}`, {
       headers: { Authorization: `Bearer ${apiKey}` },
     })
     if (!res.ok) {
       console.error('Resend /emails/receiving/<id> returned', res.status, await res.text())
-      return ''
+      return { text: '', inReplyTo: null }
     }
-    const json = (await res.json()) as { text?: string | null; html?: string | null }
-    return json.text ?? ''
+    const json = (await res.json()) as {
+      text?: string | null
+      html?: string | null
+      headers?: Record<string, string | string[]> | null
+    }
+    // Resend exposes RFC822 headers under `headers`. Different mail
+    // clients use different casing — normalise.
+    let inReplyTo: string | null = null
+    if (json.headers) {
+      for (const [k, v] of Object.entries(json.headers)) {
+        if (k.toLowerCase() === 'in-reply-to') {
+          const raw = Array.isArray(v) ? v[0] : v
+          // Headers come wrapped in <...>; strip for matching.
+          inReplyTo = String(raw ?? '').trim().replace(/^<|>$/g, '') || null
+          break
+        }
+      }
+    }
+    return { text: json.text ?? '', inReplyTo }
   } catch (err) {
     console.error('fetchInboundBody failed:', err)
-    return ''
+    return { text: '', inReplyTo: null }
   }
+}
+
+/** Spec 71 — cap per-reply storage at 20 KB. Truncate with marker. */
+const MAX_REPLY_BODY_BYTES = 20 * 1024
+function truncateReplyBody(body: string): string {
+  if (body.length <= MAX_REPLY_BODY_BYTES) return body
+  // 12 bytes for the truncation marker plus newline.
+  return body.slice(0, MAX_REPLY_BODY_BYTES - 16) + '\n…[truncated]'
 }
 
 export async function POST(req: Request) {
@@ -214,36 +244,33 @@ export async function POST(req: Request) {
   console.log('Inbound reply for subscriber:', subscriberId, 'from:', from, 'email_id:', emailId)
 
   // Resend's email.received webhook is metadata-only — no body. Fetch the
-  // actual reply text via /emails/receiving/{id}. Keep the envelope-text
-  // fallback so a future webhook-shape change that DOES include body still
-  // works without code change.
-  const text = envelopeText || (emailId ? await fetchInboundBody(emailId) : '')
+  // actual reply text + In-Reply-To header via /emails/receiving/{id}.
+  // Envelope-text path stays as fallback for any future webhook shape
+  // that includes body inline.
+  const fetched = emailId ? await fetchInboundBody(emailId) : { text: '', inReplyTo: null }
+  const text = envelopeText || fetched.text
+  const inReplyToHeader = fetched.inReplyTo
 
-  // Strip quoted lines from reply
-  const replyText = text
+  // Strip quoted lines from reply (best-effort — different clients quote
+  // differently; we don't depend on this for thread reconstruction,
+  // which uses our canonical wb_emails_sent + wb_subscriber_replies data
+  // server-side via buildConversationThread).
+  const stripped = text
     .split('\n')
     .filter((line: string) => !line.trimStart().startsWith('>'))
     .join('\n')
     .trim()
 
-  if (!replyText) {
+  if (!stripped) {
     console.log('Empty reply text after stripping quotes (subscriberId:', subscriberId, 'emailId:', emailId, ')')
     await finalizeInboundEvent(emailId, 'empty_reply_text', subscriberId)
     return NextResponse.json({ received: true, processed: false, reason: 'empty_reply_text' })
   }
 
-  // Update email replied_at
-  await db
-    .update(emailsSent)
-    .set({ repliedAt: new Date() })
-    .where(eq(emailsSent.subscriberId, subscriberId))
+  // Spec 71 — cap stored body at 20 KB to guard against DoS / pathological
+  // pastes. Most legitimate replies are <2 KB.
+  const replyBody = truncateReplyBody(stripped)
 
-  logEvent({
-    name: 'email_replied',
-    properties: { subscriberId, replyTextLength: replyText.length },
-  })
-
-  // Save reply text
   const [subscriber] = await db
     .select()
     .from(churnedSubscribers)
@@ -256,14 +283,64 @@ export async function POST(req: Request) {
     return NextResponse.json({ received: true, processed: false })
   }
 
+  // Spec 71 — match In-Reply-To header (when present) to a specific
+  // outbound. The header references the original Message-ID; we stored
+  // Resend's message ID in wb_emails_sent.gmail_message_id (legacy
+  // column name — actually a Resend ID). Filter by subscriberId too so
+  // a malicious payload can't thread to a different subscriber's email.
+  let inReplyToEmailId: string | null = null
+  if (inReplyToHeader) {
+    const [match] = await db
+      .select({ id: emailsSent.id })
+      .from(emailsSent)
+      .where(and(
+        eq(emailsSent.gmailMessageId, inReplyToHeader),
+        eq(emailsSent.subscriberId, subscriberId),
+      ))
+      .orderBy(desc(emailsSent.sentAt))
+      .limit(1)
+    inReplyToEmailId = match?.id ?? null
+  }
+
+  // Insert the reply row. ON CONFLICT (resend_email_id) DO NOTHING is the
+  // second-layer dedup beyond Spec 64's wb_inbound_events.
+  await db
+    .insert(subscriberReplies)
+    .values({
+      subscriberId,
+      body: replyBody,
+      fromEmail: from || null,
+      resendEmailId: emailId || null,
+      inReplyToEmailId,
+    })
+    .onConflictDoNothing()
+
+  // Mark `replied_at` on the matched outbound only. If threading didn't
+  // resolve, leave timestamps alone — the new wb_subscriber_replies table
+  // is the canonical record either way.
+  if (inReplyToEmailId) {
+    await db
+      .update(emailsSent)
+      .set({ repliedAt: new Date() })
+      .where(eq(emailsSent.id, inReplyToEmailId))
+  }
+
   await db
     .update(churnedSubscribers)
     .set({
-      replyText,
       lastEngagementAt: new Date(),  // Spec 21a — engagement signal
       updatedAt: new Date(),
     })
     .where(eq(churnedSubscribers.id, subscriberId))
+
+  logEvent({
+    name: 'email_replied',
+    properties: {
+      subscriberId,
+      replyTextLength: replyBody.length,
+      threadedToOutbound: !!inReplyToEmailId,
+    },
+  })
 
   // Re-classify with reply text
   try {
@@ -295,7 +372,9 @@ export async function POST(req: Request) {
       previousSubs: subscriber.previousSubs ?? 0,
       stripeEnum: subscriber.stripeEnum,
       stripeComment: subscriber.stripeComment,
-      replyText: replyText,
+      // Spec 71 — thread the full back-and-forth into the classifier.
+      // The reply we just inserted above is included via this builder.
+      conversationThread: await buildConversationThread(subscriberId),
       billingPortalClicked: !!subscriber.billingPortalClickedAt,
       cancelledAt: subscriber.cancelledAt ?? new Date(),
       emailsSent: sentSoFar?.total ?? 0,
@@ -361,10 +440,10 @@ export async function POST(req: Request) {
                 triggerNeed: subscriber.triggerNeed,
                 cancelledAt: subscriber.cancelledAt,
                 stripeComment: subscriber.stripeComment,
-                replyText,
+                replyText: replyBody,  // the body we just inserted
               },
               founderName: customer?.founderName ?? 'there',
-              newReplyText: replyText,
+              newReplyText: replyBody,
             })
             const resend = new Resend(process.env.RESEND_API_KEY!)
             await resend.emails.send({
@@ -402,7 +481,7 @@ export async function POST(req: Request) {
         properties: {
           subscriberId,
           improvementId: lastEmail.improvementId,
-          replyTextLength: replyText.length,
+          replyTextLength: replyBody.length,
         },
       })
       console.log('Reply to re-engagement email — silent re-classify, no auto-reply:', subscriberId)
