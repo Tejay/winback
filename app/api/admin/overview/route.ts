@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { requireAdmin } from '@/lib/auth'
 import { buildOverviewRollup } from '@/lib/admin/rollups'
+import { getCronHealth } from '@/lib/admin/cron-queries'
 
 /**
  * GET /api/admin/overview
@@ -14,8 +15,11 @@ export async function GET() {
     return NextResponse.json({ error: auth.error }, { status: auth.status })
   }
   try {
-    const rollup = await buildOverviewRollup()
-    return NextResponse.json(rollup)
+    const [rollup, cronHealth] = await Promise.all([
+      buildOverviewRollup(),
+      getCronHealth(),
+    ])
+    return NextResponse.json({ ...rollup, cronHealth })
   } catch (err) {
     console.error('[admin/overview] failed', err)
     return NextResponse.json(

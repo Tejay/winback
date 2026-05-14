@@ -41,6 +41,14 @@ interface OverviewRollup {
     customersActive7d: number
   }
   redLights: Array<{ metric: string; today: number; median7d: number }>
+  cronHealth: Array<{
+    name: string
+    label: string
+    status: 'ok' | 'failed' | 'stale' | 'never-run'
+    lastRunAt: string | null
+    durationMs: number | null
+    errorMessage: string | null
+  }>
 }
 
 /** Display labels for each error source — used by the breakdown row in the Errors tile. */
@@ -183,7 +191,76 @@ export function OverviewClient() {
           />
         </div>
       </section>
+
+      <CronHealthSection rows={data.cronHealth ?? []} />
     </div>
+  )
+}
+
+function CronHealthSection({ rows }: { rows: OverviewRollup['cronHealth'] }) {
+  function relative(iso: string | null): string {
+    if (!iso) return '—'
+    const ms = Date.now() - new Date(iso).getTime()
+    const m = Math.round(ms / 60_000)
+    if (m < 1) return 'just now'
+    if (m < 60) return `${m}m ago`
+    const h = Math.round(m / 60)
+    if (h < 24) return `${h}h ago`
+    return `${Math.round(h / 24)}d ago`
+  }
+  function badge(status: string): { cls: string; label: string } {
+    switch (status) {
+      case 'ok':        return { cls: 'bg-green-50 text-green-700 border-green-200', label: '✓ ok' }
+      case 'failed':    return { cls: 'bg-red-50  text-red-700  border-red-200',     label: '⚠ FAILED' }
+      case 'stale':     return { cls: 'bg-amber-50 text-amber-700 border-amber-200', label: 'ⓘ stale' }
+      default:          return { cls: 'bg-slate-100 text-slate-500 border-slate-200', label: 'never run' }
+    }
+  }
+  return (
+    <section className="bg-white rounded-2xl border border-slate-200 p-5">
+      <div className="text-xs font-semibold uppercase tracking-widest text-slate-500 mb-3">
+        Cron health
+      </div>
+      <table className="w-full text-sm">
+        <thead className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+          <tr>
+            <th className="text-left py-2">Cron</th>
+            <th className="text-left py-2">Schedule</th>
+            <th className="text-left py-2">Status</th>
+            <th className="text-left py-2">Last run</th>
+            <th className="text-right py-2">Duration</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-100">
+          {rows.map((r) => {
+            const b = badge(r.status)
+            return (
+              <tr key={r.name} className="hover:bg-slate-50">
+                <td className="py-2 font-mono text-xs">{r.name}</td>
+                <td className="py-2 text-xs text-slate-500">{r.label}</td>
+                <td className="py-2">
+                  <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium border ${b.cls}`}>
+                    {b.label}
+                  </span>
+                  {r.status === 'failed' && r.errorMessage && (
+                    <div
+                      className="text-xs text-red-700 mt-1 max-w-md truncate"
+                      title={r.errorMessage}
+                    >
+                      {r.errorMessage}
+                    </div>
+                  )}
+                </td>
+                <td className="py-2 text-xs text-slate-500">{relative(r.lastRunAt)}</td>
+                <td className="py-2 text-right text-xs text-slate-500 tabular-nums">
+                  {r.durationMs !== null ? `${r.durationMs}ms` : '—'}
+                </td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+    </section>
   )
 }
 

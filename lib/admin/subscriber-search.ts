@@ -44,6 +44,27 @@ export interface FindSubscribersByEmailOpts {
   adminUserId?: string
 }
 
+const SUBSCRIBER_SELECT = {
+  id: churnedSubscribers.id,
+  customerId: churnedSubscribers.customerId,
+  customerEmail: users.email,
+  customerProductName: customers.productName,
+  customerFounderName: customers.founderName,
+  email: churnedSubscribers.email,
+  name: churnedSubscribers.name,
+  status: churnedSubscribers.status,
+  cancelledAt: churnedSubscribers.cancelledAt,
+  doNotContact: churnedSubscribers.doNotContact,
+  founderHandoffAt: churnedSubscribers.founderHandoffAt,
+  founderHandoffResolvedAt: churnedSubscribers.founderHandoffResolvedAt,
+  aiPausedUntil: churnedSubscribers.aiPausedUntil,
+  handoffReasoning: churnedSubscribers.handoffReasoning,
+  recoveryLikelihood: churnedSubscribers.recoveryLikelihood,
+  mrrCents: churnedSubscribers.mrrCents,
+  cancellationReason: churnedSubscribers.cancellationReason,
+  cancellationCategory: churnedSubscribers.cancellationCategory,
+}
+
 /**
  * Look up every churned-subscriber row matching this email across all
  * Winback customers. Joins customers + users for display context. Logs an
@@ -58,26 +79,7 @@ export async function findSubscribersByEmail(
   if (!normalised) return []
 
   const rows = await getDbReadOnly()
-    .select({
-      id: churnedSubscribers.id,
-      customerId: churnedSubscribers.customerId,
-      customerEmail: users.email,
-      customerProductName: customers.productName,
-      customerFounderName: customers.founderName,
-      email: churnedSubscribers.email,
-      name: churnedSubscribers.name,
-      status: churnedSubscribers.status,
-      cancelledAt: churnedSubscribers.cancelledAt,
-      doNotContact: churnedSubscribers.doNotContact,
-      founderHandoffAt: churnedSubscribers.founderHandoffAt,
-      founderHandoffResolvedAt: churnedSubscribers.founderHandoffResolvedAt,
-      aiPausedUntil: churnedSubscribers.aiPausedUntil,
-      handoffReasoning: churnedSubscribers.handoffReasoning,
-      recoveryLikelihood: churnedSubscribers.recoveryLikelihood,
-      mrrCents: churnedSubscribers.mrrCents,
-      cancellationReason: churnedSubscribers.cancellationReason,
-      cancellationCategory: churnedSubscribers.cancellationCategory,
-    })
+    .select(SUBSCRIBER_SELECT)
     .from(churnedSubscribers)
     .innerJoin(customers, eq(churnedSubscribers.customerId, customers.id))
     .innerJoin(users, eq(customers.userId, users.id))
@@ -91,6 +93,42 @@ export async function findSubscribersByEmail(
     userId: opts.adminUserId,
     properties: {
       email: normalised,
+      resultCount: rows.length,
+    },
+  }).catch((err) => console.warn('admin_subscriber_lookup logEvent failed:', err))
+
+  return rows.map((r) => ({
+    ...r,
+    status: r.status ?? 'pending',
+  }))
+}
+
+/**
+ * Spec 69 — return all subscribers belonging to one customer, newest first.
+ * Powers the "View N subscribers" deep-link from the customer detail page.
+ * Audit-logged like the email-based lookup.
+ */
+export async function findSubscribersByCustomer(
+  customerId: string,
+  opts: FindSubscribersByEmailOpts = {},
+): Promise<AdminSubscriberRow[]> {
+  const limit = opts.limit ?? 100
+  if (!customerId) return []
+
+  const rows = await getDbReadOnly()
+    .select(SUBSCRIBER_SELECT)
+    .from(churnedSubscribers)
+    .innerJoin(customers, eq(churnedSubscribers.customerId, customers.id))
+    .innerJoin(users, eq(customers.userId, users.id))
+    .where(eq(churnedSubscribers.customerId, customerId))
+    .orderBy(desc(churnedSubscribers.cancelledAt))
+    .limit(limit)
+
+  void logEvent({
+    name: 'admin_subscriber_lookup',
+    userId: opts.adminUserId,
+    properties: {
+      customerId,
       resultCount: rows.length,
     },
   }).catch((err) => console.warn('admin_subscriber_lookup logEvent failed:', err))

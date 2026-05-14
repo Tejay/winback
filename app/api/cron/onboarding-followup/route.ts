@@ -1,10 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import {
   runOnboardingNudges,
   runDeletionWarnings,
   runStaleAccountPrune,
 } from '@/src/winback/lib/onboarding-followup'
 import { runPilotEndingWarnings } from '@/src/winback/lib/pilot'
+import { withCron } from '@/src/winback/lib/cron-wrap'
 
 export const maxDuration = 60
 
@@ -21,31 +22,18 @@ export const maxDuration = 60
  * Schedule: daily at 09:30 UTC via vercel.json (offset from the 09:00
  * reengagement cron so logs interleave cleanly).
  *
- * Auth: Bearer ${CRON_SECRET}, identical to /api/cron/reengagement.
+ * Auth: Bearer ${CRON_SECRET} via withCron (Spec 69).
  *
  * `?dryRun=1` skips sends and deletes, returns processed counts only.
  * USE THIS FOR THE FIRST PROD RUN to audit which accounts will be touched.
  */
-export async function GET(req: NextRequest) {
-  const authHeader = req.headers.get('authorization')
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
-
-  const dryRun = req.nextUrl.searchParams.get('dryRun') === '1'
-
-  const nudges        = await runOnboardingNudges({ dryRun })
-  const warnings      = await runDeletionWarnings({ dryRun })
-  const deletes       = await runStaleAccountPrune({ dryRun })
-  const pilotWarnings = await runPilotEndingWarnings({ dryRun })
-
-  console.log('[cron/onboarding-followup]', {
-    dryRun,
-    nudges,
-    warnings,
-    deletes,
-    pilotWarnings,
+export const GET = (req: NextRequest) =>
+  withCron('onboarding-followup', req, async () => {
+    const dryRun = new URL(req.url).searchParams.get('dryRun') === '1'
+    const nudges        = await runOnboardingNudges({ dryRun })
+    const warnings      = await runDeletionWarnings({ dryRun })
+    const deletes       = await runStaleAccountPrune({ dryRun })
+    const pilotWarnings = await runPilotEndingWarnings({ dryRun })
+    console.log('[cron/onboarding-followup]', { dryRun, nudges, warnings, deletes, pilotWarnings })
+    return { dryRun, nudges, warnings, deletes, pilotWarnings }
   })
-
-  return NextResponse.json({ nudges, warnings, deletes, pilotWarnings, dryRun })
-}

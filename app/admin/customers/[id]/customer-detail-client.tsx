@@ -42,6 +42,7 @@ interface Detail {
     outstandingObligations: number
   }
   openHandoffs: number
+  subscriberCount: number
 }
 
 export function CustomerDetailClient({ customerId }: { customerId: string }) {
@@ -107,6 +108,14 @@ export function CustomerDetailClient({ customerId }: { customerId: string }) {
           )}
         </h1>
         <p className="text-sm text-slate-500">{id.email}</p>
+        <div className="mt-2">
+          <Link
+            href={`/admin/subscribers?customerId=${id.id}`}
+            className="text-sm text-blue-600 hover:underline"
+          >
+            View {data.subscriberCount} subscriber{data.subscriberCount === 1 ? '' : 's'} →
+          </Link>
+        </div>
       </header>
 
       {actionMsg && (

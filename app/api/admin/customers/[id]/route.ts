@@ -62,6 +62,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
     recentEvents,
     outstandingObligations,
     openHandoffs,
+    subscriberCountRow,
   ] = await Promise.all([
     // Last activity event for this customer (proxy for "is the integration alive")
     ro
@@ -137,6 +138,11 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
           sql`${churnedSubscribers.founderHandoffResolvedAt} is null`,
         ),
       ),
+    // Spec 69 — total subscriber count for the "View N subscribers" link
+    ro
+      .select({ n: sql<number>`count(*)::int` })
+      .from(churnedSubscribers)
+      .where(eq(churnedSubscribers.customerId, id)),
   ])
 
   return NextResponse.json({
@@ -151,5 +157,6 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
       outstandingObligations: outstandingObligations[0]?.n ?? 0,
     },
     openHandoffs: openHandoffs[0]?.n ?? 0,
+    subscriberCount: subscriberCountRow[0]?.n ?? 0,
   })
 }

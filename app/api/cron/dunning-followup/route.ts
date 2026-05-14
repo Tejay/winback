@@ -1,5 +1,6 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 import { runDunningTouches } from '@/src/winback/lib/dunning-followup'
+import { withCron } from '@/src/winback/lib/cron-wrap'
 
 export const maxDuration = 60
 
@@ -17,22 +18,15 @@ export const maxDuration = 60
  * (next_payment_attempt: null) state flips to 'churned_during_dunning'
  * and the cron stops touching the row — win-back (Spec 04) takes over.
  *
- * Auth: Bearer ${CRON_SECRET}, identical to /api/cron/reengagement.
+ * Auth: Bearer ${CRON_SECRET} via withCron (Spec 69).
  *
  * `?dryRun=1` skips sends + DB writes, returns processed counts only.
  * Use this on the first prod run to audit the eligible cohort.
  */
-export async function GET(req: NextRequest) {
-  const authHeader = req.headers.get('authorization')
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
-
-  const dryRun = req.nextUrl.searchParams.get('dryRun') === '1'
-
-  const { t2, t3 } = await runDunningTouches({ dryRun })
-
-  console.log('[cron/dunning-followup]', { dryRun, t2, t3 })
-
-  return NextResponse.json({ t2, t3, dryRun })
-}
+export const GET = (req: NextRequest) =>
+  withCron('dunning-followup', req, async () => {
+    const dryRun = new URL(req.url).searchParams.get('dryRun') === '1'
+    const { t2, t3 } = await runDunningTouches({ dryRun })
+    console.log('[cron/dunning-followup]', { dryRun, t2, t3 })
+    return { dryRun, t2, t3 }
+  })
