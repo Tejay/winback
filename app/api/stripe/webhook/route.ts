@@ -5,9 +5,10 @@ import { eq, and, ne, inArray, desc, gt, isNull, isNotNull } from 'drizzle-orm'
 import { decrypt } from '@/src/winback/lib/encryption'
 import { extractSignals, getConnectStripe, getInvoiceSubscriptionId } from '@/src/winback/lib/stripe'
 import { getPlatformStripe } from '@/src/winback/lib/platform-stripe'
-import { classifySubscriber } from '@/src/winback/lib/classifier'
-import type { ClassificationResult } from '@/src/winback/lib/types'
-import { scheduleExitEmail, sendDunningEmail } from '@/src/winback/lib/email'
+// Spec 72 — classifier no longer runs inline in the webhook; rows are
+// inserted with classified_at = NULL and the classifier cron picks them
+// up. scheduleExitEmail moved with it (lives in classifier-tick.ts).
+import { sendDunningEmail } from '@/src/winback/lib/email'
 import { logEvent } from '@/src/winback/lib/events'
 import {
   getCurrentDefaultPaymentMethodId,
@@ -273,92 +274,59 @@ async function processChurn(event: Stripe.Event) {
     console.log('Resending exit email for stuck pending row:', existing.id)
   }
 
-  let subscriberId: string
-  let subscriberEmail: string | null
-  let classification: ClassificationResult
-
-  if (existing && existing.status !== 'lost') {
-    // Resend path — re-classify so we have the firstMessage payload again.
-    // (Cheaper than persisting the full classification on the row.)
-    const decryptedToken = decrypt(customer.stripeAccessToken!)
-    const signals = await extractSignals(subscription, decryptedToken)
-    classification = await classifySubscriber(
-      { ...signals, emailsSent: 0 },
-      {
-        founderName: customer.founderName ?? undefined,
-        productName: customer.productName ?? undefined,
-      },
-    )
-    subscriberId = existing.id
-    subscriberEmail = existing.email
-  } else {
-    // First delivery — full pipeline.
-    const decryptedToken = decrypt(customer.stripeAccessToken!)
-    const signals = await extractSignals(subscription, decryptedToken)
-    classification = await classifySubscriber(
-      { ...signals, emailsSent: 0 },
-      {
-        founderName: customer.founderName ?? undefined,
-        productName: customer.productName ?? undefined,
-      },
-    )
-
-    const [newSub] = await db
-      .insert(churnedSubscribers)
-      .values({
-        customerId: customer.id,
-        stripeCustomerId: signals.stripeCustomerId,
-        stripeSubscriptionId: signals.stripeSubscriptionId,
-        stripePriceId: signals.stripePriceId,
-        email: signals.email,
-        name: signals.name,
-        planName: signals.planName,
-        mrrCents: signals.mrrCents,
-        tenureDays: signals.tenureDays,
-        everUpgraded: signals.everUpgraded,
-        nearRenewal: signals.nearRenewal,
-        paymentFailures: signals.paymentFailures,
-        previousSubs: signals.previousSubs,
-        stripeEnum: signals.stripeEnum,
-        stripeComment: signals.stripeComment,
-        cancellationReason: classification.cancellationReason,
-        cancellationCategory: classification.cancellationCategory,
-        tier: classification.tier,
-        confidence: String(classification.confidence),
-        triggerKeyword: classification.triggerKeyword,
-        triggerNeed: classification.triggerNeed,
-        winBackSubject: classification.winBackSubject,
-        winBackBody: classification.winBackBody,
-        handoffReasoning:   classification.handoffReasoning,
-        recoveryLikelihood: classification.recoveryLikelihood,
-        status: classification.suppress ? 'lost' : 'pending',
-        fallbackDays: 90,
-        cancelledAt: signals.cancelledAt,
-      })
-      .returning({ id: churnedSubscribers.id })
-
-    console.log('Churned subscriber saved:', newSub.id, signals.email)
-    subscriberId = newSub.id
-    subscriberEmail = signals.email
+  // Spec 72 — webhook hot path drops the LLM call. Extract signals, insert
+  // a raw row with classified_at = NULL, return. The classifier cron picks
+  // it up within ~2 minutes and runs classification + exit-email send. If
+  // the row already exists (Stripe redelivery, etc.), ON CONFLICT DO
+  // NOTHING is a no-op — the classifier handles whatever state it's in.
+  if (existing) {
+    // Existing row + sent email → the dunning-state update above is the
+    // only work needed. Done.
+    // Existing row + no sent email + status != 'lost' → already in classifier
+    // queue OR classifier already ran and the email send failed. Either way,
+    // we don't re-classify here (would duplicate LLM cost). Admin can reset
+    // via the inspector if a manual retry is needed.
+    return
   }
 
-  if (!classification.suppress && subscriberEmail) {
-    // Get founder's name from users table if not set on customer
-    let founderName = customer.founderName
-    if (!founderName) {
-      const [user] = await db
-        .select({ name: users.name, email: users.email })
-        .from(users)
-        .where(eq(users.id, customer.userId))
-        .limit(1)
-      founderName = user?.name ?? user?.email?.split('@')[0] ?? 'The team'
-    }
-    await scheduleExitEmail({
-      subscriberId,
-      email: subscriberEmail,
-      classification,
-      fromName: founderName,
+  // First-time delivery — insert raw row and let the classifier cron run.
+  const decryptedToken = decrypt(customer.stripeAccessToken!)
+  const signals = await extractSignals(subscription, decryptedToken)
+
+  const inserted = await db
+    .insert(churnedSubscribers)
+    .values({
+      customerId: customer.id,
+      stripeCustomerId: signals.stripeCustomerId,
+      stripeSubscriptionId: signals.stripeSubscriptionId,
+      stripePriceId: signals.stripePriceId,
+      email: signals.email,
+      name: signals.name,
+      planName: signals.planName,
+      mrrCents: signals.mrrCents,
+      tenureDays: signals.tenureDays,
+      everUpgraded: signals.everUpgraded,
+      nearRenewal: signals.nearRenewal,
+      paymentFailures: signals.paymentFailures,
+      previousSubs: signals.previousSubs,
+      stripeEnum: signals.stripeEnum,
+      stripeComment: signals.stripeComment,
+      status: 'pending',          // classifier may refine to 'skipped' on tier 4
+      fallbackDays: 90,
+      cancelledAt: signals.cancelledAt,
+      source: 'webhook',
+      // classified_at intentionally NULL — classifier cron handles it next tick
     })
+    .onConflictDoNothing()
+    .returning({ id: churnedSubscribers.id })
+
+  if (inserted.length > 0) {
+    await logEvent({
+      name: 'backfill_row_inserted',
+      customerId: customer.id,
+      properties: { subscriberId: inserted[0].id, source: 'webhook' },
+    })
+    console.log('Churned subscriber queued for classification:', inserted[0].id, signals.email)
   }
 }
 

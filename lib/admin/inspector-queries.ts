@@ -91,6 +91,9 @@ export interface InspectorPayload {
     triggerNeed: string | null
     handoffReasoning: string | null
     recoveryLikelihood: string | null
+    // Spec 72 — classifier dead-letter state
+    classifiedAt: Date | null
+    classifyAttempts: number
   } | null
   emails: InspectorEmail[]
   outcomeEvents: InspectorOutcomeEvent[]
@@ -152,6 +155,8 @@ export async function buildInspectorPayload(subscriberId: string): Promise<Inspe
       previousSubs: churnedSubscribers.previousSubs,
       billingPortalClickedAt: churnedSubscribers.billingPortalClickedAt,
       tier: churnedSubscribers.tier,
+      classifiedAt: churnedSubscribers.classifiedAt,
+      classifyAttempts: churnedSubscribers.classifyAttempts,
       confidence: churnedSubscribers.confidence,
       cancellationReason: churnedSubscribers.cancellationReason,
       cancellationCategory: churnedSubscribers.cancellationCategory,

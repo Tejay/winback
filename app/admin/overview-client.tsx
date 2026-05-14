@@ -52,6 +52,8 @@ interface OverviewRollup {
     durationMs: number | null
     errorMessage: string | null
   }>
+  /** Spec 72 — count of subscribers stuck in classifier dead-letter (>= 3 attempts). */
+  deadLetteredClassify: number
 }
 
 /** Display labels for each error source — used by the breakdown row in the Errors tile. */
@@ -196,7 +198,41 @@ export function OverviewClient() {
       </section>
 
       <CronHealthSection rows={data.cronHealth ?? []} />
+
+      <DeadLetterTile count={data.deadLetteredClassify ?? 0} />
     </div>
+  )
+}
+
+function DeadLetterTile({ count }: { count: number }) {
+  if (count === 0) {
+    return (
+      <section className="bg-white rounded-2xl border border-slate-200 p-4 text-sm flex items-center justify-between">
+        <span className="text-slate-500">
+          <span className="font-medium text-slate-700">0</span> rows dead-lettered in the classifier queue
+        </span>
+        <Link
+          href="/admin/events?name=classify_dead_lettered"
+          className="text-xs text-slate-400 hover:text-blue-600"
+        >
+          history →
+        </Link>
+      </section>
+    )
+  }
+  return (
+    <section className="bg-red-50 border border-red-200 rounded-2xl p-4 text-sm flex items-center justify-between">
+      <span className="text-red-900">
+        ⚠ <span className="font-semibold">{count}</span> subscriber{count === 1 ? '' : 's'}{' '}
+        stuck in the classifier dead-letter queue (3+ failures).
+      </span>
+      <Link
+        href="/admin/events?name=classify_dead_lettered"
+        className="text-xs font-medium text-red-700 hover:text-red-900"
+      >
+        investigate →
+      </Link>
+    </section>
   )
 }
 

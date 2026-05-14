@@ -65,6 +65,9 @@ interface Subscriber {
   cancellationCategory: string | null
   triggerNeed: string | null
   handoffReasoning: string | null
+  // Spec 72 — classifier state
+  classifiedAt: string | null
+  classifyAttempts: number
   recoveryLikelihood: 'high' | 'medium' | 'low' | null
 }
 
@@ -180,6 +183,11 @@ export function InspectorClient({ subscriberId }: { subscriberId: string }) {
     : (s.status === 'recovered' || s.status === 'lost') ? 'done'
     : 'active'
 
+  // Spec 72 — dead-letter banner. Shown when classify_attempts >= 3
+  // AND the row still hasn't been classified successfully.
+  const isDeadLettered = s.classifyAttempts >= 3 && !s.classifiedAt
+  const isPendingClassify = !s.classifiedAt && s.classifyAttempts < 3
+
   return (
     <div className="space-y-6 max-w-4xl">
       <Link
@@ -188,6 +196,21 @@ export function InspectorClient({ subscriberId }: { subscriberId: string }) {
       >
         ← Back to cross-customer search
       </Link>
+
+      {isDeadLettered && (
+        <DeadLetterBanner
+          subscriberId={subscriberId}
+          attempts={s.classifyAttempts}
+          onReset={load}
+        />
+      )}
+      {isPendingClassify && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5 text-sm text-amber-900">
+          ⏳ <strong>Pending classification.</strong> This subscriber was ingested but the
+          classifier cron hasn&apos;t processed them yet (attempt {s.classifyAttempts} of 3).
+          Re-classification typically runs within 2 minutes.
+        </div>
+      )}
 
       <header className="space-y-2">
         <div className="text-xs font-semibold uppercase tracking-widest text-blue-600">
@@ -974,4 +997,70 @@ function aiStateColor(state: string): BadgeColor {
 }
 function likelihoodColor(l: string): BadgeColor {
   return l === 'high' ? 'green' : l === 'medium' ? 'amber' : 'slate'
+}
+
+/**
+ * Spec 72 — banner for dead-lettered rows. classify_attempts >= 3 means
+ * the cron has tried 3 times and given up. Admin clicks Reset to zero
+ * out the counter and let the cron retry once on the next tick.
+ */
+function DeadLetterBanner({
+  subscriberId,
+  attempts,
+  onReset,
+}: {
+  subscriberId: string
+  attempts: number
+  onReset: () => void
+}) {
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function reset() {
+    if (!confirm(`Reset classify_attempts for this subscriber? The cron will retry once on the next tick (typically within 2 minutes).`)) return
+    setSubmitting(true)
+    setError(null)
+    try {
+      const res = await fetch(`/api/admin/subscribers/${subscriberId}/reset-classify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`)
+      onReset()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-sm">
+      <div className="flex items-start gap-3">
+        <div className="flex-1">
+          <p className="font-semibold text-red-900">
+            ⚠ Classification failed {attempts} times — dead-lettered
+          </p>
+          <p className="text-red-800 mt-1">
+            The classifier cron has stopped retrying this row. Check{' '}
+            <Link href="/admin/events?name=classify_failed" className="underline">
+              recent classify_failed events
+            </Link>{' '}
+            for the last error. After fixing the underlying cause, reset
+            to let the cron try once on the next tick.
+          </p>
+          {error && (
+            <div className="mt-2 text-red-700 text-xs">{error}</div>
+          )}
+        </div>
+        <button
+          onClick={reset}
+          disabled={submitting}
+          className="flex-shrink-0 bg-red-600 text-white hover:bg-red-700 rounded-full px-4 py-2 text-xs font-semibold disabled:opacity-50"
+        >
+          {submitting ? 'Resetting…' : 'Reset & retry'}
+        </button>
+      </div>
+    </div>
+  )
 }

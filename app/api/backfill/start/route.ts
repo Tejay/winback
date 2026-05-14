@@ -1,9 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { backfillCancellations } from '@/src/winback/lib/backfill'
+import { runInitialBackfillBurst } from '@/src/winback/lib/backfill'
 
 /**
- * Internal-only endpoint to trigger historical backfill.
- * Authenticated with CRON_SECRET — not user-facing.
+ * Internal-only endpoint that runs the initial backfill burst for one
+ * customer right after Stripe OAuth. Spec 72 split the old monolithic
+ * backfillCancellations into per-tick chunks; this endpoint now drives
+ * the first 1-2 ticks in-process so the merchant sees rows appear
+ * fast. The /api/cron/backfill-ingest cron continues from there.
+ *
+ * Authenticated with CRON_SECRET — only the OAuth callback calls it.
  */
 export async function POST(req: NextRequest) {
   const authHeader = req.headers.get('authorization')
@@ -21,12 +26,12 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    await backfillCancellations(customerId)
+    await runInitialBackfillBurst(customerId)
     return NextResponse.json({ success: true })
   } catch (err) {
-    console.error('Backfill failed:', err)
+    console.error('Initial backfill burst failed:', err)
     return NextResponse.json(
-      { error: 'Backfill failed', message: String(err) },
+      { error: 'Backfill burst failed', message: String(err) },
       { status: 500 }
     )
   }

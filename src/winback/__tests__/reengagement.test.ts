@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { hasSignalForLLM, classifySilentChurn, BACKFILL_EMAIL_CUTOFF_DAYS } from '../lib/backfill'
+// Spec 72 — helpers moved from backfill.ts into classifier-tick.ts when the
+// producer/consumer refactor split ingest from classification.
+import { hasSignalForLLM, classifySilentChurn } from '../lib/classifier-tick'
 
 describe('hasSignalForLLM', () => {
   it('returns true when stripeComment is present', () => {
@@ -52,8 +54,8 @@ describe('classifySilentChurn', () => {
   })
 })
 
-describe('BACKFILL_EMAIL_CUTOFF_DAYS', () => {
-  it('is 7 days', () => {
-    expect(BACKFILL_EMAIL_CUTOFF_DAYS).toBe(7)
-  })
-})
+// Spec 72 — the 7-day exit-email recency window moved from backfill.ts
+// into classifier-tick.ts (renamed EXIT_EMAIL_RECENCY_DAYS, kept as an
+// internal constant). The test for the magic-number guarantee is dropped
+// because the constant is no longer exported. The recency behavior is
+// covered by the classifier-tick integration test instead.

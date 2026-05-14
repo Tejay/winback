@@ -54,6 +54,12 @@ export const customers = pgTable('wb_customers', {
   backfillProcessed:    integer('backfill_processed').default(0),
   backfillStartedAt:    timestamp('backfill_started_at'),
   backfillCompletedAt:  timestamp('backfill_completed_at'),
+  // Spec 72 — pagination cursor (Stripe `starting_after` id) so the
+  // cron can resume from where the previous tick left off.
+  backfillCursor:       text('backfill_cursor'),
+  // Spec 72 — atomic claim lock. NULL = idle. Set at tick entry,
+  // cleared at exit. Stale > 10 min is recoverable by the next tick.
+  backfillProcessingAt: timestamp('backfill_processing_at', { withTimezone: true }),
   // Spec 30 — onboarding-followup cron idempotency timestamps.
   onboardingNudgeSentAt:    timestamp('onboarding_nudge_sent_at'),
   deletionWarningSentAt:    timestamp('deletion_warning_sent_at'),
@@ -173,6 +179,15 @@ export const churnedSubscribers = pgTable('wb_churned_subscribers', {
   // post-cancellation without recovering. Permanently disqualifies them
   // from future re-engagement.
   reengagementExpiredAt:      timestamp('reengagement_expired_at', { withTimezone: true }),
+  // Spec 72 — producer/consumer classifier. classified_at NULL means
+  // the row is waiting in the queue for the classifier cron. Webhook
+  // inserts and backfill inserts both start NULL; cron sets it to NOW()
+  // after successful classification.
+  classifiedAt:          timestamp('classified_at', { withTimezone: true }),
+  // Per-row retry counter. Cron's WHERE clause filters classify_attempts < 3,
+  // so rows that fail 3 times drop out of the queue and emit a
+  // classify_dead_lettered event for admin review.
+  classifyAttempts:      integer('classify_attempts').notNull().default(0),
   createdAt:            timestamp('created_at').defaultNow(),
   updatedAt:            timestamp('updated_at').defaultNow(),
 })
