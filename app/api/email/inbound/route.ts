@@ -10,6 +10,7 @@ import { Resend } from 'resend'
 import { SubscriberSignals } from '@/src/winback/lib/types'
 import { logEvent } from '@/src/winback/lib/events'
 import { buildConversationThread } from '@/src/winback/lib/conversation'
+import { deriveTriggerNeedConfidence } from '@/src/winback/lib/improvement-match'
 
 type InboundOutcome =
   | 'processed'
@@ -385,6 +386,12 @@ export async function POST(req: Request) {
       productName: customer?.productName ?? undefined,
     })
 
+    // Spec 72 — funnel transition. After a reply re-classifies the
+    // subscriber, derive the new triggerNeedConfidence from the fresh
+    // classification and persist it. This is the silent → has-signal
+    // unlock: a previously low-confidence row whose reply now contains
+    // a real reason flips to 'high', and V2 cron picks them up on the
+    // next pass for re-engagement matching.
     await db
       .update(churnedSubscribers)
       .set({
@@ -392,6 +399,7 @@ export async function POST(req: Request) {
         confidence: String(classification.confidence),
         triggerKeyword: classification.triggerKeyword,
         triggerNeed: classification.triggerNeed,
+        triggerNeedConfidence: deriveTriggerNeedConfidence(classification),
         winBackSubject: classification.winBackSubject,
         winBackBody: classification.winBackBody,
         cancellationReason: classification.cancellationReason,

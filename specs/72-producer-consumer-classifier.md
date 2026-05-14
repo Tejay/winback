@@ -98,8 +98,24 @@ Enforced two places (belt + suspenders):
 2. **Zod schema**: `z.string().max(250, ...)` on `firstMessage.body` and `winBackBody`. An LLM that ignores the prompt rule fails validation → row gets retried → dead-lettered after 3 attempts → admin sees in the dead-letter tile and can investigate prompt drift.
 
 Why 250: short enough to read in 5 seconds on mobile, long enough for greeting + one concrete fact + one ask + sign-off in founder voice. Tested against 5 representative examples (Tier 1 price/feature/competitor, Tier 2 enum-only, Tier 1 support-failure) — all fit comfortably.
-- **Backwards compat with the 60-second exit-email SLA.** Explicitly
-  relaxed.
+
+## Funnel transition: no signal → get signal → convert (added during implementation)
+
+The product is one funnel: **(1) row arrives with no signal → (2) we ask "why" and get a signal back from a reply → (3) V2 re-engagement matches the stated need against a changelog entry and converts.**
+
+The classifier-tick + V2 re-engagement schema fields encode this transition. The bug we caught during design was that the original draft set `triggerNeedConfidence` for every classified row — including silent-churn rows where there's literally nothing to judge confidence against. V2's WHERE clause is `triggerNeedConfidence IS NULL OR = 'high'`, so stamping `'low'` on a silent-churn row would permanently lock it out of re-engagement, even after a reply later turns it into a tier-1/2 signal-bearing row.
+
+The fix is three coordinated changes:
+
+1. **Classifier-tick (`src/winback/lib/classifier-tick.ts`)** — conditionally persists `triggerNeedConfidence`:
+   - Silent-churn (no `stripeEnum` AND no `stripeComment`) → leave `triggerNeedConfidence` **NULL**. Semantics: "not yet judged — no signal to judge from."
+   - Signal-bearing → derive via `deriveTriggerNeedConfidence(classification)` and persist.
+
+2. **V2 re-engagement cron (`src/winback/lib/reengagement-cron-v2.ts`)** — on first visit to a row, if `triggerNeedConfidence` is NULL, derive it from the already-stored `triggerNeed`, `cancellationCategory`, and `confidence` fields. **No LLM call.** This is the cheap path for silent-churn rows that converted to has-signal via reply: the inbound webhook already re-classified and persisted the trigger fields, so V2 just maps them.
+
+3. **Inbound webhook (`app/api/email/inbound/route.ts`)** — when a reply arrives and we re-classify with the new conversation thread, we **re-derive and persist** `triggerNeedConfidence` in the same UPDATE. This is the moment of conversion: a row that was silent-churn (NULL) flips to has-signal with a real `'high'` or `'low'` based on what the LLM found in the reply.
+
+Why all three: classifier-tick must NOT premature-judge silent rows (or V2 locks them out forever); V2 must NOT make redundant LLM calls (Spec 71 already pre-classifies on the producer side); inbound webhook must re-derive on each reply (because the conversation thread can flip the answer over time as the subscriber writes more).
 
 ## Schema
 

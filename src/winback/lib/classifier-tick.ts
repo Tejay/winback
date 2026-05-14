@@ -6,6 +6,7 @@ import { scheduleExitEmail } from './email'
 import { logEvent } from './events'
 import type { ClassificationResult, SubscriberSignals } from './types'
 import { buildConversationThread } from './conversation'
+import { deriveTriggerNeedConfidence } from './improvement-match'
 
 /**
  * Spec 72 — consumer side of the producer/consumer pipeline.
@@ -163,23 +164,36 @@ export async function runClassifierTick(): Promise<ClassifierTickStats> {
       }
 
       // Persist + mark classified atomically.
+      //
+      // Spec 72 — funnel transition logic:
+      // - Signal-bearing rows: derive triggerNeedConfidence from the
+      //   real LLM output and persist. This unlocks V2 re-engagement
+      //   eligibility without V2 having to make its own LLM call.
+      // - Silent-churn rows: leave triggerNeedConfidence NULL. The
+      //   semantics are "not yet judged" — we have no signal to judge
+      //   from. If a reply later turns this into has-signal, the
+      //   inbound webhook re-derives and persists at that point.
+      const persisted: Record<string, unknown> = {
+        tier:                 classification.tier,
+        confidence:           String(classification.confidence),
+        cancellationReason:   classification.cancellationReason,
+        cancellationCategory: classification.cancellationCategory,
+        triggerKeyword:       classification.triggerKeyword,
+        triggerNeed:          classification.triggerNeed,
+        winBackSubject:       classification.winBackSubject,
+        winBackBody:          classification.winBackBody,
+        handoffReasoning:     classification.handoffReasoning,
+        recoveryLikelihood:   classification.recoveryLikelihood,
+        status:               classification.tier === 4 ? 'skipped' : (sub.status ?? 'pending'),
+        classifiedAt:         new Date(),
+        updatedAt:            new Date(),
+      }
+      if (!isSilentChurn) {
+        persisted.triggerNeedConfidence = deriveTriggerNeedConfidence(classification)
+      }
       await db
         .update(churnedSubscribers)
-        .set({
-          tier:                 classification.tier,
-          confidence:           String(classification.confidence),
-          cancellationReason:   classification.cancellationReason,
-          cancellationCategory: classification.cancellationCategory,
-          triggerKeyword:       classification.triggerKeyword,
-          triggerNeed:          classification.triggerNeed,
-          winBackSubject:       classification.winBackSubject,
-          winBackBody:          classification.winBackBody,
-          handoffReasoning:     classification.handoffReasoning,
-          recoveryLikelihood:   classification.recoveryLikelihood,
-          status:               classification.tier === 4 ? 'skipped' : (sub.status ?? 'pending'),
-          classifiedAt:         new Date(),
-          updatedAt:            new Date(),
-        })
+        .set(persisted)
         .where(eq(churnedSubscribers.id, sub.id))
 
       stats.classified++

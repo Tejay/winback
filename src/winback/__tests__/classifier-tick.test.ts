@@ -276,4 +276,50 @@ describe('runClassifierTick', () => {
     expect(stats.exitEmailsSent).toBe(0)
     expect(mockScheduleExit).not.toHaveBeenCalled()
   })
+
+  // ─── Spec 72 funnel — triggerNeedConfidence persistence ──────────────
+
+  it('signal-bearing: derives + persists triggerNeedConfidence', async () => {
+    // High-confidence classification (≥ 0.7, non-Other, triggerNeed
+    // populated) should derive 'high' → V2 cron eligible.
+    const goodSignal = {
+      ...successClassification,
+      confidence: 0.92,
+      cancellationCategory: 'Feature',
+      triggerNeed: 'Wants Zapier integration with CRM',
+    }
+    const setCalls = vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) })
+    mockSelect
+      .mockReturnValueOnce(selectChain([rowWithSignal()]))
+      .mockReturnValueOnce(selectChain([{ id: 'cust_1', founderName: 'Alex' }]))
+    mockClassify.mockResolvedValue(goodSignal)
+    mockUpdate.mockReturnValue({ set: setCalls })
+
+    await runClassifierTick()
+
+    // Find the persist call that updated the row (the one with the
+    // classification fields). It should also carry triggerNeedConfidence.
+    const persistArgs = setCalls.mock.calls.find(
+      (c: unknown[]) => (c[0] as { tier?: unknown }).tier !== undefined,
+    )?.[0] as { triggerNeedConfidence?: string } | undefined
+    expect(persistArgs?.triggerNeedConfidence).toBe('high')
+  })
+
+  it('silent-churn: does NOT persist triggerNeedConfidence (leaves NULL)', async () => {
+    const setCalls = vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) })
+    mockSelect
+      .mockReturnValueOnce(selectChain([rowSilentChurn()]))
+      .mockReturnValueOnce(selectChain([{ id: 'cust_1', founderName: 'Alex', productName: 'Acme' }]))
+    mockUpdate.mockReturnValue({ set: setCalls })
+
+    await runClassifierTick()
+
+    const persistArgs = setCalls.mock.calls.find(
+      (c: unknown[]) => (c[0] as { tier?: unknown }).tier !== undefined,
+    )?.[0] as { triggerNeedConfidence?: string } | undefined
+    // Silent churn: classifier-tick MUST leave triggerNeedConfidence
+    // unset so the inbound webhook can flip it to 'high' later if a
+    // reply elicits real signal.
+    expect(persistArgs?.triggerNeedConfidence).toBeUndefined()
+  })
 })

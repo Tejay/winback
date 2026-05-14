@@ -7,7 +7,6 @@ import {
   improvementMatches,
 } from '@/lib/schema'
 import { and, eq, inArray, isNull, isNotNull, sql } from 'drizzle-orm'
-import { classifySubscriber } from './classifier'
 import {
   sendEmail,
   isCustomerPausedForWinback,
@@ -21,8 +20,7 @@ import {
   type ImprovementForMatcher,
 } from './improvement-match'
 import { logEvent } from './events'
-import type { SubscriberSignals } from './types'
-import { buildConversationThread } from './conversation'
+import type { ClassificationResult } from './types'
 
 /**
  * Spec 65 Phase 3 — V2 re-engagement cron pipeline.
@@ -132,46 +130,31 @@ export async function processSubscriberForReengagement(
       return { kind: 'error', errorMessage: 'customer not found' }
     }
 
-    // 4. Confidence gate — classify-if-needed
+    // 4. Confidence gate.
+    //
+    // Spec 72 — classifier-tick now derives + persists
+    // triggerNeedConfidence at initial classification (for signal-bearing
+    // rows). Silent-churn rows reach V2 with confidence = NULL because
+    // we had nothing to judge from. For those, derive from the existing
+    // stored fields (no LLM call — they were already classified by
+    // classifier-tick). The old "first-visit re-classify" branch is
+    // gone; that was a $0.003 leak per silent-churn row.
     let triggerNeed:           string | null = sub.triggerNeed
     let triggerNeedConfidence: 'high' | 'low' | null = (sub.triggerNeedConfidence as 'high' | 'low' | null)
 
     if (triggerNeedConfidence === null) {
-      const signals: SubscriberSignals = {
-        stripeCustomerId:     sub.stripeCustomerId,
-        stripeSubscriptionId: sub.stripeSubscriptionId ?? '',
-        stripePriceId:        sub.stripePriceId ?? null,
-        email:                sub.email,
-        name:                 sub.name,
-        planName:             sub.planName ?? 'Unknown',
-        mrrCents:             sub.mrrCents,
-        tenureDays:           sub.tenureDays ?? 0,
-        everUpgraded:         sub.everUpgraded ?? false,
-        nearRenewal:          sub.nearRenewal ?? false,
-        paymentFailures:      sub.paymentFailures ?? 0,
-        previousSubs:         sub.previousSubs ?? 0,
-        stripeEnum:           sub.stripeEnum,
-        stripeComment:        sub.stripeComment,
-        conversationThread:   await buildConversationThread(sub.id),
-        billingPortalClicked: !!sub.billingPortalClickedAt,
-        cancelledAt:          sub.cancelledAt ?? new Date(),
-      }
-      const classification = await classifySubscriber(signals, {
-        founderName: customer.founderName ?? undefined,
-        productName: customer.productName ?? undefined,
-      })
-      triggerNeed           = classification.triggerNeed
-      triggerNeedConfidence = deriveTriggerNeedConfidence(classification)
+      // Derive from what's already on the row. classifier-tick populated
+      // tier / confidence / cancellationCategory / triggerNeed for every
+      // row; silent-churn rows just got the deterministic fallback shape.
+      triggerNeedConfidence = deriveTriggerNeedConfidence({
+        triggerNeed:          sub.triggerNeed,
+        cancellationCategory: sub.cancellationCategory,
+        confidence:           sub.confidence !== null ? Number(sub.confidence) : 0,
+      } as ClassificationResult)
 
       await db
         .update(churnedSubscribers)
-        .set({
-          triggerNeed,
-          triggerNeedConfidence,
-          cancellationReason:   classification.cancellationReason,
-          cancellationCategory: classification.cancellationCategory,
-          updatedAt:            new Date(),
-        })
+        .set({ triggerNeedConfidence, updatedAt: new Date() })
         .where(eq(churnedSubscribers.id, sub.id))
     }
 
