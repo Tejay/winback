@@ -30,15 +30,16 @@ import { buildConversationThread } from './conversation'
 // Vercel timeout on the worst-case batch composition.
 const BATCH_PER_TICK = 20
 const DEAD_LETTER_THRESHOLD = 3
-// Signal-bearing exit emails reference what we know about the subscriber
-// (their stated reason); after 7 days, that reference can feel stale.
-const EXIT_EMAIL_RECENCY_DAYS = 7
-// Silent-churn "asking why" emails don't reference specifics — they
-// just ask. The copy uses "recently" so we can plausibly send up to
-// 90 days post-cancel without sounding stale or creepy. This is our
-// only chance to elicit signal from the ~90% of cancellations Stripe
-// captures no reason for.
-const SILENT_CHURN_RECENCY_DAYS = 90
+// Spec 72 — 90-day window for BOTH paths (silent-churn ask + signal-bearing
+// tier 1/2 personalized emails).
+//
+// Originally 7 days for signal-bearing to avoid stale references, but the
+// classifier prompt has its own age-awareness baked in (suppresses 14-60d
+// rows without strong reason; suppresses 60+ rows without compelling match).
+// So the code gate was redundant — the LLM is already the judge of "is this
+// stale". Going to 90d uniformly means more recovery shots on backfill
+// without spam, since the LLM filters at the edges.
+const EMAIL_RECENCY_DAYS = 90
 
 export interface ClassifierTickStats {
   picked:          number
@@ -189,15 +190,12 @@ export async function runClassifierTick(): Promise<ClassifierTickStats> {
       })
 
       // Downstream: schedule exit email when the cancellation is recent
-      // and the AI didn't suppress. Silent-churn rows get a generous
-      // 90-day window (the "asking why" copy uses "recently" rather
-      // than specific dates so it stays plausible). Signal-bearing rows
-      // get the original 7-day window since their copy references the
-      // stated reason which can feel stale after a week.
+      // and the AI didn't suppress. 90-day window applies to both paths
+      // (silent-churn ask + signal-bearing tier 1/2). The classifier
+      // prompt's own age-awareness handles staleness within the window.
       const cancelledAt = sub.cancelledAt
-      const recencyDays = isSilentChurn ? SILENT_CHURN_RECENCY_DAYS : EXIT_EMAIL_RECENCY_DAYS
       const isRecent = !!cancelledAt &&
-        (Date.now() - cancelledAt.getTime()) < recencyDays * 24 * 60 * 60 * 1000
+        (Date.now() - cancelledAt.getTime()) < EMAIL_RECENCY_DAYS * 24 * 60 * 60 * 1000
       const shouldEmail = classification.tier !== 4
         && !classification.suppress
         && classification.firstMessage !== null

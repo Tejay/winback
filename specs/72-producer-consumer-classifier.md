@@ -82,7 +82,9 @@ to know what didn't land. Even one line is enough — I read every reply.
 — {founderName}
 ```
 
-The word "recently" is deliberate — no specific date reference, so the same copy works at 5 days post-cancel as at 80 days. That lets us widen the recency window to 90 days for silent churn (vs 7 days for signal-bearing exit emails, which DO reference specifics and feel stale after a week). Two recency constants in the file: `EXIT_EMAIL_RECENCY_DAYS = 7` and `SILENT_CHURN_RECENCY_DAYS = 90`.
+The word "recently" is deliberate — no specific date reference, so the same copy works at 5 days post-cancel as at 80 days.
+
+Recency window is **90 days for BOTH paths** (silent-churn ask + signal-bearing tier 1/2 emails). Single constant `EMAIL_RECENCY_DAYS = 90`. The classifier prompt's own age-awareness handles staleness within the window: suppress 14-60d rows without a strong reason, suppress 60+d rows without a compelling match. The code gate is just there to prevent absolute outliers (e.g. a year-old cancellation getting touched). The LLM is the editorial judge, not the code.
 
 When a subscriber replies, the inbound webhook re-classifies with the new text → tier potentially flips to 1/2 → re-engagement opportunity opens.
 

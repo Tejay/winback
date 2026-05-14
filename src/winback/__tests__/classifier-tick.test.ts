@@ -246,10 +246,27 @@ describe('runClassifierTick', () => {
     }))
   })
 
-  it('old cancellation: classifies but does NOT send exit email', async () => {
+  it('signal-bearing within 90-day window: classifies AND sends exit email', async () => {
+    // Spec 72 — recency window is 90 days for both paths. 10 days is well
+    // within the window so the email DOES fire.
     const TEN_DAYS_AGO = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000)
     mockSelect
       .mockReturnValueOnce(selectChain([rowWithSignal({ cancelledAt: TEN_DAYS_AGO })]))
+      .mockReturnValueOnce(selectChain([{ id: 'cust_1', founderName: 'Alex' }]))
+    mockClassify.mockResolvedValue(successClassification)
+    mockUpdate.mockReturnValue(updateChain())
+
+    const stats = await runClassifierTick()
+    expect(stats.classified).toBe(1)
+    expect(stats.exitEmailsSent).toBe(1)
+  })
+
+  it('signal-bearing OUTSIDE 90-day window: classifies but does NOT send', async () => {
+    // 100 days is past the 90d cap. The classifier's own age-awareness
+    // would likely suppress anyway, but the hard code gate kicks in too.
+    const HUNDRED_DAYS_AGO = new Date(Date.now() - 100 * 24 * 60 * 60 * 1000)
+    mockSelect
+      .mockReturnValueOnce(selectChain([rowWithSignal({ cancelledAt: HUNDRED_DAYS_AGO })]))
       .mockReturnValueOnce(selectChain([{ id: 'cust_1', founderName: 'Alex' }]))
     mockClassify.mockResolvedValue(successClassification)
     mockUpdate.mockReturnValue(updateChain())
