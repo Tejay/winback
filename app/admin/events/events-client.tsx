@@ -12,42 +12,12 @@ interface EventRow {
   createdAt: string
 }
 
-const EVENT_NAMES = [
-  'admin_action',
-  'admin_subscriber_lookup',
-  'ai_paused',
-  'ai_resumed',
-  'billing_card_captured',
-  'billing_cron_complete',
-  'billing_invoice_created',
-  'billing_invoice_failed',
-  'billing_invoice_paid',
-  'billing_portal_opened',
-  'billing_setup_started',
-  // Spec 26 — observability error events
-  'classifier_failed',
-  'email_replied',
-  'email_send_failed',
-  'email_sent',
-  'founder_handoff_triggered',
-  'handoff_resolved_manually',
-  'handoff_snoozed',
-  'landing_viewed',
-  'link_clicked',
-  'oauth_completed',
-  'oauth_denied',
-  'oauth_error',
-  'oauth_redirect',
-  'onboarding_stripe_viewed',
-  'proactive_nudge_sent',
-  'reactivate_already_active',
-  'reactivate_checkout_started',
-  'reactivate_failed',
-  'subscriber_auto_lost',
-  'subscriber_recovered',
-  'subscriber_unsubscribed',
-  'webhook_signature_invalid',
-]
+// Spec 76 — the previous hardcoded EVENT_NAMES constant was dropped.
+// The filter dropdown now pulls `distinctNames` from the API on every
+// load, which queries `SELECT DISTINCT name FROM wb_events` so every
+// event the codebase has ever emitted is filterable without code
+// churn. ~50 events were missing from the old constant; another 3 were
+// stale.
 
 const SINCE_OPTIONS = [
   { value: '1h',  label: 'Last hour' },
@@ -83,6 +53,11 @@ function EventsClientInner() {
   const [customerNotFound, setCustomerNotFound] = useState(false)
   const [eventsOutsideRange, setEventsOutsideRange] = useState<number | null>(null)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  // Spec 76 — dropdown populated from the API instead of a hardcoded
+  // constant. The list lives on the server (SELECT DISTINCT name FROM
+  // wb_events) so it stays in sync with what the codebase actually
+  // emits; no more drift, no more stale entries.
+  const [eventNames, setEventNames] = useState<string[]>([])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -98,6 +73,7 @@ function EventsClientInner() {
       setRows(json.rows)
       setCustomerNotFound(!!json.customerNotFound)
       setEventsOutsideRange(typeof json.customerEventsOutsideRange === 'number' ? json.customerEventsOutsideRange : null)
+      if (Array.isArray(json.distinctNames)) setEventNames(json.distinctNames)
       setError(null)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
@@ -146,7 +122,11 @@ function EventsClientInner() {
             className="w-full border border-slate-200 rounded-full px-3 py-2 text-sm bg-white"
           >
             <option value="">All</option>
-            {EVENT_NAMES.map((n) => <option key={n} value={n}>{n}</option>)}
+            {/* If a URL-supplied `name` isn't in the API-returned list
+                yet (first paint, or filtering by a never-emitted event),
+                prepend it so the select still shows the chosen value. */}
+            {name && !eventNames.includes(name) && <option value={name}>{name}</option>}
+            {eventNames.map((n) => <option key={n} value={n}>{n}</option>)}
           </select>
         </Field>
         <Field label="Customer (email or UUID)">

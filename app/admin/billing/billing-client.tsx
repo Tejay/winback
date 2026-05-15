@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
+import { RefreshAffordance } from '@/components/admin-refresh'
 
 /**
  * Phase C — admin billing dashboard, slimmed down.
@@ -55,13 +56,17 @@ export function BillingClient() {
   const [data, setData] = useState<Payload | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  // Spec 76 (admin polish) — track when data was last fetched.
+  const [lastLoadedAt, setLastLoadedAt] = useState<number | null>(null)
 
   const load = useCallback(async () => {
+    setLoading(true)
     try {
       const res = await fetch('/api/admin/billing', { cache: 'no-store' })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error ?? 'Failed to load')
       setData(json)
+      setLastLoadedAt(Date.now())
       setError(null)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
@@ -98,15 +103,20 @@ export function BillingClient() {
 
   return (
     <div className="space-y-8">
-      <header>
-        <div className="text-xs font-semibold uppercase tracking-widest text-blue-600 mb-1">
-          Billing operations
+      <header className="flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <div className="text-xs font-semibold uppercase tracking-widest text-blue-600 mb-1">
+            Billing operations
+          </div>
+          <h1 className="text-3xl font-bold text-slate-900">Billing.</h1>
+          <p className="text-sm text-slate-500 mt-1">
+            Stripe Subscriptions drive monthly billing automatically; this page tracks
+            win-back fees that are queued (waiting on a card) and the weekly recovery trend.
+          </p>
         </div>
-        <h1 className="text-3xl font-bold text-slate-900">Billing.</h1>
-        <p className="text-sm text-slate-500 mt-1">
-          Stripe Subscriptions drive monthly billing automatically; this page tracks
-          win-back fees that are queued (waiting on a card) and the weekly recovery trend.
-        </p>
+        {/* Spec 76 — billing doesn't poll, so a stale tab open for hours
+            otherwise gives no hint that the data is out of date. */}
+        <RefreshAffordance lastLoadedAt={lastLoadedAt} onRefresh={load} loading={loading} />
       </header>
 
       {/* Customer filter (client-side, applies to both sections) */}
@@ -221,11 +231,14 @@ function ChargedSection({
         <div className="text-xs font-semibold uppercase tracking-widest text-slate-500">
           Charged win-back fees
         </div>
+        {/* Spec 76 — clearer signal when we've hit the 200-row cap. Previously
+            this just said "showing 200 most recent" which didn't make clear
+            that older fees existed in the DB. Now spells it out. */}
         <div className="text-xs text-slate-400">
           {filterActive
             ? `${rows.length} match${rows.length === 1 ? '' : 'es'}`
             : atLimit
-              ? 'showing 200 most recent'
+              ? 'Showing 200 most recent — older fees in DB; use the customer filter above to find them'
               : `${rows.length} ${rows.length === 1 ? 'row' : 'rows'}`}
         </div>
       </div>
