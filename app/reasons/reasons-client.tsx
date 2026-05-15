@@ -1,47 +1,127 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 
-interface Improvement {
+/**
+ * Spec 65 Phase 2 — Winback Reasons client.
+ * Spec 75 — UX cleanup:
+ *   - "Show removed" toggle + archived view removed entirely
+ *   - "Matched: N customers" badge per active row (hidden when N=0)
+ *   - Modal-confirmation Remove → optimistic remove + 10s toast-undo
+ * The underlying soft-archive (status='archived') stays in DB for
+ * attribution lineage; merchants just never see it.
+ */
+
+interface Reason {
   id:               string
   title:            string
   description:      string
   dateShipped:      string  // YYYY-MM-DD
-  status:           'published' | 'archived'
   addressesPattern: string | null
   preempted:        boolean
   createdAt:        string
+  matchedCount:     number
 }
 
 const MAX_ACTIVE = 10
+const TOAST_TIMEOUT_MS = 10_000
 
 type ModalState =
   | { kind: 'closed' }
   | { kind: 'add' }
-  | { kind: 'edit'; improvement: Improvement }
-  | { kind: 'archive'; improvement: Improvement }
+  | { kind: 'edit'; reason: Reason }
 
-interface Props {
-  initialImprovements: Improvement[]
+interface PendingUndo {
+  reason: Reason  // full row so we can render it back if Undo clicked
+  removedAt: number
 }
 
-export function ReasonsClient({ initialImprovements }: Props) {
+interface Props {
+  initialReasons: Reason[]
+}
+
+export function ReasonsClient({ initialReasons }: Props) {
   const router = useRouter()
-  const [improvements, setImprovements] = useState(initialImprovements)
-  const [showArchived, setShowArchived] = useState(false)
+  const [reasons, setReasons] = useState(initialReasons)
   const [modal, setModal] = useState<ModalState>({ kind: 'closed' })
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const [pendingUndos, setPendingUndos] = useState<PendingUndo[]>([])
 
-  const published = useMemo(() => improvements.filter((i) => i.status === 'published'), [improvements])
-  const archived  = useMemo(() => improvements.filter((i) => i.status === 'archived'),  [improvements])
-  const visible   = showArchived ? archived : published
-
-  const atCap = published.length >= MAX_ACTIVE
+  const atCap = reasons.length >= MAX_ACTIVE
 
   function reload() {
     router.refresh()
   }
+
+  /**
+   * Spec 75 — optimistic remove + toast-undo.
+   * 1. Hide the row immediately (filter out of state).
+   * 2. Fire the soft-archive API call.
+   * 3. Push a PendingUndo onto the stack so the toast renders.
+   * 4. After TOAST_TIMEOUT_MS, drop the PendingUndo (toast dismisses).
+   *    The DB stays in archived state with no further action.
+   * 5. If user clicks Undo before timeout: call restore API, push the
+   *    full row back into state, drop the PendingUndo.
+   */
+  async function handleRemove(reason: Reason) {
+    setErrorMessage(null)
+    // Optimistic: remove from UI immediately.
+    setReasons((prev) => prev.filter((r) => r.id !== reason.id))
+    // Track for undo.
+    setPendingUndos((prev) => [...prev, { reason, removedAt: Date.now() }])
+    // Fire archive API (soft-archive in DB).
+    try {
+      const res = await fetch(`/api/improvements/${reason.id}/archive`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ confirmed: true }),
+      })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        setErrorMessage(body.error ?? 'Remove failed')
+        // Roll back the optimistic update.
+        setReasons((prev) => [reason, ...prev])
+        setPendingUndos((prev) => prev.filter((p) => p.reason.id !== reason.id))
+      }
+    } catch {
+      setErrorMessage('Remove failed (network error)')
+      setReasons((prev) => [reason, ...prev])
+      setPendingUndos((prev) => prev.filter((p) => p.reason.id !== reason.id))
+    }
+  }
+
+  async function handleUndo(undo: PendingUndo) {
+    // Restore in UI immediately. The list order matches what server will
+    // return on next refresh (dateShipped desc), so optimistic
+    // prepending is fine — reload() below re-sorts authoritatively.
+    setReasons((prev) => [undo.reason, ...prev])
+    setPendingUndos((prev) => prev.filter((p) => p.reason.id !== undo.reason.id))
+    // Fire restore API.
+    try {
+      const res = await fetch(`/api/improvements/${undo.reason.id}/restore`, { method: 'POST' })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        setErrorMessage(body.error ?? 'Undo failed')
+      } else {
+        reload()
+      }
+    } catch {
+      setErrorMessage('Undo failed (network error)')
+    }
+  }
+
+  // Auto-dismiss pending undos after the timeout. Each entry gets its
+  // own timer keyed on the id; cleanup on unmount or list change.
+  useEffect(() => {
+    const timers = pendingUndos.map((u) => {
+      const remaining = Math.max(0, TOAST_TIMEOUT_MS - (Date.now() - u.removedAt))
+      return setTimeout(() => {
+        setPendingUndos((prev) => prev.filter((p) => p.reason.id !== u.reason.id))
+      }, remaining)
+    })
+    return () => { for (const t of timers) clearTimeout(t) }
+  }, [pendingUndos])
 
   return (
     <>
@@ -55,23 +135,13 @@ export function ReasonsClient({ initialImprovements }: Props) {
       <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden">
         <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between flex-wrap gap-3">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-widest text-blue-600">
-              {showArchived ? 'Removed reasons' : 'Active reasons'}
-            </p>
+            <p className="text-xs font-semibold uppercase tracking-widest text-blue-600">Active reasons</p>
             <h3 className="text-lg font-semibold text-slate-900 mt-1">
-              {showArchived ? `${archived.length} removed` : `${published.length} / ${MAX_ACTIVE} active reasons.`}
+              {reasons.length} / {MAX_ACTIVE} active reasons.
             </h3>
-            {!showArchived && (
-              <p className="text-sm text-slate-500 mt-1">Latest first. Most merchants add one every couple of months.</p>
-            )}
+            <p className="text-sm text-slate-500 mt-1">Latest first. Most merchants add one every couple of months.</p>
           </div>
           <div className="flex items-center gap-2">
-            <button
-              onClick={() => setShowArchived((v) => !v)}
-              className="text-sm text-slate-500 hover:text-slate-900 px-3 py-1.5"
-            >
-              {showArchived ? '← Active' : `Show removed (${archived.length})`}
-            </button>
             <button
               onClick={() => atCap ? setErrorMessage(`You have ${MAX_ACTIVE} active reasons. Remove one to add a new one.`) : setModal({ kind: 'add' })}
               disabled={atCap}
@@ -82,26 +152,16 @@ export function ReasonsClient({ initialImprovements }: Props) {
           </div>
         </div>
 
-        {visible.length === 0 ? (
-          <EmptyState showArchived={showArchived} onAdd={() => setModal({ kind: 'add' })} />
+        {reasons.length === 0 ? (
+          <EmptyState onAdd={() => setModal({ kind: 'add' })} />
         ) : (
           <ul className="divide-y divide-slate-100">
-            {visible.map((i) => (
-              <ImprovementRow
-                key={i.id}
-                improvement={i}
-                onEdit={() => setModal({ kind: 'edit', improvement: i })}
-                onArchive={() => setModal({ kind: 'archive', improvement: i })}
-                onRestore={async () => {
-                  setErrorMessage(null)
-                  const res = await fetch(`/api/improvements/${i.id}/restore`, { method: 'POST' })
-                  if (!res.ok) {
-                    const body = await res.json().catch(() => ({}))
-                    setErrorMessage(body.error ?? 'Restore failed')
-                    return
-                  }
-                  reload()
-                }}
+            {reasons.map((r) => (
+              <ReasonRow
+                key={r.id}
+                reason={r}
+                onEdit={() => setModal({ kind: 'edit', reason: r })}
+                onRemove={() => handleRemove(r)}
               />
             ))}
           </ul>
@@ -109,12 +169,12 @@ export function ReasonsClient({ initialImprovements }: Props) {
       </div>
 
       {(modal.kind === 'add' || modal.kind === 'edit') && (
-        <ImprovementFormModal
+        <ReasonFormModal
           mode={modal.kind}
-          initial={modal.kind === 'edit' ? modal.improvement : undefined}
+          initial={modal.kind === 'edit' ? modal.reason : undefined}
           onClose={() => setModal({ kind: 'closed' })}
           onSaved={(updated) => {
-            setImprovements((prev) => {
+            setReasons((prev) => {
               if (modal.kind === 'edit') {
                 return prev.map((p) => (p.id === updated.id ? updated : p))
               }
@@ -127,28 +187,20 @@ export function ReasonsClient({ initialImprovements }: Props) {
         />
       )}
 
-      {modal.kind === 'archive' && (
-        <ArchiveConfirmModal
-          improvement={modal.improvement}
-          onClose={() => setModal({ kind: 'closed' })}
-          onArchived={() => {
-            setImprovements((prev) =>
-              prev.map((p) => (p.id === modal.improvement.id ? { ...p, status: 'archived' } : p)),
-            )
-            setModal({ kind: 'closed' })
-            reload()
-          }}
-          onError={setErrorMessage}
-        />
+      {/* Spec 75 — toast-undo stack. Each pending remove gets its own
+          toast; stacked vertically at the bottom of the viewport. */}
+      {pendingUndos.length > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex flex-col gap-2">
+          {pendingUndos.map((u) => (
+            <UndoToast key={u.reason.id} undo={u} onUndo={() => handleUndo(u)} />
+          ))}
+        </div>
       )}
     </>
   )
 }
 
-function EmptyState({ showArchived, onAdd }: { showArchived: boolean; onAdd: () => void }) {
-  if (showArchived) {
-    return <div className="px-6 py-12 text-center text-sm text-slate-500">No removed reasons.</div>
-  }
+function EmptyState({ onAdd }: { onAdd: () => void }) {
   return (
     <div className="px-6 py-12 text-center">
       <p className="text-sm text-slate-500">No reasons yet.</p>
@@ -163,29 +215,26 @@ function EmptyState({ showArchived, onAdd }: { showArchived: boolean; onAdd: () 
   )
 }
 
-function ImprovementRow({
-  improvement: i,
+function ReasonRow({
+  reason: r,
   onEdit,
-  onArchive,
-  onRestore,
+  onRemove,
 }: {
-  improvement: Improvement
+  reason: Reason
   onEdit: () => void
-  onArchive: () => void
-  onRestore: () => void
+  onRemove: () => void
 }) {
   const [menuOpen, setMenuOpen] = useState(false)
-  const isArchived = i.status === 'archived'
   return (
     <li className="px-6 py-4 group hover:bg-slate-50/60 relative">
       <div className="flex items-start gap-4">
         <div className="text-xs text-slate-400 w-24 pt-0.5 flex-shrink-0">
-          <div className="font-medium text-slate-700">{formatDate(i.dateShipped)}</div>
-          {i.preempted && <div className="text-slate-400 text-[10px] mt-0.5">pre-emptive</div>}
+          <div className="font-medium text-slate-700">{formatDate(r.dateShipped)}</div>
+          {r.preempted && <div className="text-slate-400 text-[10px] mt-0.5">pre-emptive</div>}
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center justify-between gap-2">
-            <h4 className="font-medium text-slate-900 truncate">{i.title}</h4>
+            <h4 className="font-medium text-slate-900 truncate">{r.title}</h4>
             <button
               onClick={() => setMenuOpen((v) => !v)}
               className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-slate-700 text-lg leading-none px-1"
@@ -194,30 +243,65 @@ function ImprovementRow({
               ⋯
             </button>
           </div>
-          <p className="text-sm text-slate-500 mt-1">{i.description}</p>
-          {i.addressesPattern && (
-            <p className="text-xs text-slate-400 mt-1.5">
-              Addresses: <span className="text-slate-600">{i.addressesPattern}</span>
-            </p>
-          )}
+          <p className="text-sm text-slate-500 mt-1">{r.description}</p>
+          {/* Spec 75 — addresses pattern + match count. Slate-400 weight
+              so neither competes with the title. Match count hidden when
+              0 (visual noise on freshly-added rows). */}
+          <div className="flex flex-wrap items-center gap-x-3 mt-1.5 text-xs text-slate-400">
+            {r.addressesPattern && (
+              <span>Addresses: <span className="text-slate-600">{r.addressesPattern}</span></span>
+            )}
+            {r.matchedCount > 0 && (
+              <span>Matched: <span className="text-slate-600">{r.matchedCount} customer{r.matchedCount === 1 ? '' : 's'}</span></span>
+            )}
+          </div>
         </div>
       </div>
       {menuOpen && (
         <div className="absolute right-6 top-12 w-44 bg-white border border-slate-200 rounded-xl shadow-lg z-10 py-1 text-sm">
           <button onClick={() => { setMenuOpen(false); onEdit() }} className="w-full text-left px-3 py-1.5 hover:bg-slate-50 text-slate-700">✎ Edit</button>
           <div className="border-t border-slate-100 my-1" />
-          {isArchived ? (
-            <button onClick={() => { setMenuOpen(false); onRestore() }} className="w-full text-left px-3 py-1.5 hover:bg-green-50 text-green-700">↺ Restore</button>
-          ) : (
-            <button onClick={() => { setMenuOpen(false); onArchive() }} className="w-full text-left px-3 py-1.5 hover:bg-red-50 text-red-600">⌫ Remove</button>
-          )}
+          <button onClick={() => { setMenuOpen(false); onRemove() }} className="w-full text-left px-3 py-1.5 hover:bg-red-50 text-red-600">⌫ Remove</button>
         </div>
       )}
     </li>
   )
 }
 
-function ImprovementFormModal({
+/**
+ * Spec 75 — undo toast. Shows the removed reason title and an Undo
+ * action with a live seconds-remaining counter. Auto-dismisses via the
+ * parent's setTimeout when the budget expires.
+ */
+function UndoToast({ undo, onUndo }: { undo: PendingUndo; onUndo: () => void }) {
+  const startedAt = useRef(undo.removedAt)
+  const [secsLeft, setSecsLeft] = useState(() =>
+    Math.max(0, Math.ceil((TOAST_TIMEOUT_MS - (Date.now() - startedAt.current)) / 1000)),
+  )
+  useEffect(() => {
+    const t = setInterval(() => {
+      const remaining = Math.max(0, Math.ceil((TOAST_TIMEOUT_MS - (Date.now() - startedAt.current)) / 1000))
+      setSecsLeft(remaining)
+      if (remaining <= 0) clearInterval(t)
+    }, 250)
+    return () => clearInterval(t)
+  }, [])
+  return (
+    <div className="bg-slate-900 text-white rounded-full pl-4 pr-2 py-2 text-sm shadow-lg flex items-center gap-3 min-w-[280px]">
+      <span className="truncate">
+        Removed <span className="font-medium">&ldquo;{undo.reason.title}&rdquo;</span>
+      </span>
+      <button
+        onClick={onUndo}
+        className="ml-auto bg-white text-slate-900 rounded-full px-3 py-1 text-xs font-semibold hover:bg-slate-100 whitespace-nowrap"
+      >
+        Undo ({secsLeft}s)
+      </button>
+    </div>
+  )
+}
+
+function ReasonFormModal({
   mode,
   initial,
   onClose,
@@ -225,9 +309,9 @@ function ImprovementFormModal({
   onError,
 }: {
   mode: 'add' | 'edit'
-  initial?: Improvement
+  initial?: Reason
   onClose: () => void
-  onSaved: (i: Improvement) => void
+  onSaved: (r: Reason) => void
   onError: (msg: string) => void
 }) {
   const [title, setTitle] = useState(initial?.title ?? '')
@@ -267,11 +351,15 @@ function ImprovementFormModal({
       return
     }
     const json = await res.json()
+    // Spec 75 — preserve existing matchedCount on edit (matches don't
+    // change). New rows have 0. The API doesn't return matchedCount
+    // on POST/PATCH (only GET does), so we synthesize it here.
     onSaved({
       ...json.improvement,
       dateShipped: typeof json.improvement.dateShipped === 'string'
         ? json.improvement.dateShipped.slice(0, 10)
         : new Date(json.improvement.dateShipped).toISOString().slice(0, 10),
+      matchedCount: initial?.matchedCount ?? 0,
     })
   }
 
@@ -321,66 +409,6 @@ function ImprovementFormModal({
           </button>
         </div>
       </form>
-    </Modal>
-  )
-}
-
-function ArchiveConfirmModal({
-  improvement,
-  onClose,
-  onArchived,
-  onError,
-}: {
-  improvement: Improvement
-  onClose: () => void
-  onArchived: () => void
-  onError: (msg: string) => void
-}) {
-  const [confirmed, setConfirmed] = useState(false)
-  const [submitting, setSubmitting] = useState(false)
-
-  async function submit() {
-    if (!confirmed || submitting) return
-    setSubmitting(true)
-    const res = await fetch(`/api/improvements/${improvement.id}/archive`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ confirmed: true }),
-    })
-    setSubmitting(false)
-    if (!res.ok) {
-      const errBody = await res.json().catch(() => ({}))
-      onError(errBody.error ?? 'Remove failed')
-      return
-    }
-    onArchived()
-  }
-
-  return (
-    <Modal onClose={onClose}>
-      <div className="bg-white rounded-2xl max-w-md w-full p-6">
-        <h4 className="font-semibold text-slate-900 text-lg">Remove reason?</h4>
-        <p className="text-sm text-slate-600 mt-2">No new matches after removal. Past emails stay sent.</p>
-        <label className="flex items-start gap-3 cursor-pointer mt-4">
-          <input
-            type="checkbox"
-            checked={confirmed}
-            onChange={(e) => setConfirmed(e.target.checked)}
-            className="mt-0.5"
-          />
-          <span className="text-sm text-slate-700">Confirm removal.</span>
-        </label>
-        <div className="flex items-center justify-end gap-2 mt-5">
-          <button onClick={onClose} className="text-slate-500 text-sm px-4 py-2">Cancel</button>
-          <button
-            onClick={submit}
-            disabled={!confirmed || submitting}
-            className="bg-red-600 text-white rounded-full px-5 py-2 text-sm font-medium disabled:bg-slate-200 disabled:text-slate-400"
-          >
-            {submitting ? 'Removing…' : 'Remove'}
-          </button>
-        </div>
-      </div>
     </Modal>
   )
 }
