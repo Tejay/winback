@@ -56,10 +56,10 @@ export function ReasonsClient({ initialImprovements }: Props) {
         <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between flex-wrap gap-3">
           <div>
             <p className="text-xs font-semibold uppercase tracking-widest text-blue-600">
-              {showArchived ? 'Removed improvements' : 'Active improvements'}
+              {showArchived ? 'Removed reasons' : 'Active reasons'}
             </p>
             <h3 className="text-lg font-semibold text-slate-900 mt-1">
-              {showArchived ? `${archived.length} removed` : `${published.length} / ${MAX_ACTIVE} active improvements.`}
+              {showArchived ? `${archived.length} removed` : `${published.length} / ${MAX_ACTIVE} active reasons.`}
             </h3>
             {!showArchived && (
               <p className="text-sm text-slate-500 mt-1">Latest first. Most merchants add one every couple of months.</p>
@@ -73,11 +73,11 @@ export function ReasonsClient({ initialImprovements }: Props) {
               {showArchived ? '← Active' : `Show removed (${archived.length})`}
             </button>
             <button
-              onClick={() => atCap ? setErrorMessage(`You have ${MAX_ACTIVE} active improvements. Archive one to add a new one.`) : setModal({ kind: 'add' })}
+              onClick={() => atCap ? setErrorMessage(`You have ${MAX_ACTIVE} active reasons. Remove one to add a new one.`) : setModal({ kind: 'add' })}
               disabled={atCap}
               className="bg-[#0f172a] text-white rounded-full px-5 py-2 text-sm font-medium hover:bg-[#1e293b] disabled:bg-slate-200 disabled:text-slate-400"
             >
-              + Add an improvement
+              + Add a reason
             </button>
           </div>
         </div>
@@ -147,17 +147,17 @@ export function ReasonsClient({ initialImprovements }: Props) {
 
 function EmptyState({ showArchived, onAdd }: { showArchived: boolean; onAdd: () => void }) {
   if (showArchived) {
-    return <div className="px-6 py-12 text-center text-sm text-slate-500">No removed improvements.</div>
+    return <div className="px-6 py-12 text-center text-sm text-slate-500">No removed reasons.</div>
   }
   return (
     <div className="px-6 py-12 text-center">
-      <p className="text-sm text-slate-500">No improvements yet.</p>
+      <p className="text-sm text-slate-500">No reasons yet.</p>
       <p className="text-sm text-slate-500 mt-1">Shipped something cancelled customers asked for? Add it.</p>
       <button
         onClick={onAdd}
         className="mt-4 bg-[#0f172a] text-white rounded-full px-5 py-2 text-sm font-medium hover:bg-[#1e293b]"
       >
-        + Add your first improvement
+        + Add your first reason
       </button>
     </div>
   )
@@ -279,10 +279,10 @@ function ImprovementFormModal({
     <Modal onClose={onClose}>
       <form onSubmit={submit} className="bg-white rounded-2xl max-w-2xl w-full p-6">
         <h3 className="text-xl font-semibold text-slate-900">
-          {mode === 'edit' ? 'Edit improvement.' : 'Add an improvement.'}
+          {mode === 'edit' ? 'Edit reason.' : 'Add a reason.'}
         </h3>
         <p className="text-sm text-slate-500 mt-1">
-          A real shipped product improvement. Stays live until you archive it.
+          A real shipped product reason. Stays live until you remove it.
         </p>
 
         <div className="grid grid-cols-1 gap-4 mt-6">
@@ -317,7 +317,7 @@ function ImprovementFormModal({
         <div className="flex items-center gap-2 mt-6 justify-end">
           <button type="button" onClick={onClose} className="text-slate-500 text-sm px-4 py-2">Cancel</button>
           <button type="submit" disabled={!canSubmit} className="bg-[#0f172a] text-white rounded-full px-5 py-2 text-sm font-medium hover:bg-[#1e293b] disabled:bg-slate-200 disabled:text-slate-400">
-            {saving ? 'Saving…' : (mode === 'edit' ? 'Save changes' : 'Publish improvement →')}
+            {saving ? 'Saving…' : (mode === 'edit' ? 'Save changes' : 'Publish reason →')}
           </button>
         </div>
       </form>
@@ -359,7 +359,7 @@ function ArchiveConfirmModal({
   return (
     <Modal onClose={onClose}>
       <div className="bg-white rounded-2xl max-w-md w-full p-6">
-        <h4 className="font-semibold text-slate-900 text-lg">Remove improvement?</h4>
+        <h4 className="font-semibold text-slate-900 text-lg">Remove reason?</h4>
         <p className="text-sm text-slate-600 mt-2">No new matches after removal. Past emails stay sent.</p>
         <label className="flex items-start gap-3 cursor-pointer mt-4">
           <input
