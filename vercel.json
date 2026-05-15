@@ -23,6 +23,14 @@
     {
       "path": "/api/cron/drain-paused-queue",
       "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/backfill-ingest",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/classifier",
+      "schedule": "*/2 * * * *"
     }
   ]
 }

@@ -136,12 +136,14 @@ describe('classifySubscriber', () => {
     // Section headers we rely on — if these disappear, tone regresses silently.
     expect(systemPrompt).toContain('MESSAGE WRITING')
     expect(systemPrompt).toContain('Banned phrases')
-    expect(systemPrompt).toContain('RESULT FOCUS')
     expect(systemPrompt).toContain('HUMAN VOICE')
-    expect(systemPrompt).toContain('CONCESSION BEAT')
-    expect(systemPrompt).toContain('RECIPROCITY')
-    // Length constraint must be explicit.
-    expect(systemPrompt).toMatch(/2 or 3 complete sentences/)
+    // Prompt uses SENTENCE 1 / SENTENCE 2 structure (replaced CONCESSION BEAT /
+    // RESULT FOCUS / RECIPROCITY). Verify the new 2-sentence shape rule is present.
+    expect(systemPrompt).toContain('SENTENCE 1')
+    expect(systemPrompt).toContain('SENTENCE 2')
+    expect(systemPrompt).toMatch(/EXACTLY 2 sentences/)
+    // Concession whitelist must still be spelled out even though section is renamed.
+    expect(systemPrompt).toContain('Fair call')
     // Representative banned phrases must be spelled out verbatim.
     expect(systemPrompt.toLowerCase()).toContain('just checking in')
     expect(systemPrompt.toLowerCase()).toContain("we'd love to have you back")
@@ -149,8 +151,7 @@ describe('classifySubscriber', () => {
     // New human-voice anti-patterns must be present.
     expect(systemPrompt.toLowerCase()).toContain('no hard feelings')
     expect(systemPrompt.toLowerCase()).toContain('hope this finds you well')
-    // The concession-beat whitelist must be spelled out so the model has phrases to draw from.
-    expect(systemPrompt).toContain('Fair call')
+    // The concession whitelist must still be present so the model has phrases to draw from.
     expect(systemPrompt).toContain('That makes sense')
     // No exclamation marks rule must be present.
     expect(systemPrompt).toMatch(/no exclamation marks/i)
@@ -412,5 +413,57 @@ describe('classifySubscriber', () => {
     expect(result.suppress).toBe(true)
     expect(result.tier).toBe(4)
     expect(ClassificationSchema.safeParse(result).success).toBe(true)
+  })
+
+  // ─── Spec 72 — 250-char body cap ───────────────────────────────────────
+
+  it('system prompt includes the 250-character LENGTH CAP rule', async () => {
+    const signals = makeSignals()
+    mockLLMResponse({
+      tier: 3, tierReason: 't', cancellationReason: 'r', cancellationCategory: 'Other',
+      confidence: 0.5, suppress: false,
+      firstMessage: { subject: 's', body: 'b', sendDelaySecs: 60 },
+      triggerKeyword: null, winBackSubject: 'w', winBackBody: 'b',
+    })
+    await classifySubscriber(signals, {})
+    const systemPrompt = mockCreate.mock.calls[0][0].system as string
+    expect(systemPrompt).toContain('LENGTH CAP')
+    expect(systemPrompt).toContain('250')
+  })
+
+  it('schema rejects firstMessage.body > 250 chars (Spec 72)', () => {
+    const bodyTooLong = 'a'.repeat(251)
+    const result = ClassificationSchema.safeParse({
+      tier: 1, tierReason: 't', cancellationReason: 'r', cancellationCategory: 'Price',
+      confidence: 0.9, suppress: false,
+      firstMessage: { subject: 's', body: bodyTooLong, sendDelaySecs: 60 },
+      triggerKeyword: null, triggerNeed: null,
+      winBackSubject: '', winBackBody: '',
+    })
+    expect(result.success).toBe(false)
+  })
+
+  it('schema rejects winBackBody > 250 chars (Spec 72)', () => {
+    const bodyTooLong = 'a'.repeat(251)
+    const result = ClassificationSchema.safeParse({
+      tier: 1, tierReason: 't', cancellationReason: 'r', cancellationCategory: 'Price',
+      confidence: 0.9, suppress: false,
+      firstMessage: null,
+      triggerKeyword: null, triggerNeed: null,
+      winBackSubject: '', winBackBody: bodyTooLong,
+    })
+    expect(result.success).toBe(false)
+  })
+
+  it('schema accepts firstMessage.body exactly at 250 chars (Spec 72)', () => {
+    const bodyAtCap = 'a'.repeat(250)
+    const result = ClassificationSchema.safeParse({
+      tier: 1, tierReason: 't', cancellationReason: 'r', cancellationCategory: 'Price',
+      confidence: 0.9, suppress: false,
+      firstMessage: { subject: 's', body: bodyAtCap, sendDelaySecs: 60 },
+      triggerKeyword: null, triggerNeed: null,
+      winBackSubject: '', winBackBody: '',
+    })
+    expect(result.success).toBe(true)
   })
 })

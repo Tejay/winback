@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { requireAdmin } from '@/lib/auth'
 import { buildOverviewRollup } from '@/lib/admin/rollups'
 import { getCronHealth } from '@/lib/admin/cron-queries'
+import { countDeadLetteredRows } from '@/src/winback/lib/classifier-tick'
 
 /**
  * GET /api/admin/overview
@@ -15,11 +16,12 @@ export async function GET() {
     return NextResponse.json({ error: auth.error }, { status: auth.status })
   }
   try {
-    const [rollup, cronHealth] = await Promise.all([
+    const [rollup, cronHealth, deadLetteredClassify] = await Promise.all([
       buildOverviewRollup(),
       getCronHealth(),
+      countDeadLetteredRows(),
     ])
-    return NextResponse.json({ ...rollup, cronHealth })
+    return NextResponse.json({ ...rollup, cronHealth, deadLetteredClassify })
   } catch (err) {
     console.error('[admin/overview] failed', err)
     return NextResponse.json(

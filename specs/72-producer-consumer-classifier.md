@@ -64,8 +64,58 @@ and ships dashboard status messaging so merchants see progress.
 - **Replay/reclassify of existing rows.** Existing classified rows
   stay as-is. The new `classified_at` column gets backfilled to
   `updated_at` for them.
-- **Backwards compat with the 60-second exit-email SLA.** Explicitly
-  relaxed.
+
+## Silent-churn ask email (added during implementation)
+
+Silent-churn previously got `firstMessage: null` from `classifySilentChurn()` — no exit email ever went out, even though they're the largest segment (90% of typical merchant cohort per the load test's tier distribution). That was a missed signal opportunity: every cancellation is a chance to ask "why?", and reply rate even at 5-15% is hugely valuable when scaled across the silent pool.
+
+The classifier-tick now populates `firstMessage` for silent-churn rows with a deterministic template (no LLM call):
+
+```
+Subject: A quick question, {firstName}
+
+Hi {firstName},
+
+Saw you cancelled {productName} recently. If you have a minute, I'd love
+to know what didn't land. Even one line is enough — I read every reply.
+
+— {founderName}
+```
+
+The word "recently" is deliberate — no specific date reference, so the same copy works at 5 days post-cancel as at 80 days.
+
+Recency window is **90 days for BOTH paths** (silent-churn ask + signal-bearing tier 1/2 emails). Single constant `EMAIL_RECENCY_DAYS = 90`. The classifier prompt's own age-awareness handles staleness within the window: suppress 14-60d rows without a strong reason, suppress 60+d rows without a compelling match. The code gate is just there to prevent absolute outliers (e.g. a year-old cancellation getting touched). The LLM is the editorial judge, not the code.
+
+When a subscriber replies, the inbound webhook re-classifies with the new text → tier potentially flips to 1/2 → re-engagement opportunity opens.
+
+## 250-character body cap (added during implementation)
+
+All outbound email bodies — `firstMessage.body` and the legacy `winBackBody` — capped at **250 characters** including greeting and sign-off. Newlines count. Reactivation link and unsubscribe footer are appended by our system AFTER the body and don't count.
+
+Enforced two places (belt + suspenders):
+
+1. **Classifier system prompt**: a `LENGTH CAP` section at the top of MESSAGE WRITING explains the rule and the rationale ("pick the one fact that matters most").
+2. **Zod schema**: `z.string().max(250, ...)` on `firstMessage.body` and `winBackBody`. An LLM that ignores the prompt rule fails validation → row gets retried → dead-lettered after 3 attempts → admin sees in the dead-letter tile and can investigate prompt drift.
+
+Why 250: short enough to read in 5 seconds on mobile, long enough for greeting + one concrete fact + one ask + sign-off in founder voice. Tested against 5 representative examples (Tier 1 price/feature/competitor, Tier 2 enum-only, Tier 1 support-failure) — all fit comfortably.
+
+## Funnel transition: no signal → get signal → convert (added during implementation)
+
+The product is one funnel: **(1) row arrives with no signal → (2) we ask "why" and get a signal back from a reply → (3) V2 re-engagement matches the stated need against a changelog entry and converts.**
+
+The classifier-tick + V2 re-engagement schema fields encode this transition. The bug we caught during design was that the original draft set `triggerNeedConfidence` for every classified row — including silent-churn rows where there's literally nothing to judge confidence against. V2's WHERE clause is `triggerNeedConfidence IS NULL OR = 'high'`, so stamping `'low'` on a silent-churn row would permanently lock it out of re-engagement, even after a reply later turns it into a tier-1/2 signal-bearing row.
+
+The fix is three coordinated changes:
+
+1. **Classifier-tick (`src/winback/lib/classifier-tick.ts`)** — conditionally persists `triggerNeedConfidence`:
+   - Silent-churn (no `stripeEnum` AND no `stripeComment`) → leave `triggerNeedConfidence` **NULL**. Semantics: "not yet judged — no signal to judge from."
+   - Signal-bearing → derive via `deriveTriggerNeedConfidence(classification)` and persist.
+
+2. **V2 re-engagement cron (`src/winback/lib/reengagement-cron-v2.ts`)** — on first visit to a row, if `triggerNeedConfidence` is NULL, derive it from the already-stored `triggerNeed`, `cancellationCategory`, and `confidence` fields. **No LLM call.** This is the cheap path for silent-churn rows that converted to has-signal via reply: the inbound webhook already re-classified and persisted the trigger fields, so V2 just maps them.
+
+3. **Inbound webhook (`app/api/email/inbound/route.ts`)** — when a reply arrives and we re-classify with the new conversation thread, we **re-derive and persist** `triggerNeedConfidence` in the same UPDATE. This is the moment of conversion: a row that was silent-churn (NULL) flips to has-signal with a real `'high'` or `'low'` based on what the LLM found in the reply.
+
+Why all three: classifier-tick must NOT premature-judge silent rows (or V2 locks them out forever); V2 must NOT make redundant LLM calls (Spec 71 already pre-classifies on the producer side); inbound webhook must re-derive on each reply (because the conversation thread can flip the answer over time as the subscriber writes more).
 
 ## Schema
 
@@ -196,7 +246,11 @@ in progress (one tick per customer per scheduled fire).
 Picks unclassified rows in batches. Sized to fit a Vercel tick budget.
 
 ```ts
-const BATCH_PER_TICK = 30   // ~30 × 1.5s = 45s, well under 300s ceiling
+// Note: BATCH was 30 in the original draft; load testing showed
+// Anthropic latency is ~4-5s/call (not ~1.5s). Worst-case all-signal
+// batches at 30 took ~145s — too close to a Vercel 60s default. After
+// the load test we set maxDuration = 300 on the route and BATCH = 20.
+const BATCH_PER_TICK = 20   // ~20 × 5s = 100s worst case, safely under 300s ceiling
 
 async function classifierTick(): Promise<TickResult> {
   const rows = await db.select().from(churnedSubscribers)

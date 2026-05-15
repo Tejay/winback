@@ -141,29 +141,57 @@ export async function findBestMatch(
 // --------------------------------------------------------------------------
 // Email generation — age-aware tone
 // --------------------------------------------------------------------------
-const GENERATE_SYSTEM_PROMPT = `You write a single short, concrete re-engagement email to a previously-cancelled subscriber.
+const GENERATE_SYSTEM_PROMPT = `You write a single short re-engagement email to a previously-cancelled subscriber.
 
-The product just shipped (or recently shipped) something that addresses their stated reason for leaving. Your job is to tell them about it specifically — not vaguely.
+The product just shipped something that addresses their stated reason for leaving. Tell them specifically what shipped and end with one soft close. That's it.
+
+SHAPE (non-negotiable):
+  Line 1:  "Hi <firstName>,"
+  Line 2:  blank
+  Line 3:  EXACTLY 2 sentences. No more, no less.
+  Line 4:  blank
+  Line 5:  "— <founderFirstName>"
+
+LENGTH CAP: Body MUST be 250 characters or fewer including greeting, sentences,
+and sign-off. Newlines count. The reactivation link and unsubscribe footer are
+appended by our system — do NOT include them. Going over 250 chars is a hard failure.
+
+SENTENCE 1 — what shipped:
+- Name the specific feature using language from the improvement title/description.
+- Connect it to what they asked for in one clause.
+- Do NOT say "we made improvements" or "we've been working on things" — say what shipped.
+- Age framing: shipped < 3 months ago → "I just shipped X" / "X is live now".
+  Shipped 3+ months ago → "we rolled out X a few months back" / "you may have missed X".
+
+SENTENCE 2 — one soft close:
+- A single low-pressure pointer or question. Never both.
+- Good: "Worth another look?" / "Door's open if that changes things." / "Want to give it a try?"
+- Never a hard sell. Never a discount. Never stacked ("Worth a look? Let me know if you have questions!").
 
 RULES:
-- Reference what shipped using the language from the improvement title and description. Don't say "we made improvements" — say what shipped.
-- Reference what they wanted, briefly, so they remember the context.
-- Keep it short — 3-5 sentences max.
-- End with a single low-pressure call to action: a question like "Want to give it a try?" or "Worth another look?". Not a hard sell.
-- Sign with the founder's name.
-- Do NOT mention discounts.
-- Plain text only — no markdown, no HTML, no signatures beyond the founder name.
-- Do NOT include the unsubscribe / reactivation footer — those are appended automatically.
+- Plain text only — no markdown, no HTML.
+- First-person singular ("I"), not "we" or "the team".
+- No exclamation marks. Ever.
+- Do NOT include the unsubscribe / reactivation footer — appended automatically.
+- Sign with the founder's first name only.
 
-TONE BY AGE:
-- If the improvement shipped recently (< 3 months ago): use "we just shipped X" or "I shipped X last week".
-- If the improvement shipped 3+ months ago: use softer framing like "you may have noticed we shipped X" or "we rolled out X a few months back". Avoid implying it's brand new — they may have already seen it.
+GOOD EXAMPLES (both under 250 chars):
+  "Hi Jamie,\n\nI shipped the Zapier-HubSpot integration you asked for — two-way sync, no code, live now. Worth another look?\n\n— Alex"
+
+  "Hi Sam,\n\nWe just launched a $15 starter tier — same reports you were using, no team overhead. Door's open if that changes things.\n\n— Alex"
+
+  "Hi Jordan,\n\nWe rolled out uncapped CSV exports a few months back — streams straight to S3, no row limit. Worth another look whenever it suits.\n\n— Priya"
+
+BAD EXAMPLES (do not write these):
+  Any body with 3 or more sentences. (Guaranteed to blow the 250-char cap.)
+  Anything vague: "we've made a lot of improvements lately" — say what shipped.
+  Discount offers: "come back for 20% off" — never.
 
 Return ONLY valid JSON: {"subject": "...", "body": "..."}. No preamble, no markdown.`
 
 const GeneratedEmailSchema = z.object({
   subject: z.string().min(1).max(120),
-  body:    z.string().min(1).max(2000),
+  body:    z.string().min(1).max(250, 'Body exceeds 250-character cap'),
 })
 
 export async function generateImprovementEmail(params: {

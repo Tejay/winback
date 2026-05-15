@@ -75,6 +75,24 @@ export const CRON_SCHEDULES: ReadonlyArray<CronSchedule> = [
     purpose: 'Processes subscribers whose webhook arrived while billing was paused — re-classifies cancellations/replies and sends queued dunning emails.',
     staleImpact: 'Cancellations and replies that came in during a paused billing window stay in the queue. No data loss but per-subscriber actions are delayed.',
   },
+  {
+    name: 'backfill-ingest',
+    displayName: 'Backfill ingest',
+    cron: '*/5 * * * *',
+    label: 'Every 5 minutes',
+    maxIntervalSecs: 15 * 60,
+    purpose: 'Pulls cancellations from Stripe for each merchant whose backfill is in progress and inserts raw rows. Spec 72 producer.',
+    staleImpact: 'New merchants who just connected Stripe will see import progress stall. Already-imported subscribers are unaffected.',
+  },
+  {
+    name: 'classifier',
+    displayName: 'Classifier',
+    cron: '*/2 * * * *',
+    label: 'Every 2 minutes',
+    maxIntervalSecs: 6 * 60,
+    purpose: 'Picks unclassified subscribers, runs the LLM, persists tier/triggerNeed/etc, and sends an exit email if the cancellation is recent and the AI doesn\'t suppress.',
+    staleImpact: 'New cancellations sit in the queue with classified_at=NULL. Exit emails are delayed; merchant dashboard shows them as "pending classification".',
+  },
 ]
 
 // HOUR is exported for tests that want to construct stale-thresholds in a

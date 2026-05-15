@@ -623,25 +623,18 @@ export function DashboardClient({
               </div>
               <div className="flex-1">
                 <p className="text-sm font-medium text-slate-900">
-                  Reviewing your cancellation history...
+                  Importing your cancellation history…
                 </p>
+                {/*
+                  Spec 72 — we no longer pre-count the total before pagination
+                  finishes, so the progress denominator is unknown until the
+                  backfill is complete. Show the running count of rows pulled
+                  so far instead of a percentage bar.
+                */}
                 <p className="text-sm text-slate-500 mt-1">
-                  Found {backfill.total} cancelled subscriber{backfill.total !== 1 ? 's' : ''} so far.
-                  Winback is reviewing each one — we&apos;ll only reach out where it makes sense.
+                  {backfill.processed} subscriber{backfill.processed === 1 ? '' : 's'} imported so far.
+                  The rest will appear over the next few minutes — feel free to come back later.
                 </p>
-                {backfill.total > 0 && (
-                  <div className="mt-3">
-                    <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-blue-500 rounded-full transition-all duration-500"
-                        style={{ width: `${Math.round((backfill.processed / backfill.total) * 100)}%` }}
-                      />
-                    </div>
-                    <div className="mt-1 text-xs text-slate-400">
-                      {backfill.processed} / {backfill.total} reviewed
-                    </div>
-                  </div>
-                )}
               </div>
             </div>
           ) : (
@@ -652,7 +645,7 @@ export function DashboardClient({
                 </div>
                 <div>
                   <p className="text-sm font-medium text-slate-900">
-                    We found {backfill.total} cancelled subscriber{backfill.total !== 1 ? 's' : ''} — £{Math.round(backfill.lostMrrCents / 100).toLocaleString()}/mo in lost revenue.
+                    We found {backfill.processed} cancelled subscriber{backfill.processed !== 1 ? 's' : ''} — £{Math.round(backfill.lostMrrCents / 100).toLocaleString()}/mo in lost revenue.
                   </p>
                   <p className="text-sm text-slate-500 mt-1">
                     Winback contacted {backfill.contacted} where a recovery looked possible.
