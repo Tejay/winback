@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
+import { ClassifierDeadLetterDrawer } from './classifier-dead-letter-drawer'
 
 type ErrorSource =
   | 'oauth_error'
@@ -225,6 +226,11 @@ export function OverviewClient() {
 }
 
 function DeadLetterTile({ count }: { count: number }) {
+  // Spec 76 — when count >= 1 the tile is a button that opens the
+  // classifier dead-letter drawer. The "history →" link stays as a
+  // secondary action for admins who want raw event archaeology.
+  const [drawerOpen, setDrawerOpen] = useState(false)
+
   if (count === 0) {
     return (
       <section className="bg-white rounded-2xl border border-slate-200 p-4 text-sm flex items-center justify-between">
@@ -241,18 +247,25 @@ function DeadLetterTile({ count }: { count: number }) {
     )
   }
   return (
-    <section className="bg-red-50 border border-red-200 rounded-2xl p-4 text-sm flex items-center justify-between">
-      <span className="text-red-900">
-        ⚠ <span className="font-semibold">{count}</span> subscriber{count === 1 ? '' : 's'}{' '}
-        stuck in the classifier dead-letter queue (3+ failures).
-      </span>
-      <Link
-        href="/admin/events?name=classify_dead_lettered"
-        className="text-xs font-medium text-red-700 hover:text-red-900"
-      >
-        investigate →
-      </Link>
-    </section>
+    <>
+      <section className="bg-red-50 border border-red-200 rounded-2xl p-4 text-sm flex items-center justify-between gap-3">
+        <button
+          type="button"
+          onClick={() => setDrawerOpen(true)}
+          className="flex-1 text-left text-red-900 hover:text-red-950 hover:underline underline-offset-2"
+        >
+          ⚠ <span className="font-semibold">{count}</span> subscriber{count === 1 ? '' : 's'}{' '}
+          stuck in the classifier dead-letter queue (3+ failures). <span className="text-red-700 font-medium">View & reset →</span>
+        </button>
+        <Link
+          href="/admin/events?name=classify_dead_lettered"
+          className="text-xs text-red-700/70 hover:text-red-900 whitespace-nowrap"
+        >
+          history →
+        </Link>
+      </section>
+      <ClassifierDeadLetterDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} />
+    </>
   )
 }
 
