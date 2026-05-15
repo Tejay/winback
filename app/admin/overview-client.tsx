@@ -66,6 +66,23 @@ const ERROR_SOURCE_LABELS: Record<ErrorSource, string> = {
   webhook_signature_invalid:  'Webhook',
 }
 
+/**
+ * The Errors red light fires on the aggregate count across ALL six sources,
+ * but the "investigate →" link can only filter the events page by a single
+ * event name. Picking the highest-count source on the day routes the user
+ * to the most likely culprit. Ties broken by ERROR_SOURCE_LABELS key order.
+ * Returns null if every source is zero (caller falls back to no filter).
+ */
+function dominantErrorSource(bySource: Record<ErrorSource, number>): ErrorSource | null {
+  let top: ErrorSource | null = null
+  let max = 0
+  for (const src of Object.keys(ERROR_SOURCE_LABELS) as ErrorSource[]) {
+    const n = bySource[src] ?? 0
+    if (n > max) { max = n; top = src }
+  }
+  return top
+}
+
 export function OverviewClient() {
   const [data, setData] = useState<OverviewRollup | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -137,7 +154,10 @@ export function OverviewClient() {
               <Link
                 href={
                   rl.metric === 'errors'
-                    ? '/admin/events?name=oauth_error'
+                    ? (() => {
+                        const top = dominantErrorSource(data.today.errors.bySource)
+                        return top ? `/admin/events?name=${top}` : '/admin/events'
+                      })()
                     : rl.metric === 'handoffs'
                       ? '/admin/events?name=founder_handoff_triggered'
                       : '/admin/events'
