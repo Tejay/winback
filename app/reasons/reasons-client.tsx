@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { Pagination } from '@/components/pagination'
 
 interface Improvement {
   id:               string
@@ -22,24 +23,59 @@ type ModalState =
   | { kind: 'edit'; improvement: Improvement }
   | { kind: 'archive'; improvement: Improvement }
 
+// Spec 73 — props split into published (all, ≤10) and archived (first page +
+// total) so the client can paginate archived independently without
+// re-fetching the published list.
 interface Props {
-  initialImprovements: Improvement[]
+  initialPublished: Improvement[]
+  initialArchived:  Improvement[]
+  archivedTotal:    number
+  archivedPageSize: number
 }
 
-export function ReasonsClient({ initialImprovements }: Props) {
+export function ReasonsClient({ initialPublished, initialArchived, archivedTotal, archivedPageSize }: Props) {
   const router = useRouter()
-  const [improvements, setImprovements] = useState(initialImprovements)
+  const [published, setPublished] = useState(initialPublished)
+  const [archived, setArchived]   = useState(initialArchived)
+  const [archivedTotalState, setArchivedTotalState] = useState(archivedTotal)
+  const [archivedPage, setArchivedPage] = useState(1)
+  const [archivedLoading, setArchivedLoading] = useState(false)
   const [showArchived, setShowArchived] = useState(false)
   const [modal, setModal] = useState<ModalState>({ kind: 'closed' })
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
 
-  const published = useMemo(() => improvements.filter((i) => i.status === 'published'), [improvements])
-  const archived  = useMemo(() => improvements.filter((i) => i.status === 'archived'),  [improvements])
-  const visible   = showArchived ? archived : published
+  const visible = showArchived ? archived : published
+  const atCap   = published.length >= MAX_ACTIVE
 
-  const atCap = published.length >= MAX_ACTIVE
+  /**
+   * Spec 73 — archived pagination handler. Server-side router.refresh()
+   * resets archived to page 1, so this is only used when the merchant
+   * navigates within the archived list. Mutations call refresh() and
+   * the page resets.
+   */
+  async function loadArchivedPage(p: number) {
+    setArchivedLoading(true)
+    try {
+      const res = await fetch(`/api/improvements?status=archived&page=${p}&pageSize=${archivedPageSize}`)
+      if (!res.ok) {
+        setErrorMessage(`Failed to load archived page ${p}`)
+        return
+      }
+      const body = await res.json() as { improvements: Improvement[]; total: number }
+      setArchived(body.improvements)
+      setArchivedTotalState(body.total)
+      setArchivedPage(p)
+    } catch {
+      setErrorMessage(`Failed to load archived page ${p}`)
+    } finally {
+      setArchivedLoading(false)
+    }
+  }
 
   function reload() {
+    // router.refresh() re-runs the server query → fresh initialPublished +
+    // initialArchived (page 1). Reset archived page state to match.
+    setArchivedPage(1)
     router.refresh()
   }
 
@@ -59,7 +95,7 @@ export function ReasonsClient({ initialImprovements }: Props) {
               {showArchived ? 'Removed improvements' : 'Active improvements'}
             </p>
             <h3 className="text-lg font-semibold text-slate-900 mt-1">
-              {showArchived ? `${archived.length} removed` : `${published.length} / ${MAX_ACTIVE} active improvements.`}
+              {showArchived ? `${archivedTotalState} removed` : `${published.length} / ${MAX_ACTIVE} active improvements.`}
             </h3>
             {!showArchived && (
               <p className="text-sm text-slate-500 mt-1">Latest first. Most merchants add one every couple of months.</p>
@@ -70,7 +106,7 @@ export function ReasonsClient({ initialImprovements }: Props) {
               onClick={() => setShowArchived((v) => !v)}
               className="text-sm text-slate-500 hover:text-slate-900 px-3 py-1.5"
             >
-              {showArchived ? '← Active' : `Show removed (${archived.length})`}
+              {showArchived ? '← Active' : `Show removed (${archivedTotalState})`}
             </button>
             <button
               onClick={() => atCap ? setErrorMessage(`You have ${MAX_ACTIVE} active improvements. Archive one to add a new one.`) : setModal({ kind: 'add' })}
@@ -85,7 +121,7 @@ export function ReasonsClient({ initialImprovements }: Props) {
         {visible.length === 0 ? (
           <EmptyState showArchived={showArchived} onAdd={() => setModal({ kind: 'add' })} />
         ) : (
-          <ul className="divide-y divide-slate-100">
+          <ul className={`divide-y divide-slate-100 ${archivedLoading && showArchived ? 'opacity-50 pointer-events-none' : ''}`}>
             {visible.map((i) => (
               <ImprovementRow
                 key={i.id}
@@ -108,13 +144,30 @@ export function ReasonsClient({ initialImprovements }: Props) {
         )}
       </div>
 
+      {/* Spec 73 — archived pagination. Only renders when showing archived
+          AND there are more rows than fit on one page. Published has no
+          pagination (capped at 10 by MAX_ACTIVE_IMPROVEMENTS). */}
+      {showArchived && (
+        <Pagination
+          total={archivedTotalState}
+          page={archivedPage}
+          pageSize={archivedPageSize}
+          onPageChange={loadArchivedPage}
+          itemLabel="removed improvements"
+        />
+      )}
+
       {(modal.kind === 'add' || modal.kind === 'edit') && (
         <ImprovementFormModal
           mode={modal.kind}
           initial={modal.kind === 'edit' ? modal.improvement : undefined}
           onClose={() => setModal({ kind: 'closed' })}
           onSaved={(updated) => {
-            setImprovements((prev) => {
+            // Spec 73 — published is locally mutable for optimistic feedback;
+            // archived is server-driven (refresh re-syncs). Both edit + add
+            // only touch the published list (new improvements are always
+            // published; editing an archived row isn't currently exposed).
+            setPublished((prev) => {
               if (modal.kind === 'edit') {
                 return prev.map((p) => (p.id === updated.id ? updated : p))
               }
@@ -132,9 +185,9 @@ export function ReasonsClient({ initialImprovements }: Props) {
           improvement={modal.improvement}
           onClose={() => setModal({ kind: 'closed' })}
           onArchived={() => {
-            setImprovements((prev) =>
-              prev.map((p) => (p.id === modal.improvement.id ? { ...p, status: 'archived' } : p)),
-            )
+            // Spec 73 — remove from published optimistically; archived list +
+            // archivedTotal re-sync via router.refresh() in reload().
+            setPublished((prev) => prev.filter((p) => p.id !== modal.improvement.id))
             setModal({ kind: 'closed' })
             reload()
           }}

@@ -18,17 +18,23 @@ function toIsoDateTime(v: unknown): string {
 
 import { db } from '@/lib/db'
 import { customers, improvements } from '@/lib/schema'
-import { eq, desc } from 'drizzle-orm'
+import { and, eq, desc, count } from 'drizzle-orm'
 import { TopNav } from '@/components/top-nav'
 import { ImpersonationBanner } from '@/components/impersonation-banner'
 import { ReasonsClient } from './reasons-client'
 
 /**
  * Spec 65 Phase 2 — Winback Reasons page.
+ * Spec 73 — split server query for archived pagination.
  *
- * Server shell. Auth check, fetch the customer's improvements, hand off
- * to ReasonsClient for interactivity.
+ * Server shell. Auth check, fetch:
+ *   - all published improvements (≤ MAX_ACTIVE_IMPROVEMENTS = 10)
+ *   - first page (20) of archived improvements
+ *   - archived total count for the pagination control
+ * Hand off to ReasonsClient for interactivity + further pagination.
  */
+const ARCHIVED_PAGE_SIZE = 20
+
 export default async function ReasonsPage() {
   const session = await auth()
   if (!session?.user?.id) redirect('/login')
@@ -43,11 +49,25 @@ export default async function ReasonsPage() {
   if (!customer) redirect('/onboarding/stripe')
   if (!customer.stripeAccessToken) redirect('/onboarding/stripe')
 
-  const rows = await db
-    .select()
-    .from(improvements)
-    .where(eq(improvements.customerId, customer.id))
-    .orderBy(desc(improvements.dateShipped))
+  // Spec 73 — three queries in parallel:
+  //   1. All published (no pagination — bounded by 10-active cap)
+  //   2. First page of archived (20 rows, latest first)
+  //   3. Archived total count for the pagination control
+  const [publishedRows, archivedRows, [archivedTotalRow]] = await Promise.all([
+    db.select()
+      .from(improvements)
+      .where(and(eq(improvements.customerId, customer.id), eq(improvements.status, 'published'))!)
+      .orderBy(desc(improvements.dateShipped)),
+    db.select()
+      .from(improvements)
+      .where(and(eq(improvements.customerId, customer.id), eq(improvements.status, 'archived'))!)
+      .orderBy(desc(improvements.dateShipped))
+      .limit(ARCHIVED_PAGE_SIZE),
+    db.select({ n: count() })
+      .from(improvements)
+      .where(and(eq(improvements.customerId, customer.id), eq(improvements.status, 'archived'))!),
+  ])
+  const archivedTotal = Number(archivedTotalRow?.n ?? 0)
 
   return (
     <>
@@ -98,16 +118,30 @@ export default async function ReasonsPage() {
           </details>
 
           <div className="mt-8">
-            <ReasonsClient initialImprovements={rows.map((r) => ({
-              id:               r.id,
-              title:            r.title,
-              description:      r.description,
-              dateShipped:      toIsoDate(r.dateShipped),
-              status:           r.status as 'published' | 'archived',
-              addressesPattern: r.addressesPattern ?? null,
-              preempted:        r.preempted,
-              createdAt:        toIsoDateTime(r.createdAt),
-            }))} />
+            <ReasonsClient
+              initialPublished={publishedRows.map((r) => ({
+                id:               r.id,
+                title:            r.title,
+                description:      r.description,
+                dateShipped:      toIsoDate(r.dateShipped),
+                status:           r.status as 'published' | 'archived',
+                addressesPattern: r.addressesPattern ?? null,
+                preempted:        r.preempted,
+                createdAt:        toIsoDateTime(r.createdAt),
+              }))}
+              initialArchived={archivedRows.map((r) => ({
+                id:               r.id,
+                title:            r.title,
+                description:      r.description,
+                dateShipped:      toIsoDate(r.dateShipped),
+                status:           r.status as 'published' | 'archived',
+                addressesPattern: r.addressesPattern ?? null,
+                preempted:        r.preempted,
+                createdAt:        toIsoDateTime(r.createdAt),
+              }))}
+              archivedTotal={archivedTotal}
+              archivedPageSize={ARCHIVED_PAGE_SIZE}
+            />
           </div>
         </div>
       </main>

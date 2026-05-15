@@ -8,6 +8,16 @@ import { logEvent } from '@/src/winback/lib/events'
 
 const MAX_ACTIVE_IMPROVEMENTS = 10
 
+// Spec 73 — pagination defaults per code path.
+// - status=published: returns ALL rows (no offset, no limit; bounded by
+//   MAX_ACTIVE_IMPROVEMENTS = 10).
+// - status=archived:  default pageSize 20.
+// - status omitted:   default pageSize 50 (backwards compat with the
+//   pre-spec-73 GET shape the tests used).
+const DEFAULT_PAGE_SIZE_ARCHIVED = 20
+const DEFAULT_PAGE_SIZE_ALL      = 50
+const MAX_PAGE_SIZE              = 100
+
 /**
  * Spec 65 Phase 2 — CRUD entrypoint for Winback Reasons.
  *
@@ -45,7 +55,7 @@ async function resolveCustomerId(userId: string): Promise<string | null> {
   return row?.id ?? null
 }
 
-export async function GET() {
+export async function GET(req?: Request) {
   const session = await auth()
   if (!session?.user?.id) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -56,13 +66,61 @@ export async function GET() {
     return NextResponse.json({ error: 'Customer not found' }, { status: 404 })
   }
 
-  const rows = await db
-    .select()
-    .from(improvements)
-    .where(eq(improvements.customerId, customerId))
-    .orderBy(desc(improvements.dateShipped))
+  // Spec 73 — paginated GET.
+  //   status=published → return all (≤10 by MAX_ACTIVE_IMPROVEMENTS cap)
+  //   status=archived  → paginated, pageSize 20 default
+  //   omitted          → paginated all rows, pageSize 50 default (back-compat)
+  const searchParams = req ? new URL(req.url).searchParams : new URLSearchParams()
+  const statusParam  = searchParams.get('status')
 
-  return NextResponse.json({ improvements: rows })
+  const where = statusParam === 'published'
+    ? and(eq(improvements.customerId, customerId), eq(improvements.status, 'published'))!
+    : statusParam === 'archived'
+      ? and(eq(improvements.customerId, customerId), eq(improvements.status, 'archived'))!
+      : eq(improvements.customerId, customerId)
+
+  // Published: skip pagination — bounded by MAX_ACTIVE_IMPROVEMENTS cap.
+  if (statusParam === 'published') {
+    const rows = await db
+      .select()
+      .from(improvements)
+      .where(where)
+      .orderBy(desc(improvements.dateShipped))
+    return NextResponse.json({
+      improvements: rows,
+      total:        rows.length,
+      page:         1,
+      pageSize:     rows.length,
+    })
+  }
+
+  // Archived + omitted: paginate.
+  const defaultSize = statusParam === 'archived' ? DEFAULT_PAGE_SIZE_ARCHIVED : DEFAULT_PAGE_SIZE_ALL
+  const rawPage     = Number.parseInt(searchParams.get('page')     ?? '1',                 10)
+  const rawPageSize = Number.parseInt(searchParams.get('pageSize') ?? String(defaultSize), 10)
+  const page     = Number.isFinite(rawPage)     && rawPage     >= 1 ? rawPage     : 1
+  const pageSize = Number.isFinite(rawPageSize) && rawPageSize >= 1
+    ? Math.min(Math.max(rawPageSize, 1), MAX_PAGE_SIZE)
+    : defaultSize
+
+  const [rows, [totalRow]] = await Promise.all([
+    db.select()
+      .from(improvements)
+      .where(where)
+      .orderBy(desc(improvements.dateShipped))
+      .limit(pageSize)
+      .offset((page - 1) * pageSize),
+    db.select({ n: count() })
+      .from(improvements)
+      .where(where),
+  ])
+
+  return NextResponse.json({
+    improvements: rows,
+    total:        Number(totalRow?.n ?? 0),
+    page,
+    pageSize,
+  })
 }
 
 export async function POST(req: Request) {

@@ -1,9 +1,11 @@
 'use client'
 
-import { useState, useEffect, useCallback, Fragment } from 'react'
+import { useState, useEffect, useCallback, useRef, Fragment } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { StatusBadge } from '@/components/status-badge'
 import { AiStateBadge } from '@/components/ai-state-badge'
+import { Pagination } from '@/components/pagination'
 import { TrendingUp, CheckCircle, DollarSign, Users, Search, Zap, X, RotateCcw, Check, Loader2, Sparkles, MessageSquare, CreditCard, ChevronRight, ChevronDown, Copy, Mail } from 'lucide-react'
 
 interface Subscriber {
@@ -219,6 +221,20 @@ export function DashboardClient({
   // /billing/success after Subscribe completes).
   const [subscribers, setSubscribers] = useState<Subscriber[] | null>(null)
   const [statsLoaded, setStatsLoaded] = useState(false)
+
+  // Spec 73 — offset pagination.
+  // Page is 1-indexed and hydrates from `?page=` on mount so browser back +
+  // refresh + bookmarks land on the right page. PAGE_SIZE is intentionally
+  // fixed (no UI selector) — keeps the merchant view clean. Power users can
+  // still override via `?pageSize=` on the API directly.
+  const router = useRouter()
+  const searchParamsHook = useSearchParams()
+  const PAGE_SIZE = 25
+  const [page, setPage] = useState(() => {
+    const p = Number.parseInt(searchParamsHook?.get('page') ?? '1', 10)
+    return Number.isFinite(p) && p >= 1 ? p : 1
+  })
+  const [totalSubs, setTotalSubs] = useState(0)
   // Spec 40 — independent filter/search state per cohort tab.
   type Cohort = 'winback' | 'paymentRecovery'
   const [tab, setTab] = useState<Cohort>('winback')
@@ -346,23 +362,55 @@ export function DashboardClient({
       params.set('filter', filter)
     }
     if (search) params.set('search', search)
+    // Spec 73 — offset pagination. Server returns { rows, total, page, pageSize }.
+    params.set('page',     String(page))
+    params.set('pageSize', String(PAGE_SIZE))
     fetch(`/api/subscribers?${params}`)
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
       .then((data) => {
-        if (Array.isArray(data)) {
-          setSubscribers(data)
+        if (data && Array.isArray(data.rows) && typeof data.total === 'number') {
+          setSubscribers(data.rows)
+          setTotalSubs(data.total)
         } else {
-          console.warn('[dashboard] /api/subscribers returned non-array:', data)
+          console.warn('[dashboard] /api/subscribers returned unexpected shape:', data)
           setSubscribers([])
+          setTotalSubs(0)
         }
       })
       .catch((err) => {
         console.error('[dashboard] /api/subscribers fetch failed:', err)
         setSubscribers([]) // show "No win-backs yet" rather than blank loading state
+        setTotalSubs(0)
       })
-  }, [tab, filter, search])
+  }, [tab, filter, search, page])
 
   useEffect(() => { fetchData() }, [fetchData])
+
+  // Spec 73 — reset to page 1 when filter / search / cohort changes. Skips
+  // the first render so we don't overwrite a URL-hydrated `?page=N` on mount.
+  // Without this, a merchant on page 5 who switches filters would land on
+  // an empty page 5 of the new filtered result and have no idea what happened.
+  const isFirstRender = useRef(true)
+  useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false
+      return
+    }
+    setPage(1)
+  }, [tab, filter, search])
+
+  // Spec 73 — keep `?page=N` in the URL so back-button + refresh + bookmarks
+  // land on the right page. Page 1 = no param (cleaner URL). `replace` (not
+  // `push`) means paging through doesn't bloat browser history.
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const params = new URLSearchParams(window.location.search)
+    if (page <= 1) params.delete('page')
+    else params.set('page', String(page))
+    const next = params.toString()
+    const url  = `${window.location.pathname}${next ? `?${next}` : ''}`
+    router.replace(url, { scroll: false })
+  }, [page, router])
 
   // Spec 40 — switching tabs closes any open per-row UI on the previous tab:
   // collapse expanded payment-recovery row, close the win-back drawer.
@@ -941,6 +989,16 @@ export function DashboardClient({
           }}
         />
       )}
+
+      {/* Spec 73 — pagination control. Renders only when total > pageSize
+          (handled inside the component). Applies to both cohort tables. */}
+      <Pagination
+        total={totalSubs}
+        page={page}
+        pageSize={PAGE_SIZE}
+        onPageChange={setPage}
+        itemLabel={tab === 'winback' ? 'subscribers' : 'recoveries'}
+      />
 
       {/* Subscriber detail panel */}
       {selected && (

@@ -2,10 +2,25 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { customers, churnedSubscribers, emailsSent } from '@/lib/schema'
-import { eq, and, or, ilike, desc, isNull, ne, sql } from 'drizzle-orm'
+import { eq, and, or, ilike, desc, isNull, ne, sql, count } from 'drizzle-orm'
 import { aiStateFilterCondition, isValidAiStateFilter } from '@/lib/ai-state'
 
 const DUNNING_REASON = 'Payment failed'
+
+// Spec 73 — offset pagination defaults + clamps.
+const DEFAULT_PAGE_SIZE = 25
+const MAX_PAGE_SIZE     = 100
+const MIN_PAGE_SIZE     = 1
+
+function parsePagination(searchParams: URLSearchParams): { page: number; pageSize: number } {
+  const rawPage     = Number.parseInt(searchParams.get('page')     ?? '1',  10)
+  const rawPageSize = Number.parseInt(searchParams.get('pageSize') ?? String(DEFAULT_PAGE_SIZE), 10)
+  const page     = Number.isFinite(rawPage)     && rawPage     >= 1 ? rawPage     : 1
+  const pageSize = Number.isFinite(rawPageSize) && rawPageSize >= 1
+    ? Math.min(Math.max(rawPageSize, MIN_PAGE_SIZE), MAX_PAGE_SIZE)
+    : DEFAULT_PAGE_SIZE
+  return { page, pageSize }
+}
 
 export async function GET(req: NextRequest) {
   const session = await auth()
@@ -29,6 +44,9 @@ export async function GET(req: NextRequest) {
   // Spec 40 — cohort partitioning. Backwards-compatible: omitted ⇒ all rows.
   const cohort = searchParams.get('cohort')
   const hasReply = searchParams.get('hasReply') === 'true'
+
+  // Spec 73 — pagination params.
+  const { page, pageSize } = parsePagination(searchParams)
 
   const conditions = [eq(churnedSubscribers.customerId, customer.id)]
 
@@ -119,11 +137,26 @@ export async function GET(req: NextRequest) {
           ]
         : [desc(churnedSubscribers.cancelledAt)]
 
-  const subs = await db
-    .select()
-    .from(churnedSubscribers)
-    .where(and(...conditions))
-    .orderBy(...orderBy)
+  // Spec 73 — paginated SELECT + COUNT under the same WHERE conditions
+  // so `total` and `rows` agree. Two queries per request; the COUNT is
+  // cheap on indexed columns and the SELECT is bounded by pageSize.
+  const where = and(...conditions)
+  const [rows, [totalRow]] = await Promise.all([
+    db.select()
+      .from(churnedSubscribers)
+      .where(where)
+      .orderBy(...orderBy)
+      .limit(pageSize)
+      .offset((page - 1) * pageSize),
+    db.select({ n: count() })
+      .from(churnedSubscribers)
+      .where(where),
+  ])
 
-  return NextResponse.json(subs)
+  return NextResponse.json({
+    rows,
+    total: Number(totalRow?.n ?? 0),
+    page,
+    pageSize,
+  })
 }

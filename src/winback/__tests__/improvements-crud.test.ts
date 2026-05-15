@@ -60,14 +60,21 @@ vi.mock('@/src/winback/lib/events', () => ({ logEvent: mockLogEvent }))
 
 // Helper — build a Drizzle-style chain. The .where() step is both
 // awaitable (for count-style queries that resolve directly off where)
-// and chainable into .limit / .orderBy (for list/lookup queries).
+// and chainable into .orderBy / .limit / .offset (for list/lookup queries).
+// Spec 73 — added .offset() chain support for paginated queries.
 function chain(rows: unknown[]) {
-  const step: unknown = {
+  const step: { then: unknown; orderBy: unknown; limit: unknown; offset: unknown } = {
     then: (resolve: (v: unknown[]) => unknown, reject?: (e: unknown) => unknown) =>
       Promise.resolve(rows).then(resolve, reject),
-    orderBy: vi.fn().mockResolvedValue(rows),
-    limit:   vi.fn().mockResolvedValue(rows),
+    orderBy: vi.fn(),
+    limit:   vi.fn(),
+    offset:  vi.fn(),
   }
+  // Self-referential: each step returns the same step so the chain works
+  // in any order (orderBy/limit/offset/then).
+  ;(step.orderBy as ReturnType<typeof vi.fn>).mockReturnValue(step)
+  ;(step.limit   as ReturnType<typeof vi.fn>).mockReturnValue(step)
+  ;(step.offset  as ReturnType<typeof vi.fn>).mockReturnValue(step)
   return {
     from: vi.fn().mockReturnValue({
       where: vi.fn().mockReturnValue(step),
@@ -89,9 +96,15 @@ import { POST as archive } from '@/app/api/improvements/[id]/archive/route'
 import { POST as restore } from '@/app/api/improvements/[id]/restore/route'
 
 describe('GET /api/improvements', () => {
+  // Spec 73 — GET signature now `(req?: Request)`. Tests that don't care
+  // about query params pass `?status=published` to take the simpler
+  // single-query path (no COUNT needed). The paginated paths get their
+  // own coverage in improvements-pagination.test.ts.
+  const publishedReq = () => new Request('http://localhost/api/improvements?status=published')
+
   it('rejects unauthenticated', async () => {
     mockAuth.mockResolvedValue(null)
-    const res = await GET()
+    const res = await GET(publishedReq())
     expect(res.status).toBe(401)
   })
 
@@ -103,18 +116,23 @@ describe('GET /api/improvements', () => {
     ]
     mockSelect
       .mockReturnValueOnce(customerLookup('cust_1'))  // resolveCustomerId
-      .mockReturnValueOnce(chain(fakeImprovements))   // list query
+      .mockReturnValueOnce(chain(fakeImprovements))   // list query (published path — single query, no COUNT)
 
-    const res = await GET()
+    const res = await GET(publishedReq())
     expect(res.status).toBe(200)
-    const body = await res.json() as { improvements: typeof fakeImprovements }
+    const body = await res.json() as { improvements: typeof fakeImprovements; total: number; page: number; pageSize: number }
     expect(body.improvements).toHaveLength(2)
+    // Spec 73 — published path returns total = improvements.length (no
+    // pagination applied; bounded by MAX_ACTIVE_IMPROVEMENTS = 10).
+    expect(body.total).toBe(2)
+    expect(body.page).toBe(1)
+    expect(body.pageSize).toBe(2)
   })
 
   it('404s when the customer row is missing', async () => {
     mockAuth.mockResolvedValue({ user: { id: 'user_unconnected' } })
     mockSelect.mockReturnValueOnce(customerLookup(null))
-    const res = await GET()
+    const res = await GET(publishedReq())
     expect(res.status).toBe(404)
   })
 })
