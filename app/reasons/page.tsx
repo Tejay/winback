@@ -56,11 +56,11 @@ export default async function ReasonsPage() {
       <main className="min-h-screen bg-[#f5f5f5]">
         <div className="max-w-5xl mx-auto px-6 py-10">
           <p className="text-xs font-semibold uppercase tracking-widest text-blue-600">Winback</p>
-          <h1 className="text-4xl font-bold mt-1 text-slate-900">Winback reasons.</h1>
+          <h1 className="text-4xl font-bold mt-1 text-slate-900">Winback reasons — why customers return.</h1>
           <p className="text-sm text-slate-500 mt-3 max-w-2xl">
             This is how cancelled customers learn you fixed what they wanted.
-            Add a short, specific line per shipped improvement. We do the matching
-            and emailing. Up to <strong>10 active improvements</strong> at a time.
+            Add a short, specific line per shipped reason. We do the matching
+            and emailing. Up to <strong>10 active reasons</strong> at a time.
           </p>
 
           <details className="mt-4 max-w-2xl rounded-2xl border border-slate-200 bg-white group">
@@ -70,7 +70,7 @@ export default async function ReasonsPage() {
             </summary>
             <div className="px-5 pb-5 pt-1 text-sm text-slate-600 space-y-4">
               <div>
-                <p className="font-medium text-slate-900">When should I add an improvement?</p>
+                <p className="font-medium text-slate-900">When should I add a reason?</p>
                 <p className="mt-1">Every time you ship something a cancelled customer might have wanted. There&apos;s no minimum cadence. Most merchants add one every few weeks to a couple of months.</p>
               </div>
               <div>
@@ -79,11 +79,11 @@ export default async function ReasonsPage() {
               </div>
               <div>
                 <p className="font-medium text-slate-900">What gets sent to customers?</p>
-                <p className="mt-1">One personalised email per customer, only when our AI is confident the improvement addresses something they explicitly said when they cancelled.</p>
+                <p className="mt-1">One personalised email per customer, only when our AI is confident the reason addresses something they explicitly said when they cancelled.</p>
               </div>
               <div>
-                <p className="font-medium text-slate-900">Can I edit or remove improvements?</p>
-                <p className="mt-1">Edit or remove anytime. Add when you have real improvements you want to share with cancelled customers.</p>
+                <p className="font-medium text-slate-900">Can I edit or remove reasons?</p>
+                <p className="mt-1">Edit or remove anytime. Add when you have real reasons you want to share with cancelled customers.</p>
               </div>
               <div>
                 <p className="font-medium text-slate-900">Examples</p>
