@@ -6,7 +6,7 @@ import { eq, and, sql, desc } from 'drizzle-orm'
 
 /**
  * GET /api/admin/events
- *   ?name=...           filter by event name (one of the 24 known names)
+ *   ?name=...           filter by event name (any name in wb_events)
  *   &customer=...       filter to a single customer — accepts either a UUID
  *                       or an email (resolved via wb_users.email join). The
  *                       legacy `customerId` param is also accepted for back-
@@ -15,9 +15,11 @@ import { eq, and, sql, desc } from 'drizzle-orm'
  *   &q=...              ILIKE on properties::text (slow on big tables)
  *   &limit=200          default 200, max 500
  *
- * Always returns rows ordered by created_at desc. Always uses the read-only
- * connection; the (name, created_at) and (customer_id, created_at) indexes
- * cover the dominant query patterns.
+ * Always returns rows ordered by created_at desc, plus `distinctNames`
+ * (all event names that have ever been emitted, used to populate the
+ * filter dropdown). The (name, created_at) and (customer_id, created_at)
+ * indexes cover the dominant query patterns; DISTINCT on name uses the
+ * name index for a fast scan.
  */
 
 const SINCE_INTERVALS: Record<string, string> = {
@@ -44,6 +46,16 @@ export async function GET(req: NextRequest) {
   const q = searchParams.get('q')?.trim() || null
   const limit = Math.min(Number(searchParams.get('limit')) || 200, 500)
 
+  // Spec 76 — populate the filter dropdown from the actual data instead
+  // of a hardcoded list that drifts. Returns every distinct event name
+  // ever emitted, sorted alphabetically. DISTINCT on `name` uses the
+  // existing index on (name, created_at) — fast even on large tables.
+  const distinctNames: string[] = await getDbReadOnly()
+    .selectDistinct({ name: wbEvents.name })
+    .from(wbEvents)
+    .orderBy(wbEvents.name)
+    .then((rows) => rows.map((r) => r.name))
+
   // Resolve the customer input to a UUID. If it's already UUID-shaped, use
   // directly. Otherwise treat as email and look up via the unique users.email
   // constraint. If the email isn't on file, return an empty result with a
@@ -66,6 +78,7 @@ export async function GET(req: NextRequest) {
           total: 0,
           customerNotFound: true,
           customerInput,
+          distinctNames,
         })
       }
       customerId = row.id
@@ -110,9 +123,10 @@ export async function GET(req: NextRequest) {
         rows: [],
         total: 0,
         customerEventsOutsideRange: outsideCount,
+        distinctNames,
       })
     }
   }
 
-  return NextResponse.json({ rows, total: rows.length })
+  return NextResponse.json({ rows, total: rows.length, distinctNames })
 }
