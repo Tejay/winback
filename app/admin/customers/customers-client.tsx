@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
+import { RefreshAffordance } from '@/components/admin-refresh'
 
 interface CustomerRow {
   id: string
@@ -20,12 +21,19 @@ interface CustomerRow {
 
 type Filter = 'all' | 'stuck_on_signup'
 
+// Hard cap mirrored from the API (`/api/admin/customers/route.ts`).
+// Used to decide whether to surface the "refine to see more" hint.
+const ROW_CAP = 50
+
 export function CustomersClient() {
   const [q, setQ] = useState('')
   const [filter, setFilter] = useState<Filter>('all')
   const [rows, setRows] = useState<CustomerRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  // Spec 76 (admin polish) — track when the data was last fetched so the
+  // header can show "Last updated 2m ago · Refresh".
+  const [lastLoadedAt, setLastLoadedAt] = useState<number | null>(null)
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -46,6 +54,7 @@ export function CustomersClient() {
       const json = await res.json()
       if (!res.ok) throw new Error(json.error ?? 'Failed to load customers')
       setRows(json.rows)
+      setLastLoadedAt(Date.now())
       setError(null)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
@@ -54,13 +63,21 @@ export function CustomersClient() {
     }
   }
 
+  const atCap = rows.length >= ROW_CAP
+
   return (
     <div className="space-y-6">
-      <header>
-        <div className="text-xs font-semibold uppercase tracking-widest text-blue-600 mb-1">
-          All customers
+      <header className="flex items-end justify-between gap-3 flex-wrap">
+        <div>
+          <div className="text-xs font-semibold uppercase tracking-widest text-blue-600 mb-1">
+            All customers
+          </div>
+          <h1 className="text-3xl font-bold text-slate-900">Customers.</h1>
         </div>
-        <h1 className="text-3xl font-bold text-slate-900">Customers.</h1>
+        {/* Spec 76 — last-refreshed timestamp + manual refresh button. The
+            customer list doesn't poll, so a stale page sitting open for
+            hours otherwise gives no hint that the data is out of date. */}
+        <RefreshAffordance lastLoadedAt={lastLoadedAt} onRefresh={() => load(q, filter)} loading={loading} />
       </header>
 
       <div className="flex flex-wrap items-center gap-2">
@@ -100,6 +117,17 @@ export function CustomersClient() {
       {error && (
         <div className="bg-red-50 border border-red-200 text-red-800 rounded-xl p-3 text-sm">
           {error}
+        </div>
+      )}
+
+      {/* Spec 76 — row-count indicator. When the API hits its 50-row cap,
+          explicitly tell the admin to refine the search; otherwise without
+          a "total" they'd assume 50 is the complete result. */}
+      {!loading && rows.length > 0 && (
+        <div className="text-xs text-slate-500">
+          {atCap
+            ? <>Showing <strong>{rows.length}</strong> customers (cap reached — refine search to see more)</>
+            : <>Showing <strong>{rows.length}</strong> customer{rows.length === 1 ? '' : 's'}</>}
         </div>
       )}
 
@@ -181,3 +209,4 @@ function formatRelative(iso: string | null): string {
   if (s < 86400) return `${Math.floor(s / 3600)}h ago`
   return `${Math.floor(s / 86400)}d ago`
 }
+
