@@ -1,24 +1,34 @@
-# Spec 73 — Offset pagination for dashboard + Winback Reasons
+# Spec 73 — Offset pagination for the merchant dashboard
 
 ## Context
 
-Two API endpoints return unbounded row sets and the volume grows with normal
-product use:
+The merchant dashboard's `/api/subscribers` endpoint selects ALL churned
+subscribers for a customer with no `LIMIT`. Grows with every cancellation,
+forever. A merchant with a few thousand churned subs gets a massive payload
+on every dashboard load.
 
-- `/api/subscribers` — merchant dashboard subscriber list. Selects ALL churned
-  subscribers for a customer with no `LIMIT`. Grows with every cancellation,
-  forever. A merchant with a few thousand churned subs gets a massive payload
-  on every dashboard load.
-- `/api/improvements` — Winback Reasons list. Selects ALL improvements
-  (published + archived). Published is structurally capped at 10
-  (`MAX_ACTIVE_IMPROVEMENTS`), so the live list is bounded. Archived
-  accumulates indefinitely.
+The goal of this spec is to add **offset pagination** to `/api/subscribers`
+and the dashboard client that consumes it, capping payload size and
+bounding query cost.
 
-A pagination audit on 2026-05-15 confirmed these are the only two unbounded
-list endpoints. All `/api/admin/*` routes already have hard caps (50–500).
+### Scope adjustment during execution (2026-05-15)
 
-The goal of this spec is to add **offset pagination** to both endpoints + the
-client UIs that consume them, capping payload size and bounding query cost.
+The original spec also included `/api/improvements` (Winback Reasons archived
+view). Dropped during click-through: the merchant view of "archived
+improvements" is product-questionable — Winback Reasons is meant to feel
+like a living document of what you've shipped, not a graveyard of past
+deletes. The archived view itself is being redesigned in a follow-up
+(planned Spec 74: replace "Show removed" toggle with toast-undo on
+delete + 30-day hard-delete cron). Paginating a view we're about to
+remove would be wasted work. Active improvements are structurally capped
+at 10 (`MAX_ACTIVE_IMPROVEMENTS`), so no pagination is needed there
+either.
+
+The pagination audit on 2026-05-15 confirmed `/api/subscribers` and
+`/api/improvements` were the only two unbounded list endpoints. All
+`/api/admin/*` routes already have hard caps (50–500). With the
+improvements redesign coming, `/api/subscribers` is the only endpoint
+this spec touches.
 
 ### Why offset, not cursor
 
@@ -46,25 +56,24 @@ cursor. Neither is true.
 
 ## Goals
 
-1. Add offset pagination to `/api/subscribers` and `/api/improvements`.
+1. Add offset pagination to `/api/subscribers`.
 2. Bound payload size + query cost per request (no more "fetch everything").
 3. Dashboard UI gets a numbered page nav, total count display, and URL state
    so back-button + refresh + bookmarks work.
-4. Winback Reasons UI gets pagination for the **archived** sub-view only.
-   Published stays unpaginated (cap of 10).
-5. New reusable `<Pagination>` component for both surfaces.
+4. New reusable `<Pagination>` component (single consumer today, anticipated
+   reuse when Spec 74 surfaces).
 
 ## Non-goals
 
 - Cursor pagination. (See "Why offset" above.)
 - Touching `/api/admin/*` — already capped, low admin volume.
+- Touching `/api/improvements` or Winback Reasons UI — see scope adjustment
+  in Context. Follow-up Spec 74 redesigns the Remove flow.
 - Infinite scroll / virtualization. (Wrong shape for a filterable detail-drawer
   table.)
-- Page-size selector. One opinionated default per surface keeps merchant UX
+- Page-size selector. Single opinionated default (25) keeps merchant UX
   clean. `pageSize` is overridable via query param for power users / tests
   but no UI control.
-- URL state for improvements pagination. (Archived view is a sub-mode of an
-  already-stateful page; over-engineering for a low-traffic surface.)
 
 ## Design
 
@@ -88,7 +97,6 @@ WHERE clause so `total` and `rows` agree.
 | Surface              | Default | Clamp range |
 |----------------------|---------|-------------|
 | Dashboard subscribers | 25     | [1, 100]    |
-| Improvements (archived)| 20    | [1, 100]    |
 
 `page` is 1-indexed (matches URL + UI). Server clamps `page < 1` to 1.
 Server does NOT clamp `page > maxPage` — returns empty `rows` with the real
@@ -115,35 +123,11 @@ Response:
 **Breaking change** from the bare `Subscriber[]` shape. The dashboard client
 is updated in the same commit so the contract change is atomic.
 
-#### `GET /api/improvements`
-
-New params: `status` ('published' | 'archived' | omitted), `page`, `pageSize`.
-
-Response shape (always, regardless of `status`):
-```ts
-{
-  improvements: Improvement[],
-  total: number,
-  page: number,
-  pageSize: number,
-}
-```
-
-Behavior:
-- `status=published`: returns ALL published rows (no offset, no limit —
-  bounded by `MAX_ACTIVE_IMPROVEMENTS = 10`). `page=1`, `pageSize` echoed as
-  `improvements.length`.
-- `status=archived`: paginated, default `pageSize` = 20.
-- omitted: paginated over all rows (published + archived), default `pageSize`
-  = 50. Kept for backwards compatibility with the existing `improvements-crud`
-  test path.
-
 ### URL state
 
-- Dashboard: `?page=N` appended alongside existing filter/search/cohort
-  params. Refresh, back button, and bookmarks all work.
-- Improvements: no URL state. Archived view is gated behind a client-side
-  toggle (`showArchived`); not worth a URL-level reflection.
+Dashboard: `?page=N` appended alongside existing filter/search/cohort
+params. Refresh, back button, and bookmarks all work. Page 1 = no
+param in URL (cleaner).
 
 ### Reset behavior (dashboard)
 
@@ -177,10 +161,6 @@ New shared component `<Pagination>` (`components/pagination.tsx`):
 - **`app/api/subscribers/route.ts`** — add page/pageSize parsing, COUNT
   query, LIMIT + OFFSET, new response shape.
 
-- **`app/api/improvements/route.ts`** — GET signature changes from `()` to
-  `(req: Request)`. Status parsing + WHERE narrowing. Count + offset for
-  archived/omitted paths.
-
 ### Dashboard
 
 - **`app/dashboard/dashboard-client.tsx`**
@@ -194,29 +174,12 @@ New shared component `<Pagination>` (`components/pagination.tsx`):
   - Renders `<Pagination>` below the subscriber table when `totalSubs >
     pageSize`.
 
-### Improvements
-
-- **`app/reasons/page.tsx`** — server query splits: all published rows
-  (≤10) + first page of archived (20). Pass both to client with the
-  archived total.
-
-- **`app/reasons/reasons-client.tsx`**
-  - New state: `archivedPage`, `archivedTotal`, `archivedRows`.
-  - When `showArchived` is toggled on and user changes archived page,
-    fetch `/api/improvements?status=archived&page=N`.
-  - Renders `<Pagination>` only when `showArchived === true` and
-    `archivedTotal > 20`.
-
 ### Shared
 
-- **`components/pagination.tsx`** — new file. Reusable across both surfaces.
+- **`components/pagination.tsx`** — new file. Single consumer today
+  (dashboard); anticipated reuse when Spec 74 surfaces.
 
 ### Tests
-
-- **`src/winback/__tests__/improvements-crud.test.ts`**
-  - Update `GET()` invocations to pass a `Request` (was bare `GET()`).
-  - Update response-shape assertions: `body.improvements`, `body.total`,
-    `body.page`, `body.pageSize`.
 
 - **New: `src/winback/__tests__/subscribers-pagination.test.ts`**
   - Default page/pageSize when params omitted.
@@ -226,12 +189,6 @@ New shared component `<Pagination>` (`components/pagination.tsx`):
   - `total` from COUNT(*) matches what the SELECT returns under the same
     filter.
   - Cohort + filter + page interaction works correctly.
-
-- **New: `src/winback/__tests__/improvements-pagination.test.ts`**
-  - `status=published` returns all (no offset applied).
-  - `status=archived` paginates, default pageSize 20.
-  - Status omitted: backwards-compat shape (pageSize 50, all rows
-    paginated).
 
 ## Edge cases
 
@@ -255,11 +212,6 @@ New shared component `<Pagination>` (`components/pagination.tsx`):
 - **Empty result set** — `total = 0`, `rows = []`. `<Pagination>` renders
   nothing. Table shows the existing empty-state UI.
 
-- **Improvements: published list exceeds pageSize** — impossible by
-  construction (`MAX_ACTIVE_IMPROVEMENTS = 10`, default archived pageSize is
-  20, published has no pageSize because no offset is applied). No interaction
-  possible.
-
 - **Cohort tab switch from a non-page-1 state** — client resets `page = 1`
   AND clears the URL `?page=` param (via `router.replace()` with the new
   cohort and no page param). Prevents "switched to payment-recovery on page
@@ -273,8 +225,6 @@ New shared component `<Pagination>` (`components/pagination.tsx`):
       the new shape with 5 rows
 - [ ] `curl /api/subscribers?cohort=winback&page=999&pageSize=5` returns
       `{ rows: [], total: <real>, page: 999, pageSize: 5 }`
-- [ ] `curl /api/improvements?status=archived&page=1&pageSize=5` returns
-      the archived paginated shape
 - [ ] Dev server: load dashboard with 30+ churned subs → page nav appears,
       clicking page 2 fetches page 2
 - [ ] Filter change while on page 2 → resets to page 1 (URL + UI)
@@ -282,10 +232,6 @@ New shared component `<Pagination>` (`components/pagination.tsx`):
 - [ ] Cohort tab switch from page 2 → resets to page 1
 - [ ] Browser back button after paging → returns to previous page
 - [ ] Refresh on `?page=3` → still on page 3
-- [ ] Reasons page with 25+ archived improvements → toggle "Show removed",
-      pagination appears, clicking page 2 loads next batch
-- [ ] Published list still shows all ≤10 with no pagination control
-
 ## Phasing
 
 Single PR (`feat/spec-73-pagination`). The API response-shape change is
