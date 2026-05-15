@@ -152,17 +152,20 @@ Callers of `getOrCreatePlatformPriceId` get updated to pass `customerId`.
 ### 3. Switching an existing customer onto flat rate
 
 When admin assigns flat-rate to a customer who already has an active
-`$99/mo` subscription, we **cancel the old subscription at period-end
-and create a new one at the custom Price**. Rationale:
-- Cleaner invoice trail (no proration confusion)
-- Merchant pays remainder of current $99 cycle, then transitions
-- The new sub starts at next billing cycle
-- Simpler Stripe API calls than `subscription.items.update()` + proration
+`$99/mo` subscription, we **update the existing subscription's price
+item to the custom Price with `proration_behavior: 'none'`**.
+
+(Spec was originally written with "cancel old sub at period-end +
+create new sub at custom Price" — same intent, but the in-place
+update is simpler in code, gives the merchant a single continuous
+Stripe Subscription lifecycle, and avoids "subscription cancelled"
+email noise. End-user experience is identical: no proration, next
+invoice at new amount, current invoice still bills the old amount
+as scheduled.)
 
 This logic lives in a new helper `switchCustomerToFlatRate(customerId,
-cents)` in `subscription.ts`. Inverse helper `revertCustomerToStandardRate(customerId)`
-does the reverse: cancel custom sub at period end, recreate standard sub
-at $99 at the next cycle.
+cents, opts)` in `subscription.ts`. Inverse helper `revertCustomerToStandardRate(customerId, opts)`
+does the reverse: in-place price swap back to the standard $99 Price.
 
 ### 4. In-flight perf fees
 

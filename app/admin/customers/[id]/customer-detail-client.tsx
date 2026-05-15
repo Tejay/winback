@@ -17,6 +17,9 @@ interface Detail {
     stripeConnected: boolean
     stripePlatformCustomerId: string | null
     createdAt: string
+    // Spec 77 — non-null when this customer is on a negotiated flat-rate
+    // deal. Drives the "Custom pricing" admin section below.
+    customMonthlyCents: number | null
   }
   stripeHealth: {
     lastActivityAt: string | null
@@ -190,6 +193,12 @@ export function CustomerDetailClient({ customerId }: { customerId: string }) {
         <KV k="Queued win-back fees" v={String(data.billing.outstandingObligations)} />
         <KV k="Platform Stripe customer" v={id.stripePlatformCustomerId ?? '(no platform card on file)'} />
       </Section>
+
+      <CustomPricingSection
+        customerId={customerId}
+        currentCents={id.customMonthlyCents}
+        onChanged={load}
+      />
 
       <section className="bg-white rounded-2xl border border-amber-200 p-5">
         <div className="text-xs font-semibold uppercase tracking-widest text-amber-700 mb-2">
@@ -388,4 +397,239 @@ function relTime(iso: string): string {
   if (s < 3600) return `${Math.floor(s / 60)}m`
   if (s < 86400) return `${Math.floor(s / 3600)}h`
   return `${Math.floor(s / 86400)}d`
+}
+
+/**
+ * Spec 77 — Custom pricing section.
+ *
+ * Standard customers see "Standard ($99/mo + 1× MRR perf fee)" + an
+ * "Assign flat rate" button.
+ * Flat-rate customers see "Custom flat rate — $X.XX/month" + a
+ * "Revert to standard" button.
+ *
+ * Destructive actions (switch + revert) require typing the confirmation
+ * string in an inline form — matches the existing admin pattern.
+ */
+function CustomPricingSection({
+  customerId,
+  currentCents,
+  onChanged,
+}: {
+  customerId: string
+  currentCents: number | null
+  onChanged: () => Promise<void>
+}) {
+  const [mode, setMode]   = useState<'idle' | 'assigning' | 'reverting'>('idle')
+  const [dollarStr, setDollarStr] = useState('299.00')
+  const [confirmStr, setConfirmStr] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [msg, setMsg]     = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  const isFlatRate = currentCents !== null
+  const dollarsValid =
+    /^\d+(\.\d{1,2})?$/.test(dollarStr) &&
+    parseFloat(dollarStr) >= 1 &&
+    parseFloat(dollarStr) <= 9999
+
+  async function handleAssign() {
+    if (!dollarsValid || confirmStr !== 'SWITCH') return
+    setSubmitting(true)
+    setError(null)
+    setMsg(null)
+    try {
+      const cents = Math.round(parseFloat(dollarStr) * 100)
+      const res = await fetch(`/api/admin/customers/${customerId}/custom-rate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cents, confirm: 'SWITCH' }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error ?? 'Assign failed')
+      setMsg(json.priceUpdatedOnStripe ? `✓ Switched to $${dollarStr}/mo (Stripe subscription updated)` : `✓ Switched to $${dollarStr}/mo (no active Stripe sub to update)`)
+      setMode('idle')
+      setConfirmStr('')
+      await onChanged()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  async function handleRevert() {
+    if (confirmStr !== 'REVERT') return
+    setSubmitting(true)
+    setError(null)
+    setMsg(null)
+    try {
+      const res = await fetch(`/api/admin/customers/${customerId}/custom-rate`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ confirm: 'REVERT' }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error ?? 'Revert failed')
+      setMsg(json.priceUpdatedOnStripe ? '✓ Reverted to standard $99/mo (Stripe subscription updated)' : '✓ Reverted to standard $99/mo (no active Stripe sub to update)')
+      setMode('idle')
+      setConfirmStr('')
+      await onChanged()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <section className="bg-white rounded-2xl border border-slate-200 p-5">
+      <div className="text-xs font-semibold uppercase tracking-widest text-slate-500 mb-2">
+        Custom pricing
+      </div>
+
+      {/* Current state line */}
+      <p className="text-sm text-slate-700 mb-3">
+        {isFlatRate ? (
+          <>
+            <strong>Custom flat rate — ${(currentCents! / 100).toFixed(2)} / month.</strong>{' '}
+            <span className="text-slate-500">Performance fees disabled.</span>
+          </>
+        ) : (
+          <>
+            <strong>Standard.</strong>{' '}
+            <span className="text-slate-500">$99/mo platform + 1× MRR performance fee per recovery.</span>
+          </>
+        )}
+      </p>
+
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-800 rounded-xl p-3 text-sm mb-3">
+          {error}
+        </div>
+      )}
+      {msg && (
+        <div className="bg-green-50 border border-green-200 text-green-800 rounded-xl p-3 text-sm mb-3">
+          {msg}
+        </div>
+      )}
+
+      {/* Assign mode */}
+      {mode === 'assigning' && !isFlatRate && (
+        <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
+          <div>
+            <label className="block text-xs font-semibold uppercase tracking-widest text-slate-500 mb-1.5">
+              Monthly amount (USD)
+            </label>
+            <div className="flex items-center gap-2">
+              <span className="text-slate-500 text-sm">$</span>
+              <input
+                type="text"
+                inputMode="decimal"
+                value={dollarStr}
+                onChange={(e) => setDollarStr(e.target.value)}
+                placeholder="299.00"
+                className="border border-slate-200 rounded-full px-4 py-2 text-sm w-40 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <span className="text-slate-500 text-sm">/ month</span>
+            </div>
+            {!dollarsValid && <p className="text-xs text-amber-700 mt-1">Enter between $1.00 and $9,999.00. For free comp, use the pilot mechanism instead.</p>}
+          </div>
+          <p className="text-xs text-slate-600">
+            Saving will: set the customer&apos;s custom rate, swap the Stripe subscription Price (no proration), and disable performance fees on future win-backs. Any perf fees already queued for the current billing cycle will still bill at the old terms.
+          </p>
+          <div>
+            <label className="block text-xs font-semibold uppercase tracking-widest text-slate-500 mb-1.5">
+              Type <code className="bg-slate-100 px-1 rounded">SWITCH</code> to confirm
+            </label>
+            <input
+              type="text"
+              value={confirmStr}
+              onChange={(e) => setConfirmStr(e.target.value)}
+              placeholder="SWITCH"
+              autoComplete="off"
+              className="border border-slate-200 rounded-full px-4 py-2 text-sm w-40 focus:outline-none focus:ring-2 focus:ring-red-500"
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleAssign}
+              disabled={submitting || !dollarsValid || confirmStr !== 'SWITCH'}
+              className="bg-[#0f172a] text-white rounded-full px-5 py-2 text-sm font-medium hover:bg-[#1e293b] disabled:bg-slate-200 disabled:text-slate-400"
+            >
+              {submitting ? 'Saving…' : `Save & switch to $${dollarStr}/mo`}
+            </button>
+            <button
+              type="button"
+              onClick={() => { setMode('idle'); setConfirmStr(''); setError(null) }}
+              disabled={submitting}
+              className="text-slate-500 text-sm px-3 py-2"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Revert mode */}
+      {mode === 'reverting' && isFlatRate && (
+        <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
+          <p className="text-xs text-slate-600">
+            Reverting will: clear the custom rate, swap the Stripe subscription back to the standard $99/mo Price (no proration), and re-enable performance fees on future win-backs.
+          </p>
+          <div>
+            <label className="block text-xs font-semibold uppercase tracking-widest text-slate-500 mb-1.5">
+              Type <code className="bg-slate-100 px-1 rounded">REVERT</code> to confirm
+            </label>
+            <input
+              type="text"
+              value={confirmStr}
+              onChange={(e) => setConfirmStr(e.target.value)}
+              placeholder="REVERT"
+              autoComplete="off"
+              className="border border-slate-200 rounded-full px-4 py-2 text-sm w-40 focus:outline-none focus:ring-2 focus:ring-red-500"
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleRevert}
+              disabled={submitting || confirmStr !== 'REVERT'}
+              className="bg-[#0f172a] text-white rounded-full px-5 py-2 text-sm font-medium hover:bg-[#1e293b] disabled:bg-slate-200 disabled:text-slate-400"
+            >
+              {submitting ? 'Saving…' : 'Revert to standard'}
+            </button>
+            <button
+              type="button"
+              onClick={() => { setMode('idle'); setConfirmStr(''); setError(null) }}
+              disabled={submitting}
+              className="text-slate-500 text-sm px-3 py-2"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Idle: just show the trigger button */}
+      {mode === 'idle' && !isFlatRate && (
+        <button
+          type="button"
+          onClick={() => setMode('assigning')}
+          className="border border-slate-200 bg-white text-slate-700 rounded-full px-4 py-2 text-sm font-medium hover:bg-slate-50"
+        >
+          Assign flat rate
+        </button>
+      )}
+      {mode === 'idle' && isFlatRate && (
+        <button
+          type="button"
+          onClick={() => setMode('reverting')}
+          className="border border-amber-200 bg-amber-50 text-amber-800 rounded-full px-4 py-2 text-sm font-medium hover:bg-amber-100"
+        >
+          Revert to standard
+        </button>
+      )}
+    </section>
+  )
 }
