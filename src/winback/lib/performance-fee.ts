@@ -6,6 +6,7 @@ import { getPlatformStripe } from './platform-stripe'
 import { getInvoiceLineInvoiceItemId } from './stripe'
 import { PLATFORM_FEE_CURRENCY } from './subscription'
 import { isCustomerOnPilot } from './pilot'
+import { getCustomMonthlyCents } from './flat-rate'
 import { logEvent } from './events'
 
 /**
@@ -113,7 +114,7 @@ export async function chargePerformanceFee(recoveryId: string): Promise<{
   invoiceItemId: string | null
   amountCents: number
   alreadyCharged: boolean
-  skipped?: 'pilot' | 'race'
+  skipped?: 'pilot' | 'race' | 'flat_rate'
 }> {
   const rec = await loadRecovery(recoveryId)
   if (!rec) throw new Error(`recovery ${recoveryId} not found`)
@@ -149,6 +150,35 @@ export async function chargePerformanceFee(recoveryId: string): Promise<{
       amountCents: rec.planMrrCents,
       alreadyCharged: false,
       skipped: 'pilot',
+    }
+  }
+
+  // Spec 77 — custom flat-rate bypass. Customer is on a negotiated
+  // monthly deal where the platform subscription already covers
+  // unlimited win-backs. No invoice item is created here; we log the
+  // would-have-charged amount in skippedAmountCents so the comp value
+  // of the flat-rate deal is auditable.
+  // Note: as with the pilot path, we DON'T set perfFeeStripeItemId, so
+  // if the flat rate is later cleared and the same recovery is retried,
+  // the fee will charge normally.
+  // Ordering: pilot wins over flat-rate when both apply — pilot is free
+  // comp; the merchant shouldn't pay anything during pilot.
+  const flatRateCents = await getCustomMonthlyCents(rec.customerId)
+  if (flatRateCents !== null) {
+    await logEvent({
+      name: 'performance_fee_skipped_flat_rate',
+      customerId: rec.customerId,
+      properties: {
+        recoveryId,
+        skippedAmountCents: rec.planMrrCents,
+        customMonthlyCents: flatRateCents,
+      },
+    })
+    return {
+      invoiceItemId: null,
+      amountCents: rec.planMrrCents,
+      alreadyCharged: false,
+      skipped: 'flat_rate',
     }
   }
 

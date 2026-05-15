@@ -4,6 +4,8 @@ import { customers } from '@/lib/schema'
 import { eq, and, isNull, or, lt } from 'drizzle-orm'
 import { getPlatformStripe } from './platform-stripe'
 import { getOrCreatePlatformCustomer } from './platform-billing'
+import { getCustomMonthlyCents } from './flat-rate'
+import { logEvent } from './events'
 
 /**
  * Phase A — Stripe Subscription primitives for the new $99/mo platform fee.
@@ -186,7 +188,10 @@ export async function ensurePlatformSubscription(
     row.stripePlatformCustomerId ?? (await getOrCreatePlatformCustomer(wbCustomerId))
 
   const stripe = getPlatformStripe()
-  const priceId = await getOrCreatePlatformPriceId(stripe)
+  // Spec 77 — customer-aware Price selection. Standard customers get
+  // the shared $99/mo Price; flat-rate customers get a one-off Price
+  // at their negotiated amount.
+  const priceId = await getPlatformPriceIdForCustomer(stripe, wbCustomerId)
 
   let subscription: Stripe.Subscription
   try {
@@ -333,4 +338,191 @@ export async function reactivatePlatformSubscription(wbCustomerId: string): Prom
   await stripe.subscriptions.update(row.stripeSubscriptionId, {
     cancel_at_period_end: false,
   })
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Spec 77 — Custom flat-rate billing
+// ─────────────────────────────────────────────────────────────────────
+//
+// Wraps the standard `getOrCreatePlatformPriceId` so that callers
+// (currently just ensurePlatformSubscription) can choose the right Price
+// based on whether the customer is on a custom flat-rate deal.
+//
+// Spec deviation noted in same commit: the spec originally described
+// "cancel old sub at period-end, create new sub at custom Price."
+// The actual implementation updates the existing subscription's price
+// item with `proration_behavior: 'none'` — identical end-user behavior
+// (no proration, next invoice at new amount) but one Stripe Subscription
+// lifecycle instead of two. Simpler code, no "subscription cancelled"
+// email noise to the merchant.
+
+/**
+ * Returns the Price ID to use for THIS customer's platform subscription.
+ * For standard customers, returns the shared $99/mo Price. For flat-rate
+ * customers, creates a one-off Price at their negotiated amount.
+ *
+ * One-off Prices for flat-rate customers are created fresh each time
+ * (Prices are immutable in Stripe), tagged with metadata for dashboard
+ * audit (`winback_role: 'custom_flat_rate'`, `customer_id`).
+ */
+async function getPlatformPriceIdForCustomer(
+  stripe: Stripe,
+  wbCustomerId: string,
+): Promise<string> {
+  const flatRateCents = await getCustomMonthlyCents(wbCustomerId)
+  if (flatRateCents !== null) {
+    return createCustomFlatRatePrice(stripe, wbCustomerId, flatRateCents)
+  }
+  return getOrCreatePlatformPriceId(stripe)
+}
+
+/**
+ * Creates a fresh Stripe Product+Price for a flat-rate customer at the
+ * specified monthly cents. Stripe Prices are immutable — each (customer,
+ * amount) pair gets its own Price. Tagged so it's findable in the
+ * Stripe dashboard by customer or role.
+ */
+async function createCustomFlatRatePrice(
+  stripe: Stripe,
+  wbCustomerId: string,
+  cents: number,
+): Promise<string> {
+  const product = await stripe.products.create({
+    name: `Winback Custom Plan (${wbCustomerId.slice(0, 8)})`,
+    metadata: {
+      winback_role: 'custom_flat_rate',
+      customer_id: wbCustomerId,
+    },
+  })
+  const price = await stripe.prices.create({
+    product: product.id,
+    unit_amount: cents,
+    currency: PLATFORM_FEE_CURRENCY,
+    recurring: { interval: 'month' },
+    metadata: {
+      winback_role: 'custom_flat_rate',
+      customer_id: wbCustomerId,
+    },
+  })
+  return price.id
+}
+
+/**
+ * Switches a customer onto a flat-rate plan. Idempotent on the column
+ * write; the Stripe-side swap only fires when there's an active sub.
+ *
+ * Behavior:
+ *   1. Set `customers.custom_monthly_cents = cents` (atomic single
+ *      column write).
+ *   2. If the customer has an active Stripe Subscription, update its
+ *      Price item to a fresh custom Price at the new amount. No
+ *      proration — next invoice bills the new amount; current invoice
+ *      (if mid-cycle) bills the old amount as scheduled.
+ *   3. Emit `flat_rate_assigned` event for the audit trail.
+ *
+ * If the customer has no active sub yet (signed up but never connected
+ * Stripe Connect), step 2 is skipped. When they later complete
+ * onboarding, ensurePlatformSubscription will see the column and create
+ * the sub at the custom Price via getPlatformPriceIdForCustomer.
+ */
+export async function switchCustomerToFlatRate(
+  wbCustomerId: string,
+  cents: number,
+  opts: { adminEmail: string | null } = { adminEmail: null },
+): Promise<{ priceUpdated: boolean }> {
+  // 1. Set the column.
+  await db
+    .update(customers)
+    .set({ customMonthlyCents: cents, updatedAt: new Date() })
+    .where(eq(customers.id, wbCustomerId))
+
+  // 2. Update the existing sub if there is one.
+  const [row] = await db
+    .select({ stripeSubscriptionId: customers.stripeSubscriptionId })
+    .from(customers)
+    .where(eq(customers.id, wbCustomerId))
+    .limit(1)
+
+  let priceUpdated = false
+  if (row?.stripeSubscriptionId) {
+    const stripe = getPlatformStripe()
+    const sub = await stripe.subscriptions.retrieve(row.stripeSubscriptionId)
+    const itemId = sub.items.data[0]?.id
+    if (itemId) {
+      const newPriceId = await createCustomFlatRatePrice(stripe, wbCustomerId, cents)
+      await stripe.subscriptions.update(row.stripeSubscriptionId, {
+        items: [{ id: itemId, price: newPriceId }],
+        proration_behavior: 'none',
+      })
+      priceUpdated = true
+    }
+  }
+
+  // 3. Audit.
+  await logEvent({
+    name: 'flat_rate_assigned',
+    customerId: wbCustomerId,
+    properties: {
+      customMonthlyCents: cents,
+      adminEmail: opts.adminEmail,
+      priceUpdatedOnStripe: priceUpdated,
+    },
+  })
+
+  return { priceUpdated }
+}
+
+/**
+ * Reverts a customer from a flat-rate plan back to the standard $99/mo +
+ * perf-fee model. Inverse of switchCustomerToFlatRate.
+ *
+ * Behavior:
+ *   1. Set `customers.custom_monthly_cents = NULL`.
+ *   2. If the customer has an active sub, update its Price item back to
+ *      the standard $99 Price. No proration.
+ *   3. Emit `flat_rate_cleared` event.
+ *
+ * Perf fees resume on the next recovery (the bypass gate in
+ * performance-fee.ts reads the column live).
+ */
+export async function revertCustomerToStandardRate(
+  wbCustomerId: string,
+  opts: { adminEmail: string | null } = { adminEmail: null },
+): Promise<{ priceUpdated: boolean }> {
+  await db
+    .update(customers)
+    .set({ customMonthlyCents: null, updatedAt: new Date() })
+    .where(eq(customers.id, wbCustomerId))
+
+  const [row] = await db
+    .select({ stripeSubscriptionId: customers.stripeSubscriptionId })
+    .from(customers)
+    .where(eq(customers.id, wbCustomerId))
+    .limit(1)
+
+  let priceUpdated = false
+  if (row?.stripeSubscriptionId) {
+    const stripe = getPlatformStripe()
+    const sub = await stripe.subscriptions.retrieve(row.stripeSubscriptionId)
+    const itemId = sub.items.data[0]?.id
+    if (itemId) {
+      const standardPriceId = await getOrCreatePlatformPriceId(stripe)
+      await stripe.subscriptions.update(row.stripeSubscriptionId, {
+        items: [{ id: itemId, price: standardPriceId }],
+        proration_behavior: 'none',
+      })
+      priceUpdated = true
+    }
+  }
+
+  await logEvent({
+    name: 'flat_rate_cleared',
+    customerId: wbCustomerId,
+    properties: {
+      adminEmail: opts.adminEmail,
+      priceUpdatedOnStripe: priceUpdated,
+    },
+  })
+
+  return { priceUpdated }
 }

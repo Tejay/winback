@@ -68,6 +68,11 @@ export const customers = pgTable('wb_customers', {
   // bypassed. After expiry, normal billing flows resume on next event.
   pilotUntil:               timestamp('pilot_until'),
   pilotEndingWarnedAt:      timestamp('pilot_ending_warned_at'),
+  // Spec 77 — Per-customer custom flat-rate billing. NULL = standard
+  // $99/mo + 1× MRR perf fees. Non-NULL = negotiated flat monthly fee
+  // (perf fees disabled, platform sub uses a one-off Stripe Price at
+  // this amount). Mirrors the pilot bypass pattern at the column level.
+  customMonthlyCents:       integer('custom_monthly_cents'),
   // Spec 41 — cumulative lifetime revenue saved across all this customer's
   // recoveries. Cached value: written daily by /api/cron/cumulative-revenue
   // and read directly by /api/stats. BIGINT because mrr × months at high

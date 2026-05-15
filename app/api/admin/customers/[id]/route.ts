@@ -45,6 +45,9 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
       stripeConnected: sql<boolean>`${customers.stripeAccessToken} is not null`,
       stripePlatformCustomerId: customers.stripePlatformCustomerId,
       createdAt: customers.createdAt,
+      // Spec 77 — surface the custom flat-rate cents so the admin UI can
+      // render the "Custom pricing" section accordingly.
+      customMonthlyCents: customers.customMonthlyCents,
     })
     .from(customers)
     .innerJoin(users, eq(customers.userId, users.id))

@@ -1,20 +1,21 @@
 /**
- * Spec 31 — chargePerformanceFee pilot bypass.
+ * Spec 77 — chargePerformanceFee custom flat-rate bypass.
  *
- * When `isCustomerOnPilot` is true:
- *   - returns { skipped: 'pilot', invoiceItemId: null, alreadyCharged: false }
- *   - emits performance_fee_skipped_pilot with skippedAmountCents
+ * Mirrors the pilot-bypass test (Spec 31). When a customer is on a
+ * negotiated flat-rate deal:
+ *   - returns { skipped: 'flat_rate', invoiceItemId: null, alreadyCharged: false }
+ *   - emits performance_fee_skipped_flat_rate with skippedAmountCents
  *   - does NOT touch Stripe
- *   - does NOT mark perfFeeStripeItemId on the recovery (so a later retry
- *     after the pilot graduates can charge normally)
+ *   - does NOT mark perfFeeStripeItemId on the recovery
  *
- * When false: proceeds to the existing Stripe path.
+ * Ordering: pilot wins over flat-rate when both apply.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 const mockSelect = vi.hoisted(() => vi.fn())
 const mockUpdate = vi.hoisted(() => vi.fn())
 const mockIsCustomerOnPilot = vi.hoisted(() => vi.fn())
+const mockGetCustomMonthlyCents = vi.hoisted(() => vi.fn())
 const mockLogEvent = vi.hoisted(() => vi.fn().mockResolvedValue(undefined))
 const mockGetPlatformStripe = vi.hoisted(() => vi.fn())
 const mockInvoiceItemsCreate = vi.hoisted(() => vi.fn())
@@ -49,11 +50,8 @@ vi.mock('../lib/pilot', () => ({
   isCustomerOnPilot: mockIsCustomerOnPilot,
 }))
 
-// Spec 77 — performance-fee.ts now also consults the flat-rate gate
-// after the pilot check. Stub it to null (= standard customer) so the
-// "proceeds to Stripe" path continues unchanged.
 vi.mock('../lib/flat-rate', () => ({
-  getCustomMonthlyCents: vi.fn().mockResolvedValue(null),
+  getCustomMonthlyCents: mockGetCustomMonthlyCents,
 }))
 
 vi.mock('../lib/events', () => ({
@@ -80,14 +78,15 @@ function setupRecoverySelect(row: Record<string, unknown> | null) {
   }))
 }
 
-describe('chargePerformanceFee pilot bypass', () => {
-  it('returns skipped:pilot when isCustomerOnPilot is true', async () => {
+describe('chargePerformanceFee flat-rate bypass', () => {
+  it('returns skipped:flat_rate when customer is on a flat-rate deal', async () => {
     setupRecoverySelect({
       id: 'rec_1', customerId: 'c1', subscriberId: 's1',
       recoveryType: 'win_back', planMrrCents: 4900,
       perfFeeStripeItemId: null,
     })
-    mockIsCustomerOnPilot.mockResolvedValueOnce(true)
+    mockIsCustomerOnPilot.mockResolvedValueOnce(false)
+    mockGetCustomMonthlyCents.mockResolvedValueOnce(29900)  // $299/mo flat rate
 
     const res = await chargePerformanceFee('rec_1')
 
@@ -95,27 +94,47 @@ describe('chargePerformanceFee pilot bypass', () => {
       invoiceItemId: null,
       amountCents: 4900,
       alreadyCharged: false,
-      skipped: 'pilot',
+      skipped: 'flat_rate',
     })
     expect(mockInvoiceItemsCreate).not.toHaveBeenCalled()
     expect(mockUpdate).not.toHaveBeenCalled()
     expect(mockLogEvent).toHaveBeenCalledWith(expect.objectContaining({
-      name: 'performance_fee_skipped_pilot',
+      name: 'performance_fee_skipped_flat_rate',
       customerId: 'c1',
       properties: expect.objectContaining({
         recoveryId: 'rec_1',
         skippedAmountCents: 4900,
+        customMonthlyCents: 29900,
       }),
     }))
   })
 
-  it('proceeds to Stripe when isCustomerOnPilot is false', async () => {
+  it('pilot wins over flat-rate when both apply (pilot is free comp; flat-rate is paid)', async () => {
     setupRecoverySelect({
       id: 'rec_1', customerId: 'c1', subscriberId: 's1',
       recoveryType: 'win_back', planMrrCents: 4900,
       perfFeeStripeItemId: null,
     })
-    // Customer billing select (cust)
+    mockIsCustomerOnPilot.mockResolvedValueOnce(true)
+    // Note: even though getCustomMonthlyCents would have returned a value,
+    // it should never be called because pilot short-circuits first.
+
+    const res = await chargePerformanceFee('rec_1')
+
+    expect(res.skipped).toBe('pilot')
+    expect(mockGetCustomMonthlyCents).not.toHaveBeenCalled()
+    expect(mockLogEvent).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'performance_fee_skipped_pilot',
+    }))
+  })
+
+  it('proceeds to Stripe when customer is standard (no pilot, no flat-rate)', async () => {
+    setupRecoverySelect({
+      id: 'rec_1', customerId: 'c1', subscriberId: 's1',
+      recoveryType: 'win_back', planMrrCents: 4900,
+      perfFeeStripeItemId: null,
+    })
+    // Customer billing select
     mockSelect.mockImplementationOnce(() => ({
       from: vi.fn().mockReturnValue({
         where: vi.fn().mockReturnValue({
@@ -134,9 +153,7 @@ describe('chargePerformanceFee pilot bypass', () => {
         }),
       }),
     }))
-    // Spec 58 — the claim UPDATE adds .returning() to the chain. Provide
-    // a chainable promise so both the claim (which calls .returning()) and
-    // the final write (which awaits the where()) work.
+    // Spec 58 claim UPDATE — chainable .returning()
     mockUpdate.mockReturnValue({
       set: vi.fn().mockReturnValue({
         where: vi.fn().mockImplementation(() => {
@@ -151,6 +168,7 @@ describe('chargePerformanceFee pilot bypass', () => {
     })
 
     mockIsCustomerOnPilot.mockResolvedValueOnce(false)
+    mockGetCustomMonthlyCents.mockResolvedValueOnce(null)  // standard customer
 
     const res = await chargePerformanceFee('rec_1')
 
@@ -159,7 +177,7 @@ describe('chargePerformanceFee pilot bypass', () => {
     expect(mockInvoiceItemsCreate).toHaveBeenCalledTimes(1)
   })
 
-  it('returns alreadyCharged WITHOUT consulting the pilot gate when perfFeeStripeItemId is already set', async () => {
+  it('returns alreadyCharged WITHOUT consulting either gate when perfFeeStripeItemId is set', async () => {
     setupRecoverySelect({
       id: 'rec_1', customerId: 'c1', subscriberId: 's1',
       recoveryType: 'win_back', planMrrCents: 4900,
@@ -170,5 +188,6 @@ describe('chargePerformanceFee pilot bypass', () => {
 
     expect(res.alreadyCharged).toBe(true)
     expect(mockIsCustomerOnPilot).not.toHaveBeenCalled()
+    expect(mockGetCustomMonthlyCents).not.toHaveBeenCalled()
   })
 })
