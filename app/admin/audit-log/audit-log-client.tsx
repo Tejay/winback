@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback, Suspense } from 'react'
+import { useEffect, useState, useCallback, Suspense, Fragment } from 'react'
 import { useSearchParams, useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
 import { RefreshAffordance } from '@/components/admin-refresh'
@@ -209,9 +209,11 @@ function AuditLogInner() {
               const cat = CATEGORY_BY_ACTION[r.action] ?? 'operational'
               const isOpen = expanded.has(r.id)
               return (
-                <>
+                // Each row yields a Fragment (header tr + optional details tr).
+                // The Fragment is the list child, so it carries the key — not
+                // the inner <tr> (which React doesn't see as the list item).
+                <Fragment key={r.id}>
                   <tr
-                    key={r.id}
                     onClick={() => toggle(r.id)}
                     className={`cursor-pointer hover:bg-slate-50 ${categoryStripe(cat)}`}
                   >
@@ -240,7 +242,7 @@ function AuditLogInner() {
                     </td>
                   </tr>
                   {expanded.has(r.id) && (
-                    <tr key={`${r.id}-props`}>
+                    <tr>
                       <td colSpan={6} className="px-4 py-3 bg-slate-50">
                         <pre className="text-[11px] font-mono text-slate-700 whitespace-pre-wrap">
                           {JSON.stringify(r.properties, null, 2)}
@@ -248,7 +250,7 @@ function AuditLogInner() {
                       </td>
                     </tr>
                   )}
-                </>
+                </Fragment>
               )
             })}
           </tbody>
