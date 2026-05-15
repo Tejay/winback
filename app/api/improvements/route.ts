@@ -2,8 +2,8 @@ import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
-import { customers, improvements } from '@/lib/schema'
-import { and, eq, desc, count } from 'drizzle-orm'
+import { customers, improvements, improvementMatches } from '@/lib/schema'
+import { and, eq, desc, count, sql } from 'drizzle-orm'
 import { logEvent } from '@/src/winback/lib/events'
 
 const MAX_ACTIVE_IMPROVEMENTS = 10
@@ -56,10 +56,28 @@ export async function GET() {
     return NextResponse.json({ error: 'Customer not found' }, { status: 404 })
   }
 
+  // Spec 75 — include matchedCount per row so the merchant UI can show
+  // "Matched: N customers" on each active reason. Single LEFT JOIN +
+  // COUNT subquery on wb_improvement_matches, no N+1.
   const rows = await db
-    .select()
+    .select({
+      id:               improvements.id,
+      customerId:       improvements.customerId,
+      title:            improvements.title,
+      description:      improvements.description,
+      dateShipped:      improvements.dateShipped,
+      status:           improvements.status,
+      addressesPattern: improvements.addressesPattern,
+      preempted:        improvements.preempted,
+      createdAt:        improvements.createdAt,
+      archivedAt:       improvements.archivedAt,
+      updatedAt:        improvements.updatedAt,
+      matchedCount:     sql<number>`COALESCE(COUNT(${improvementMatches.improvementId}), 0)::int`,
+    })
     .from(improvements)
+    .leftJoin(improvementMatches, eq(improvementMatches.improvementId, improvements.id))
     .where(eq(improvements.customerId, customerId))
+    .groupBy(improvements.id)
     .orderBy(desc(improvements.dateShipped))
 
   return NextResponse.json({ improvements: rows })

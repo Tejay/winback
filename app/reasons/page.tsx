@@ -17,17 +17,19 @@ function toIsoDateTime(v: unknown): string {
 }
 
 import { db } from '@/lib/db'
-import { customers, improvements } from '@/lib/schema'
-import { eq, desc } from 'drizzle-orm'
+import { customers, improvements, improvementMatches } from '@/lib/schema'
+import { and, eq, desc, sql } from 'drizzle-orm'
 import { TopNav } from '@/components/top-nav'
 import { ImpersonationBanner } from '@/components/impersonation-banner'
 import { ReasonsClient } from './reasons-client'
 
 /**
  * Spec 65 Phase 2 — Winback Reasons page.
+ * Spec 75 — narrow to status='published' (archived view is gone from UI)
+ * and include matchedCount per row for the "Matched: N customers" badge.
  *
- * Server shell. Auth check, fetch the customer's improvements, hand off
- * to ReasonsClient for interactivity.
+ * Server shell. Auth check, fetch the customer's active reasons + their
+ * match counts, hand off to ReasonsClient for interactivity.
  */
 export default async function ReasonsPage() {
   const session = await auth()
@@ -43,10 +45,26 @@ export default async function ReasonsPage() {
   if (!customer) redirect('/onboarding/stripe')
   if (!customer.stripeAccessToken) redirect('/onboarding/stripe')
 
+  // Spec 75 — single query with LEFT JOIN + COUNT for match counts.
+  // Filter to published only — archived rows still exist in DB for
+  // attribution but the merchant UI is a living document of what's
+  // currently active.
   const rows = await db
-    .select()
+    .select({
+      id:               improvements.id,
+      title:            improvements.title,
+      description:      improvements.description,
+      dateShipped:      improvements.dateShipped,
+      status:           improvements.status,
+      addressesPattern: improvements.addressesPattern,
+      preempted:        improvements.preempted,
+      createdAt:        improvements.createdAt,
+      matchedCount:     sql<number>`COALESCE(COUNT(${improvementMatches.improvementId}), 0)::int`,
+    })
     .from(improvements)
-    .where(eq(improvements.customerId, customer.id))
+    .leftJoin(improvementMatches, eq(improvementMatches.improvementId, improvements.id))
+    .where(and(eq(improvements.customerId, customer.id), eq(improvements.status, 'published'))!)
+    .groupBy(improvements.id)
     .orderBy(desc(improvements.dateShipped))
 
   return (
@@ -98,15 +116,15 @@ export default async function ReasonsPage() {
           </details>
 
           <div className="mt-8">
-            <ReasonsClient initialImprovements={rows.map((r) => ({
+            <ReasonsClient initialReasons={rows.map((r) => ({
               id:               r.id,
               title:            r.title,
               description:      r.description,
               dateShipped:      toIsoDate(r.dateShipped),
-              status:           r.status as 'published' | 'archived',
               addressesPattern: r.addressesPattern ?? null,
               preempted:        r.preempted,
               createdAt:        toIsoDateTime(r.createdAt),
+              matchedCount:     r.matchedCount,
             }))} />
           </div>
         </div>

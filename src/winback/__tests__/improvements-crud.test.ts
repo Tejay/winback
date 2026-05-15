@@ -34,6 +34,11 @@ vi.mock('@/lib/schema', () => ({
     archivedAt: 'archived_at',
     updatedAt: 'updated_at',
   },
+  // Spec 75 — GET joins on this for matchedCount.
+  improvementMatches: {
+    improvementId: 'improvement_id',
+    subscriberId:  'subscriber_id',
+  },
 }))
 
 vi.mock('drizzle-orm', () => ({
@@ -41,6 +46,10 @@ vi.mock('drizzle-orm', () => ({
   and:   vi.fn((...c) => ({ op: 'and', c })),
   desc:  vi.fn((c) => ({ op: 'desc', c })),
   count: vi.fn(() => 'count_marker'),
+  // Spec 75 — GET now uses `sql` for the matchedCount COALESCE/COUNT
+  // expression and joins/groups for the per-row aggregate. The mock
+  // returns inert marker objects; the chain helper handles the call shape.
+  sql:   Object.assign((..._args: unknown[]) => ({ op: 'sql' }), { raw: (s: string) => s }),
 }))
 
 const mockAuth = vi.hoisted(() => vi.fn())
@@ -60,17 +69,39 @@ vi.mock('@/src/winback/lib/events', () => ({ logEvent: mockLogEvent }))
 
 // Helper — build a Drizzle-style chain. The .where() step is both
 // awaitable (for count-style queries that resolve directly off where)
-// and chainable into .limit / .orderBy (for list/lookup queries).
+// and chainable into .limit / .orderBy / .groupBy (for list queries).
+// Spec 75 — GET now does `.from().leftJoin().where().groupBy().orderBy()`
+// so the step needs to support leftJoin and groupBy too.
 function chain(rows: unknown[]) {
-  const step: unknown = {
+  const step: {
+    then:     unknown
+    orderBy:  unknown
+    limit:    unknown
+    groupBy:  unknown
+    leftJoin: unknown
+  } = {
     then: (resolve: (v: unknown[]) => unknown, reject?: (e: unknown) => unknown) =>
       Promise.resolve(rows).then(resolve, reject),
-    orderBy: vi.fn().mockResolvedValue(rows),
-    limit:   vi.fn().mockResolvedValue(rows),
+    orderBy:  vi.fn(),
+    limit:    vi.fn(),
+    groupBy:  vi.fn(),
+    leftJoin: vi.fn(),
   }
+  // Each method returns the same step so the chain works in any order.
+  ;(step.orderBy  as ReturnType<typeof vi.fn>).mockReturnValue(step)
+  ;(step.limit    as ReturnType<typeof vi.fn>).mockReturnValue(step)
+  ;(step.groupBy  as ReturnType<typeof vi.fn>).mockReturnValue(step)
+  ;(step.leftJoin as ReturnType<typeof vi.fn>).mockReturnValue(step)
+  // And the terminal .orderBy/.limit (where the test awaits the chain)
+  // must also resolve to the rows.
+  ;(step.orderBy as ReturnType<typeof vi.fn>).mockResolvedValue?.(rows)
+  ;(step.limit   as ReturnType<typeof vi.fn>).mockResolvedValue?.(rows)
   return {
     from: vi.fn().mockReturnValue({
-      where: vi.fn().mockReturnValue(step),
+      where:    vi.fn().mockReturnValue(step),
+      leftJoin: vi.fn().mockReturnValue({
+        where: vi.fn().mockReturnValue(step),
+      }),
     }),
   }
 }
