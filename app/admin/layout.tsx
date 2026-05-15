@@ -36,9 +36,13 @@ export default async function AdminLayout({ children }: { children: React.ReactN
             <NavLink href="/admin/pilots">Pilots</NavLink>
             <NavLink href="/admin/events">Events</NavLink>
             <NavLink href="/admin/audit-log">Audit log</NavLink>
+            {/* Founder/admin dual-role accounts (e.g. tejaasvi@gmail.com on
+                dev) need a visible path back to the regular merchant view.
+                The link was previously text-xs text-slate-400 which clipped
+                to "Exit adm…" at common widths and was easy to miss. */}
             <Link
               href="/dashboard"
-              className="ml-3 text-xs text-slate-400 hover:text-slate-600"
+              className="ml-3 px-3 py-1.5 rounded-full text-sm font-medium text-slate-600 hover:bg-slate-100 whitespace-nowrap"
             >
               ↩ Exit admin
             </Link>
