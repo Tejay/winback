@@ -1,4 +1,11 @@
-# Spec 76 — Dead-letter recovery drawer on the admin overview
+# Spec 76 — Classifier dead-letter recovery drawer on the admin overview
+
+> **Naming**: this spec scopes to the *classifier* dead-letter
+> specifically. Backfill ingest, email send, and webhook handlers all
+> have failure modes too, but only the classifier has a deliberate
+> retry-then-give-up mechanism (`classify_attempts >= 3`) today. If a
+> backfill dead-letter mechanism gets added in a future spec, it gets
+> its own tile/drawer — this surface is intentionally not generic.
 
 ## Context
 
@@ -77,8 +84,8 @@ The `DeadLetterTile` component on `/admin` is extended:
 ### Drawer contents
 
 Header:
-- Title: "Dead-lettered subscribers"
-- Subtitle: "N stuck — reset attempts to put them back in the queue."
+- Title: "Classifier dead-letter"
+- Subtitle: "N subscribers stuck after 3 failed classify attempts — reset to put them back in the queue."
 - Close button (X) in the top-right.
 
 Body — for each stuck subscriber:
@@ -95,7 +102,7 @@ Footer:
 
 ### Behavior
 
-- Drawer opens → fires `GET /api/admin/dead-letter-list` → renders rows.
+- Drawer opens → fires `GET /api/admin/classifier-dead-letter-list` → renders rows.
 - Click Reset on a row → fires `POST
   /api/admin/subscribers/[id]/reset-classify` (existing endpoint).
 - On success: row disappears from the drawer; if the list is now
@@ -106,14 +113,14 @@ Footer:
 
 ### Empty state
 
-If `GET /api/admin/dead-letter-list` returns zero rows (e.g., another
+If `GET /api/admin/classifier-dead-letter-list` returns zero rows (e.g., another
 admin reset them in a different tab between the count fetch and the
 drawer open), the drawer shows "No stuck subscribers right now" and a
 "Close" button.
 
 ## API contracts
 
-### New: `GET /api/admin/dead-letter-list`
+### New: `GET /api/admin/classifier-dead-letter-list`
 
 Returns the list of currently dead-lettered subscribers across **all**
 merchants (admin-scoped — no customer narrowing).
@@ -175,7 +182,7 @@ inspector. The drawer reuses this endpoint.
 
 ### API
 
-- **New: `app/api/admin/dead-letter-list/route.ts`** — GET handler.
+- **New: `app/api/admin/classifier-dead-letter-list/route.ts`** — GET handler.
   Auth check, read-only DB query, return rows.
 
 ### Admin UI
@@ -184,13 +191,13 @@ inspector. The drawer reuses this endpoint.
   clickable when `count >= 1`. Opens a drawer (new state in the parent
   component or local to the tile).
 
-- **New: `app/admin/dead-letter-drawer.tsx`** — drawer component.
+- **New: `app/admin/classifier-dead-letter-drawer.tsx`** — drawer component.
   Fetches list, renders rows, handles per-row reset, closes on
   success.
 
 ### Tests
 
-- **New: `src/winback/__tests__/admin-dead-letter-list.test.ts`** —
+- **New: `src/winback/__tests__/admin-classifier-dead-letter-list.test.ts`** —
   API tests:
   - Returns rows with `classified_at IS NULL AND classify_attempts >= 3`
   - Joins to customers + users for context
@@ -227,7 +234,7 @@ inspector. The drawer reuses this endpoint.
       count drops on next refresh
 - [ ] Reset all 3 → "Queue cleared 🎉" → drawer auto-closes
 - [ ] Close drawer manually → tile shows updated count
-- [ ] Curl `GET /api/admin/dead-letter-list` returns the expected shape
+- [ ] Curl `GET /api/admin/classifier-dead-letter-list` returns the expected shape
 - [ ] 401 on unauthenticated, 403 on non-admin
 
 ## Phasing
@@ -238,5 +245,5 @@ existing reset endpoint reused.
 
 ## Rollback
 
-`git revert` the merge. The new `/api/admin/dead-letter-list` endpoint
+`git revert` the merge. The new `/api/admin/classifier-dead-letter-list` endpoint
 becomes dead code; the tile reverts to non-clickable. No data risk.
