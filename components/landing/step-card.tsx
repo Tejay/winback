@@ -3,10 +3,10 @@ import type { ReactNode } from 'react'
 
 type Tint = 'amber' | 'blue' | 'emerald'
 
-const TINTS: Record<Tint, { badge: string; iconColor: string; label: string }> = {
-  amber:   { badge: 'bg-amber-100',   iconColor: 'text-orange-500',  label: 'text-orange-500' },
-  blue:    { badge: 'bg-sky-100',     iconColor: 'text-sky-600',     label: 'text-sky-600' },
-  emerald: { badge: 'bg-emerald-100', iconColor: 'text-emerald-600', label: 'text-emerald-600' },
+const TINTS: Record<Tint, { badge: string; iconColor: string; label: string; rail: string }> = {
+  amber:   { badge: 'bg-amber-100',   iconColor: 'text-orange-500',  label: 'text-orange-500',  rail: 'border-l-amber-500' },
+  blue:    { badge: 'bg-sky-100',     iconColor: 'text-sky-600',     label: 'text-sky-600',     rail: 'border-l-sky-500' },
+  emerald: { badge: 'bg-emerald-100', iconColor: 'text-emerald-600', label: 'text-emerald-600', rail: 'border-l-emerald-500' },
 }
 
 interface StepCardProps {
@@ -33,7 +33,7 @@ export function StepCard({
   tint,
   details,
 }: StepCardProps) {
-  const { badge, iconColor, label: labelColor } = TINTS[tint]
+  const { badge, iconColor, label: labelColor, rail } = TINTS[tint]
 
   const head = (
     <>
@@ -57,14 +57,14 @@ export function StepCard({
 
   if (!details) {
     return (
-      <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-7">
+      <div className={`bg-white rounded-2xl shadow-sm border border-slate-100 p-7 border-l-4 ${rail}`}>
         {head}
       </div>
     )
   }
 
   return (
-    <details className="group bg-white rounded-2xl shadow-sm border border-slate-100 p-7 transition-shadow open:shadow-md">
+    <details className={`group bg-white rounded-2xl shadow-sm border border-slate-100 p-7 transition-shadow open:shadow-md border-l-4 ${rail}`}>
       <summary className="list-none cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded-xl">
         {head}
         <div className="mt-5 inline-flex items-center gap-1 text-xs font-medium text-slate-400 group-hover:text-slate-600 group-open:text-slate-600">
