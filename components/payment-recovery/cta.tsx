@@ -29,8 +29,8 @@ export function Cta() {
           <li className="flex items-baseline gap-2">
             <span className="text-blue-600 font-semibold flex-shrink-0">·</span>
             <span>
-              First failure email sends within{' '}
-              <span className="font-semibold text-slate-900">60 seconds</span> of the
+              First failure email sends{' '}
+              <span className="font-semibold text-slate-900">immediately</span> after the
               next Stripe webhook
             </span>
           </li>
@@ -48,7 +48,7 @@ export function Cta() {
             href="/register"
             className="bg-[#0f172a] text-white rounded-full px-6 py-2.5 text-sm font-medium hover:bg-[#1e293b]"
           >
-            Connect Stripe in 60 seconds &rarr;
+            Connect Stripe &rarr;
           </Link>
           <Link
             href="/#pricing"

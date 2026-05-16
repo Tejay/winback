@@ -68,7 +68,7 @@ export default function WinBackDemoPage() {
             <li>
               <strong className="text-slate-900">Handoff alert</strong> (top, amber): when AI decides your personal
               touch matters more than another email, it routes the case to
-              your inbox within 60 seconds of the cancellation.
+              your inbox immediately after the cancellation.
             </li>
           </ul>
         </div>

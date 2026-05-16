@@ -1,6 +1,7 @@
 /**
- * Section 5 — featured Stripe-Checkout-style update-payment mockup with three
- * left-rail callouts. Mirrors the user's reference screenshot.
+ * Section "When they click" — featured Stripe-Checkout-style update-payment
+ * mockup with three left-rail callouts. Mirrors the user's reference
+ * screenshot.
  *
  * The mockup intentionally matches Stripe Checkout's setup-mode UI so visitors
  * recognise it from real-world payments. Buttons are static; this is a marketing
@@ -27,7 +28,7 @@ export function CheckoutMockup() {
     <section className="bg-white py-20 sm:py-24 border-t border-slate-100">
       <div className="max-w-5xl mx-auto px-6">
         <div className="max-w-3xl mx-auto text-center">
-        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">When they click</p>
+        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">04 · When they click</p>
         <h2 className="mt-3 text-3xl font-bold tracking-tight text-slate-900">
           Every payment method, one tap to fix.
         </h2>

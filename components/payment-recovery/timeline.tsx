@@ -17,7 +17,7 @@ export function Timeline() {
     <section className="bg-white py-20 sm:py-24 border-t border-slate-100">
       <div className="max-w-5xl mx-auto px-6">
         <div className="max-w-3xl mx-auto text-center">
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">How it works</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">01 · How it works</p>
           <h2 className="mt-3 text-3xl font-bold tracking-tight text-slate-900">
             Three touches, perfectly timed.
           </h2>

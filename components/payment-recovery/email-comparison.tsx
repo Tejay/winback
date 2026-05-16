@@ -1,23 +1,17 @@
 /**
- * Section 4 — generic vs Winback email side-by-side, plus the decline-code chip row.
+ * Section "The email" — generic vs Winback email side-by-side.
  * Source: marketing/payment-recovery-section.html §4. Note: no "dunning" anywhere
- * in copy (Spec 34 user instruction).
+ * in copy (Spec 34 user instruction). The Winback email itself shows the
+ * per-decline-code variation (the "Why this happened" line is rendered from
+ * the actual code); we don't repeat the list of code → copy variants below.
  */
-
-const DECLINE_EXAMPLES = [
-  { code: 'expired_card',           copy: '"Your card expired"' },
-  { code: 'insufficient_funds',     copy: '"Wait or use a different card"' },
-  { code: 'do_not_honor',           copy: '"Try a different card or call the bank"' },
-  { code: 'card_velocity_exceeded', copy: '"Bank flagged the charge"' },
-  { code: 'processing_error',       copy: '"No action needed"' },
-]
 
 export function EmailComparison() {
   return (
     <section className="bg-[#f5f5f5] py-20 sm:py-24">
       <div className="max-w-5xl mx-auto px-6">
         <div className="max-w-3xl mx-auto text-center">
-        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">The email</p>
+        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">02 · The email</p>
         <h2 className="mt-3 text-3xl font-bold tracking-tight text-slate-900">
           Contextual email, tuned for maximising recovery.
         </h2>
@@ -77,15 +71,6 @@ export function EmailComparison() {
         </div>
       </div>
 
-        {/* Decline-code chips */}
-        <div className="mt-10 flex flex-wrap items-center justify-center gap-2 text-xs text-slate-500">
-          <span className="text-slate-700 font-medium">Different code, different copy:</span>
-          {DECLINE_EXAMPLES.map(({ code, copy }) => (
-            <span key={code} className="bg-white border border-slate-200 rounded-full px-3 py-1">
-              {code} → {copy}
-            </span>
-          ))}
-        </div>
       </div>
     </section>
   )

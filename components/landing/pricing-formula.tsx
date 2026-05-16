@@ -131,7 +131,7 @@ export function PricingFormula() {
               href="/register"
               className="inline-flex items-center bg-[#0f172a] text-white rounded-full px-7 py-3 text-sm font-semibold hover:bg-[#1e293b] transition-colors"
             >
-              Connect Stripe in 60 seconds &rarr;
+              Connect Stripe &rarr;
             </Link>
             <p className="mt-4 text-xs text-slate-500 leading-relaxed">
               <span className="text-slate-700 font-medium">No card required to sign up.</span>{' '}
