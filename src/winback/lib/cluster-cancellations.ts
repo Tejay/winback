@@ -41,11 +41,20 @@ const MIN_THEME_SIZE             = 3   // below this, the LLM is told to drop th
 const MAX_INPUT_QUOTES           = 200 // hard cap to keep token budget bounded
 
 // --------------------------------------------------------------------------
-// Anthropic client (mirrors the pattern in improvement-match.ts)
+// Anthropic client (mirrors the pattern in improvement-match.ts —
+// includes the .env.local fallback because node --env-file occasionally
+// returns an empty string for certain key shapes)
 // --------------------------------------------------------------------------
 function getClient(): Anthropic {
   const key = process.env.ANTHROPIC_API_KEY
   if (!key || !key.startsWith('sk-')) {
+    try {
+      const fs = require('fs')
+      const path = require('path')
+      const envFile = fs.readFileSync(path.join(process.cwd(), '.env.local'), 'utf8')
+      const m = envFile.match(/^ANTHROPIC_API_KEY="?([^"\n]+)"?$/m)
+      if (m?.[1]) return new Anthropic({ apiKey: m[1] })
+    } catch { /* fall through to throw */ }
     throw new Error('ANTHROPIC_API_KEY is not set')
   }
   return new Anthropic({ apiKey: key })
@@ -54,12 +63,18 @@ function getClient(): Anthropic {
 // --------------------------------------------------------------------------
 // LLM output schema — strictly validated before any DB write
 // --------------------------------------------------------------------------
+// Per-theme shape validation. We intentionally do NOT enforce
+// min(MIN_THEME_SIZE) here — the LLM occasionally returns sub-threshold
+// clusters even when told not to. Rejecting the whole response in that
+// case loses good clusters too. Instead, the post-validation filter
+// (see filterValidSubscriberIds further down) drops sub-threshold
+// clusters after we've also stripped hallucinated subscriber IDs.
 const ThemeSchema = z.object({
   title:                  z.string().min(1).max(80),
   description:            z.string().min(1).max(280),
   category:               z.enum(['Price', 'Feature', 'Other']).nullable(),
   emoji:                  z.string().min(1).max(8),
-  subscriberIds:          z.array(z.string().uuid()).min(MIN_THEME_SIZE),
+  subscriberIds:          z.array(z.string().uuid()).min(1),
   sampleQuotes:           z.array(z.string().min(1)).min(1).max(5),
   addressesImprovementId: z.string().uuid().nullable(),
 })
@@ -98,7 +113,7 @@ Rules:
 5. Emoji: pick one based on cluster size — 5+ subscribers = 🔥, 4 = 📊, 3 = 🌱.
 6. subscriberIds: include the exact UUIDs of every subscriber in this cluster.
 7. sampleQuotes: pick 2-3 of the most representative quotes from the cluster, verbatim from the input.
-8. addressesImprovementId: if a SHIPPED IMPROVEMENT in the merchant's list (provided below) semantically addresses the same need this cluster represents, AND all subscribers in this cluster cancelled AFTER the improvement's dateShipped, set this to the improvement's id. Otherwise null.
+8. addressesImprovementId: if a SHIPPED IMPROVEMENT in the merchant's list (provided below) semantically addresses the same need this cluster represents, AND at least 3 subscribers in this cluster cancelled AFTER the improvement's dateShipped (not all — just at least 3), set this to the improvement's id. Otherwise null. The signal is "people are still cancelling over this even though I shipped a fix"; a single pre-ship subscriber in the same cluster doesn't disqualify the insight.
 
 Output ONLY valid JSON of shape:
 { "themes": [ { "title": "...", "description": "...", "category": "Price"|"Feature"|"Other", "emoji": "🔥"|"📊"|"🌱", "subscriberIds": ["..."], "sampleQuotes": ["..."], "addressesImprovementId": null|"..." } ] }
