@@ -26,7 +26,7 @@ export function Cta() {
             href="/register"
             className="bg-[#0f172a] text-white rounded-full px-6 py-2.5 text-sm font-medium hover:bg-[#1e293b]"
           >
-            Connect Stripe in 60 seconds →
+            Connect Stripe →
           </Link>
         </div>
         <p className="mt-6 text-xs text-slate-500">

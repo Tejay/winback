@@ -22,7 +22,7 @@ const SCOPE_LABELS: Record<PauseScope, {
     confirmCopy:
       'Pause win-back emails? No exit emails or reply win-backs will go out until you un-pause. Cancellations continue to be recorded.',
     liveDesc:
-      'Winback sends a personalised email within 60 seconds of each new voluntary cancellation.',
+      'Winback sends a personalised email immediately after each new voluntary cancellation.',
     pausedDesc:
       'No win-back emails will go out. Cancellations are still recorded on the dashboard — nothing is lost.',
   },
