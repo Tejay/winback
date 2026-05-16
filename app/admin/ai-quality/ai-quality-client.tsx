@@ -61,11 +61,55 @@ interface LowConfidenceRow {
   customerEmail: string | null
 }
 
+// Spec 78 Phase B
+
+interface LikelihoodCalibrationRow {
+  likelihood: 'high' | 'medium' | 'low'
+  n: number
+  recovered: number
+  autoLost: number
+  lostOther: number
+  stillOpen: number
+}
+
+interface HandoffConversionRow {
+  cohort: 'handoff' | 'non_handoff'
+  n: number
+  recovered: number
+}
+
+interface AutoLostReversalSummary {
+  n: number
+  reversed: number
+  reversedSample: Array<{
+    subscriberId: string
+    name: string | null
+    email: string | null
+    recoveredAt: string | null
+  }>
+}
+
+interface CalibrationCohort {
+  startDate: string
+  endDate: string
+  total: number
+  byLikelihood: LikelihoodCalibrationRow[]
+  handoffConversion: HandoffConversionRow[]
+  autoLostReversal: AutoLostReversalSummary
+}
+
+interface ReengagementMatchRate {
+  windowDays: number
+  eligible: number
+  emailed: number
+  expired: number
+  pending: number
+}
+
 interface Payload {
   // Legacy (Phase D removes)
   handoffs: DayBucket[]
   autoLost: DayBucket[]
-  likelihood: { high: number; medium: number; low: number; total: number }
   tier: TierBucket[]
   recentHandoffs: HandoffAuditRow[]
   recentAutoLost: AutoLostAuditRow[]
@@ -73,6 +117,9 @@ interface Payload {
   drift: { metrics: DriftMetric[] }
   categoryMix: { rows: CategoryMixRow[]; total30d: number }
   lowConfidence: LowConfidenceRow[]
+  // Spec 78 Phase B
+  calibration: CalibrationCohort
+  matchRate: ReengagementMatchRate
 }
 
 export function AiQualityClient() {
@@ -123,26 +170,20 @@ export function AiQualityClient() {
 
       <HowToRead />
 
+      {/* Block 1 — Outcome-grounded calibration (replaces old Block B likelihood histogram) */}
+      <CalibrationBlock cohort={data.calibration} />
+
       {/* Block 2 — Drift detection (replaces old Block A paired trends) */}
       <DriftBlock metrics={data.drift.metrics} />
 
       {/* Block 3 — Cancellation category mix (replaces old Block C tier distribution) */}
       <CategoryMixBlock data={data.categoryMix} />
 
-      {/* Block B (legacy — Phase B will replace with the calibration table) */}
-      <section className="bg-white rounded-2xl border border-slate-200 p-5">
-        <div className="text-xs font-semibold uppercase tracking-widest text-slate-500 mb-3">
-          Recovery likelihood distribution (last 30 days)
-        </div>
-        <LikelihoodHistogram dist={data.likelihood} />
-        <p className="text-xs text-slate-500 italic mt-3 max-w-2xl">
-          Phase B (coming) replaces this with an outcome-grounded calibration table —
-          "did high-likelihood cases actually recover more than low ones?"
-        </p>
-      </section>
-
       {/* Block 6 — Low-confidence classifications (new) */}
       <LowConfidenceBlock rows={data.lowConfidence} />
+
+      {/* Block 7 — Re-engagement match rate (new) */}
+      <MatchRateBlock data={data.matchRate} />
 
       {/* Block D (legacy — Phase C will replace with smart-ranked handoff audit) */}
       <section className="bg-white rounded-2xl border border-slate-200 p-5">
@@ -441,38 +482,294 @@ function LowConfidenceCard({ row }: { row: LowConfidenceRow }) {
 }
 
 // ===========================================================================
-// Legacy blocks (Phase B / Phase C will replace these)
+// Spec 78 Phase B blocks
 // ===========================================================================
 
-function LikelihoodHistogram({ dist }: { dist: { high: number; medium: number; low: number; total: number } }) {
-  const total = Math.max(1, dist.total)
-  const items: Array<{ key: 'high' | 'medium' | 'low'; n: number; pct: number; color: string; label: string }> = [
-    { key: 'high',   n: dist.high,   pct: (dist.high   / total) * 100, color: 'bg-green-400 text-green-900',  label: 'High' },
-    { key: 'medium', n: dist.medium, pct: (dist.medium / total) * 100, color: 'bg-amber-400 text-amber-900',  label: 'Medium' },
-    { key: 'low',    n: dist.low,    pct: (dist.low    / total) * 100, color: 'bg-slate-300 text-slate-800',  label: 'Low' },
-  ]
-  if (dist.total === 0) {
-    return <div className="text-sm text-slate-400 italic">No classifications in this window.</div>
+function CalibrationBlock({ cohort }: { cohort: CalibrationCohort }) {
+  const fmtDate = (s: string) => {
+    try {
+      return new Date(s).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+    } catch { return '?' }
+  }
+  const cohortRange = `${fmtDate(cohort.startDate)} – ${fmtDate(cohort.endDate)}`
+
+  return (
+    <section className="bg-white rounded-2xl border border-slate-200 p-5">
+      <div className="text-xs font-semibold uppercase tracking-widest text-slate-500 mb-1">
+        Calibration
+      </div>
+      <h2 className="text-lg font-semibold text-slate-900 mb-2">
+        Did the AI's calls hold up?
+        <span className="text-sm font-normal text-slate-400 ml-2">
+          (cohort: n={cohort.total.toLocaleString()} classified {cohortRange})
+        </span>
+      </h2>
+      <p className="text-xs text-slate-500 italic mb-4 max-w-2xl">
+        Looks at subscribers classified 30-90 days ago — long enough for outcomes to
+        have resolved, recent enough to reflect current prompt behaviour. Three
+        falsifiable claims: <strong>high likelihood should recover more than low</strong>
+        (monotonic), <strong>handoffs should beat non-handoffs</strong>, <strong>auto-lost
+        cases shouldn't reverse</strong> (any reversal = a confirmed false negative,
+        read the case).
+      </p>
+
+      {cohort.total === 0 ? (
+        <div className="text-sm text-slate-400 italic">
+          Not enough data yet — the cohort window has no classifications. Calibration
+          becomes meaningful once you've accumulated 30-90 day-old classifications.
+        </div>
+      ) : (
+        <>
+          {/* Table 1: Recovery by predicted likelihood */}
+          <div className="mb-6">
+            <div className="text-xs font-semibold text-slate-600 mb-2">
+              Recovery rate by predicted likelihood
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-xs font-semibold uppercase tracking-wide text-slate-400 border-b border-slate-100">
+                    <th className="text-left py-2 pr-4">Likelihood</th>
+                    <th className="text-right py-2 pr-4">n</th>
+                    <th className="text-right py-2 pr-4">Recovered</th>
+                    <th className="text-right py-2 pr-4">Auto-lost</th>
+                    <th className="text-right py-2 pr-4">Lost (other)</th>
+                    <th className="text-right py-2">Still open</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {cohort.byLikelihood.map((r) => (
+                    <tr key={r.likelihood} className="border-b border-slate-50 last:border-b-0">
+                      <td className="py-2 pr-4">
+                        <span className={`text-xs px-2 py-0.5 rounded-full border ${
+                          r.likelihood === 'high'   ? 'bg-green-50 text-green-700 border-green-200' :
+                          r.likelihood === 'medium' ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                                                       'bg-slate-100 text-slate-500 border-slate-200'
+                        }`}>
+                          {r.likelihood}
+                        </span>
+                      </td>
+                      <td className="py-2 pr-4 text-right tabular-nums text-slate-900">{r.n}</td>
+                      <td className="py-2 pr-4 text-right tabular-nums text-slate-900">
+                        {r.n === 0 ? <span className="text-slate-300">—</span>
+                                   : <span>{((r.recovered / r.n) * 100).toFixed(0)}% <span className="text-slate-400 text-xs">({r.recovered})</span></span>}
+                      </td>
+                      <td className="py-2 pr-4 text-right tabular-nums text-slate-700">
+                        {r.n === 0 ? <span className="text-slate-300">—</span>
+                                   : <span>{((r.autoLost / r.n) * 100).toFixed(0)}% <span className="text-slate-400 text-xs">({r.autoLost})</span></span>}
+                      </td>
+                      <td className="py-2 pr-4 text-right tabular-nums text-slate-700">
+                        {r.n === 0 ? <span className="text-slate-300">—</span>
+                                   : <span>{((r.lostOther / r.n) * 100).toFixed(0)}% <span className="text-slate-400 text-xs">({r.lostOther})</span></span>}
+                      </td>
+                      <td className="py-2 text-right tabular-nums text-slate-500">
+                        {r.n === 0 ? <span className="text-slate-300">—</span>
+                                   : <span>{((r.stillOpen / r.n) * 100).toFixed(0)}%</span>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <CalibrationVerdict rows={cohort.byLikelihood} />
+          </div>
+
+          {/* Table 2: Handoff vs non-handoff conversion */}
+          <div className="mb-6">
+            <div className="text-xs font-semibold text-slate-600 mb-2">
+              Handoff vs. non-handoff conversion
+            </div>
+            <HandoffConversionTable rows={cohort.handoffConversion} />
+          </div>
+
+          {/* Table 3: Auto-lost reversal */}
+          <div>
+            <div className="text-xs font-semibold text-slate-600 mb-2">
+              Auto-lost reversal (false-negative rate)
+            </div>
+            <AutoLostReversal summary={cohort.autoLostReversal} />
+          </div>
+        </>
+      )}
+    </section>
+  )
+}
+
+function CalibrationVerdict({ rows }: { rows: LikelihoodCalibrationRow[] }) {
+  const insufficient = rows.some((r) => r.n < 5)
+  if (insufficient) {
+    return (
+      <div className="mt-2 text-xs text-slate-500 italic">
+        Some buckets have &lt; 5 cases — monotonicity check needs all three populated
+        to be meaningful.
+      </div>
+    )
+  }
+  const rate = (r: LikelihoodCalibrationRow) => (r.n > 0 ? r.recovered / r.n : 0)
+  const high = rate(rows.find((r) => r.likelihood === 'high')!)
+  const med  = rate(rows.find((r) => r.likelihood === 'medium')!)
+  const low  = rate(rows.find((r) => r.likelihood === 'low')!)
+  const monotonic = high > med && med > low
+  if (monotonic) {
+    return (
+      <div className="mt-2 text-xs text-green-700">
+        ✓ Monotonic — high &gt; medium &gt; low recovery rates. The likelihood label is
+        carrying real information.
+      </div>
+    )
   }
   return (
-    <div className="space-y-2">
-      {items.map((it) => (
-        <div key={it.key} className="flex items-center gap-3">
-          <div className="w-16 text-xs font-semibold text-slate-700">{it.label}</div>
-          <div className="flex-1 h-6 bg-slate-100 rounded-full overflow-hidden">
-            <div
-              className={`h-full ${it.color} flex items-center justify-end pr-2 text-xs font-medium`}
-              style={{ width: `${Math.max(it.pct, it.n > 0 ? 4 : 0)}%` }}
-            >
-              {it.n > 0 && `${it.n} (${it.pct.toFixed(0)}%)`}
-            </div>
-          </div>
-        </div>
-      ))}
-      <div className="text-xs text-slate-400 mt-1">{dist.total.toLocaleString()} classifications total</div>
+    <div className="mt-2 text-xs text-amber-700">
+      ⚠ Not monotonic — high/medium/low recovery rates are not strictly decreasing. The
+      likelihood label may be noise. Investigate prompt drift before trusting it for
+      triage.
     </div>
   )
 }
+
+function HandoffConversionTable({ rows }: { rows: HandoffConversionRow[] }) {
+  const handoff    = rows.find((r) => r.cohort === 'handoff')
+  const nonHandoff = rows.find((r) => r.cohort === 'non_handoff')
+  if (!handoff || !nonHandoff || handoff.n === 0 || nonHandoff.n === 0) {
+    return (
+      <div className="text-sm text-slate-400 italic">
+        Insufficient data — need both handoff and non-handoff cohorts populated.
+      </div>
+    )
+  }
+  const hRate = (handoff.recovered    / handoff.n)    * 100
+  const nRate = (nonHandoff.recovered / nonHandoff.n) * 100
+  const lift  = hRate - nRate
+  return (
+    <>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-xs font-semibold uppercase tracking-wide text-slate-400 border-b border-slate-100">
+              <th className="text-left py-2 pr-4">Cohort</th>
+              <th className="text-right py-2 pr-4">n</th>
+              <th className="text-right py-2">Recovered</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr className="border-b border-slate-50">
+              <td className="py-2 pr-4 text-slate-800">Handed off</td>
+              <td className="py-2 pr-4 text-right tabular-nums">{handoff.n}</td>
+              <td className="py-2 text-right tabular-nums font-medium">
+                {hRate.toFixed(0)}% <span className="text-slate-400 text-xs">({handoff.recovered})</span>
+              </td>
+            </tr>
+            <tr>
+              <td className="py-2 pr-4 text-slate-800">Not handed off (baseline)</td>
+              <td className="py-2 pr-4 text-right tabular-nums">{nonHandoff.n}</td>
+              <td className="py-2 text-right tabular-nums">
+                {nRate.toFixed(0)}% <span className="text-slate-400 text-xs">({nonHandoff.recovered})</span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div className={`mt-2 text-xs ${lift > 0 ? 'text-green-700' : 'text-amber-700'}`}>
+        {lift > 0
+          ? `✓ Handoffs +${lift.toFixed(0)}pp vs baseline — escalation is earning the founder's time.`
+          : `⚠ Handoffs ${lift.toFixed(0)}pp vs baseline — handoff cohort isn't beating no-handoff. The AI may be escalating low-value cases, or the founder isn't getting to them.`}
+      </div>
+    </>
+  )
+}
+
+function AutoLostReversal({ summary }: { summary: AutoLostReversalSummary }) {
+  if (summary.n === 0) {
+    return <div className="text-sm text-slate-400 italic">No auto-lost cases in this cohort.</div>
+  }
+  const pct = (summary.reversed / summary.n) * 100
+  return (
+    <>
+      <div className="text-sm text-slate-700">
+        {summary.n} auto-lost in this cohort, of which{' '}
+        <span className={`font-semibold ${summary.reversed > 0 ? 'text-amber-700' : 'text-green-700'}`}>
+          {summary.reversed} ({pct.toFixed(1)}%) later recovered
+        </span>
+        {summary.reversed > 0
+          ? ' — confirmed false negatives. Read each one to find the pattern.'
+          : ' — no measurable false negatives in this cohort.'}
+      </div>
+      {summary.reversedSample.length > 0 && (
+        <div className="mt-3 space-y-1">
+          {summary.reversedSample.map((s) => (
+            <Link
+              key={s.subscriberId}
+              href={`/admin/subscribers/${s.subscriberId}`}
+              className="block text-xs text-blue-600 hover:underline"
+            >
+              · {s.name ?? '(no name)'} {s.email && <span className="text-slate-400">· {s.email}</span>}
+              {s.recoveredAt && <span className="text-slate-400"> · recovered {new Date(s.recoveredAt).toLocaleDateString()}</span>}
+            </Link>
+          ))}
+        </div>
+      )}
+    </>
+  )
+}
+
+function MatchRateBlock({ data }: { data: ReengagementMatchRate }) {
+  const eligibleNonZero = Math.max(1, data.eligible)
+  const emailedPct = (data.emailed / eligibleNonZero) * 100
+  const expiredPct = (data.expired / eligibleNonZero) * 100
+  const pendingPct = (data.pending / eligibleNonZero) * 100
+  return (
+    <section className="bg-white rounded-2xl border border-slate-200 p-5">
+      <div className="text-xs font-semibold uppercase tracking-widest text-slate-500 mb-1">
+        Re-engagement
+      </div>
+      <h2 className="text-lg font-semibold text-slate-900 mb-2">
+        Re-engagement match rate
+        <span className="text-sm font-normal text-slate-400 ml-2">
+          (last {data.windowDays} days · n={data.eligible.toLocaleString()})
+        </span>
+      </h2>
+      <p className="text-xs text-slate-500 italic mb-4 max-w-2xl">
+        The AI extracts a <code className="text-xs">triggerNeed</code> ("wants Zapier
+        integration") when a cancellation has an addressable feature ask. Re-engagement
+        matches these against shipping improvements. <strong>A low match rate has two
+        causes worth distinguishing:</strong> (a) the AI's needs are too vague to LLM-match,
+        or (b) the merchant isn't shipping improvements that address what subscribers
+        asked for. Either way, actionable.
+      </p>
+      {data.eligible === 0 ? (
+        <div className="text-sm text-slate-400 italic">
+          No eligible subscribers in the window (none with triggerNeedConfidence='high').
+        </div>
+      ) : (
+        <div className="space-y-2">
+          <MatchRateRow label="Matched + emailed"        n={data.emailed} pct={emailedPct} color="bg-green-400" />
+          <MatchRateRow label="Pending (in window)"      n={data.pending} pct={pendingPct} color="bg-amber-400" />
+          <MatchRateRow label="Expired without a match"  n={data.expired} pct={expiredPct} color="bg-slate-300" />
+        </div>
+      )}
+    </section>
+  )
+}
+
+function MatchRateRow({ label, n, pct, color }: { label: string; n: number; pct: number; color: string }) {
+  return (
+    <div className="flex items-center gap-3">
+      <div className="w-44 text-sm text-slate-700">{label}</div>
+      <div className="flex-1 h-5 bg-slate-100 rounded-full overflow-hidden">
+        <div
+          className={`h-full ${color} flex items-center justify-end pr-2 text-xs font-medium text-white`}
+          style={{ width: `${Math.max(pct, n > 0 ? 4 : 0)}%` }}
+        >
+          {n > 0 && `${n} (${pct.toFixed(0)}%)`}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ===========================================================================
+// Legacy blocks (Phase C will replace these)
+// ===========================================================================
 
 function HandoffAuditCard({ row }: { row: HandoffAuditRow }) {
   return (

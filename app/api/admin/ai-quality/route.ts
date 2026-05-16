@@ -4,7 +4,6 @@ import {
   // Spec 26 (legacy — removed in Phase D)
   handoffVolumeTrend,
   autoLostTrend,
-  recoveryLikelihoodHistogram,
   tierDistribution,
   handoffAudit,
   autoLostAudit,
@@ -12,6 +11,9 @@ import {
   weekVsBaseline,
   cancellationCategoryMix,
   lowConfidenceClassifications,
+  // Spec 78 Phase B
+  calibrationCohort,
+  reengagementMatchRate,
 } from '@/lib/admin/ai-quality-queries'
 
 /**
@@ -31,29 +33,30 @@ export async function GET() {
   const [
     handoffs,
     autoLost,
-    likelihood,
     tier,
     recentHandoffs,
     recentAutoLost,
     drift,
     categoryMix,
     lowConfidence,
+    calibration,
+    matchRate,
   ] = await Promise.all([
     handoffVolumeTrend(30),
     autoLostTrend(30),
-    recoveryLikelihoodHistogram(30),
     tierDistribution(30),
     handoffAudit(50),
     autoLostAudit(50),
     weekVsBaseline(),
     cancellationCategoryMix(),
     lowConfidenceClassifications(25),
+    calibrationCohort(90, 30),
+    reengagementMatchRate(90),
   ])
   return NextResponse.json({
     // Legacy — Phase D removes these
     handoffs,
     autoLost,
-    likelihood,
     tier,
     recentHandoffs,
     recentAutoLost,
@@ -61,5 +64,8 @@ export async function GET() {
     drift,
     categoryMix,
     lowConfidence,
+    // Spec 78 Phase B
+    calibration,
+    matchRate,
   })
 }

@@ -506,6 +506,288 @@ export async function lowConfidenceClassifications(limit = 25): Promise<LowConfi
 }
 
 // ---------------------------------------------------------------------------
+// Spec 78 — Phase B queries (calibration + re-engagement match rate)
+// ---------------------------------------------------------------------------
+
+export interface LikelihoodCalibrationRow {
+  likelihood: 'high' | 'medium' | 'low'
+  n: number
+  recovered: number
+  autoLost: number
+  lostOther: number   // status='lost' but not auto-lost (e.g. expiry sweep)
+  stillOpen: number
+}
+
+export interface HandoffConversionRow {
+  cohort: 'handoff' | 'non_handoff'
+  n: number
+  recovered: number
+}
+
+export interface AutoLostReversalSummary {
+  /** Total auto-lost cases in cohort. */
+  n: number
+  /** Of those, how many ended up with status='recovered'. */
+  reversed: number
+  /** Sample of the reversed cases for the UI to link to. */
+  reversedSample: Array<{
+    subscriberId: string
+    name: string | null
+    email: string | null
+    recoveredAt: Date | null
+  }>
+}
+
+export interface CalibrationCohort {
+  /** Inclusive lower bound (oldest classifiedAt in the window). */
+  startDate: Date
+  /** Inclusive upper bound (newest classifiedAt in the window). */
+  endDate: Date
+  /** Total subscribers classified within the cohort window. */
+  total: number
+  /** Per-likelihood-bucket outcome distribution. */
+  byLikelihood: LikelihoodCalibrationRow[]
+  /** Handoff vs. non-handoff recovery rate within the cohort. */
+  handoffConversion: HandoffConversionRow[]
+  /** Auto-lost reversal — measurable false-negative rate. */
+  autoLostReversal: AutoLostReversalSummary
+}
+
+/**
+ * Block 1 — Outcome-grounded calibration.
+ *
+ * The "settled cohort" is subscribers classified ≥30 days ago and ≤90
+ * days ago. ≥30 because handoffs that recovered average 14-21 days end
+ * to end and we want the tail; ≤90 because older data is "old prompt
+ * era" and dilutes the signal from recent prompt changes.
+ *
+ * Three derived tables:
+ *   - recovery rate by predicted likelihood (the calibration test —
+ *     should be monotonic: high > medium > low)
+ *   - handoff vs. non-handoff recovery (does escalation pay off?)
+ *   - auto-lost reversal (any cases the AI gave up on but recovered
+ *     anyway? = confirmed false negatives)
+ */
+export async function calibrationCohort(
+  cohortStartDaysAgo = 90,
+  cohortEndDaysAgo   = 30,
+): Promise<CalibrationCohort> {
+  const db = getDbReadOnly()
+
+  const startDate = nDaysAgo(cohortStartDaysAgo)
+  const endDate   = nDaysAgo(cohortEndDaysAgo)
+
+  // One big aggregate over the cohort joined with the auto-lost
+  // subscriber set. Single round-trip; the LEFT JOIN against the
+  // DISTINCT auto-lost subscriber CTE is the cleanest way to FILTER
+  // by event presence without correlated subqueries.
+  const calibrationResult = await db.execute(sql`
+    WITH cohort AS (
+      SELECT
+        s.id,
+        s.recovery_likelihood,
+        s.status,
+        s.founder_handoff_at
+      FROM wb_churned_subscribers s
+      WHERE s.classified_at >= now() - (${cohortStartDaysAgo}::int * interval '1 day')
+        AND s.classified_at <  now() - (${cohortEndDaysAgo}::int * interval '1 day')
+    ),
+    auto_lost_subs AS (
+      SELECT DISTINCT (properties->>'subscriberId')::uuid AS subscriber_id
+      FROM wb_events
+      WHERE name = 'subscriber_auto_lost'
+        AND created_at >= now() - (${cohortStartDaysAgo + 30}::int * interval '1 day')
+    )
+    SELECT
+      c.recovery_likelihood AS likelihood,
+      count(*)::int AS n,
+      count(*) FILTER (WHERE c.status = 'recovered')::int                  AS recovered,
+      count(*) FILTER (WHERE al.subscriber_id IS NOT NULL)::int            AS auto_lost,
+      count(*) FILTER (WHERE c.status = 'lost' AND al.subscriber_id IS NULL)::int AS lost_other,
+      count(*) FILTER (WHERE c.status IN ('pending', 'contacted'))::int    AS still_open
+    FROM cohort c
+    LEFT JOIN auto_lost_subs al ON al.subscriber_id = c.id
+    WHERE c.recovery_likelihood IS NOT NULL
+    GROUP BY c.recovery_likelihood
+  `)
+
+  const calRows = (calibrationResult.rows ?? []) as Array<Record<string, unknown>>
+  const byLikelihood: LikelihoodCalibrationRow[] = (['high', 'medium', 'low'] as const).map((lh) => {
+    const r = calRows.find((row) => row.likelihood === lh)
+    return {
+      likelihood: lh,
+      n:         Number(r?.n         ?? 0),
+      recovered: Number(r?.recovered ?? 0),
+      autoLost:  Number(r?.auto_lost ?? 0),
+      lostOther: Number(r?.lost_other?? 0),
+      stillOpen: Number(r?.still_open?? 0),
+    }
+  })
+
+  // Handoff vs. non-handoff conversion within the same cohort.
+  const handoffResult = await db.execute(sql`
+    SELECT
+      CASE WHEN s.founder_handoff_at IS NOT NULL THEN 'handoff' ELSE 'non_handoff' END AS cohort,
+      count(*)::int AS n,
+      count(*) FILTER (WHERE s.status = 'recovered')::int AS recovered
+    FROM wb_churned_subscribers s
+    WHERE s.classified_at >= now() - (${cohortStartDaysAgo}::int * interval '1 day')
+      AND s.classified_at <  now() - (${cohortEndDaysAgo}::int * interval '1 day')
+    GROUP BY cohort
+  `)
+
+  const hRows = (handoffResult.rows ?? []) as Array<Record<string, unknown>>
+  const handoffConversion: HandoffConversionRow[] = (['handoff', 'non_handoff'] as const).map((c) => {
+    const r = hRows.find((row) => row.cohort === c)
+    return {
+      cohort: c,
+      n:         Number(r?.n         ?? 0),
+      recovered: Number(r?.recovered ?? 0),
+    }
+  })
+
+  // Auto-lost reversal: subscribers who fired subscriber_auto_lost in
+  // the cohort window AND have status='recovered' now. These are the
+  // confirmed false negatives — read every one.
+  const reversalResult = await db.execute(sql`
+    WITH cohort_auto_lost AS (
+      SELECT DISTINCT (e.properties->>'subscriberId')::uuid AS subscriber_id
+      FROM wb_events e
+      WHERE e.name = 'subscriber_auto_lost'
+        AND e.created_at >= now() - (${cohortStartDaysAgo}::int * interval '1 day')
+        AND e.created_at <  now() - (${cohortEndDaysAgo}::int * interval '1 day')
+    )
+    SELECT
+      count(*)::int AS n,
+      count(*) FILTER (WHERE s.status = 'recovered')::int AS reversed
+    FROM cohort_auto_lost cal
+    JOIN wb_churned_subscribers s ON s.id = cal.subscriber_id
+  `)
+  const revRow = (reversalResult.rows?.[0] ?? {}) as Record<string, unknown>
+  const reversalN        = Number(revRow.n        ?? 0)
+  const reversalReversed = Number(revRow.reversed ?? 0)
+
+  // Pull a short sample so the UI can link to the actual cases.
+  // Capped at 10 — these are the cards the supervisor should read.
+  let reversedSample: AutoLostReversalSummary['reversedSample'] = []
+  if (reversalReversed > 0) {
+    const sampleResult = await db.execute(sql`
+      WITH cohort_auto_lost AS (
+        SELECT DISTINCT (e.properties->>'subscriberId')::uuid AS subscriber_id
+        FROM wb_events e
+        WHERE e.name = 'subscriber_auto_lost'
+          AND e.created_at >= now() - (${cohortStartDaysAgo}::int * interval '1 day')
+          AND e.created_at <  now() - (${cohortEndDaysAgo}::int * interval '1 day')
+      )
+      SELECT s.id AS subscriber_id, s.name, s.email, s.updated_at AS recovered_at
+      FROM cohort_auto_lost cal
+      JOIN wb_churned_subscribers s ON s.id = cal.subscriber_id
+      WHERE s.status = 'recovered'
+      ORDER BY s.updated_at DESC
+      LIMIT 10
+    `)
+    reversedSample = ((sampleResult.rows ?? []) as Array<Record<string, unknown>>).map((r) => ({
+      subscriberId: String(r.subscriber_id),
+      name:         r.name  === null ? null : String(r.name ?? ''),
+      email:        r.email === null ? null : String(r.email ?? ''),
+      recoveredAt:  r.recovered_at ? new Date(String(r.recovered_at)) : null,
+    }))
+  }
+
+  // Cohort total (for the header copy "n=287 classified between Mar 16 – Apr 15")
+  const totalResult = await db.execute(sql`
+    SELECT count(*)::int AS n
+    FROM wb_churned_subscribers s
+    WHERE s.classified_at >= now() - (${cohortStartDaysAgo}::int * interval '1 day')
+      AND s.classified_at <  now() - (${cohortEndDaysAgo}::int * interval '1 day')
+  `)
+  const total = Number((totalResult.rows?.[0] as Record<string, unknown> | undefined)?.n ?? 0)
+
+  return {
+    startDate,
+    endDate,
+    total,
+    byLikelihood,
+    handoffConversion,
+    autoLostReversal: {
+      n: reversalN,
+      reversed: reversalReversed,
+      reversedSample,
+    },
+  }
+}
+
+export interface ReengagementMatchRate {
+  windowDays: number
+  /** Eligible cohort — triggerNeedConfidence='high' classified within window. */
+  eligible: number
+  /** Eligible AND was emailed (has a wb_emails_sent row with type='reengagement'). */
+  emailed: number
+  /** Eligible AND `reengagement_expired_at` is set (9-month sweep terminated them). */
+  expired: number
+  /** Eligible AND neither emailed nor expired — still in the matcher window. */
+  pending: number
+}
+
+/**
+ * Block 7 — Re-engagement match rate.
+ *
+ * Of subscribers in the last `windowDays` days with
+ * `triggerNeedConfidence='high'` (Spec 65 — eligible for matching),
+ * what fraction were matched + emailed vs. expired without a match?
+ *
+ * Low match rate has two causes worth distinguishing:
+ *   - AI's triggerNeed text is too vague for the LLM matcher
+ *   - The merchant isn't shipping improvements that address subscriber asks
+ */
+export async function reengagementMatchRate(windowDays = 90): Promise<ReengagementMatchRate> {
+  const db = getDbReadOnly()
+  const result = await db.execute(sql`
+    WITH eligible AS (
+      SELECT s.id, s.reengagement_expired_at
+      FROM wb_churned_subscribers s
+      WHERE s.trigger_need_confidence = 'high'
+        AND s.classified_at >= now() - (${windowDays}::int * interval '1 day')
+    )
+    SELECT
+      count(*)::int AS eligible,
+      count(*) FILTER (
+        WHERE EXISTS (
+          SELECT 1 FROM wb_emails_sent es
+          WHERE es.subscriber_id = e.id
+            AND es.type = 'reengagement'
+        )
+      )::int AS emailed,
+      count(*) FILTER (
+        WHERE e.reengagement_expired_at IS NOT NULL
+      )::int AS expired
+    FROM eligible e
+  `)
+  const r = (result.rows?.[0] ?? {}) as Record<string, unknown>
+  const eligible = Number(r.eligible ?? 0)
+  const emailed  = Number(r.emailed  ?? 0)
+  const expired  = Number(r.expired  ?? 0)
+  // pending = eligible − emailed − expired, but a subscriber can be
+  // both "emailed" AND "expired" if they were re-engaged and then
+  // hit the 9-month sweep. Compute pending conservatively as
+  // "neither emailed nor expired" rather than via subtraction.
+  const pendingResult = await db.execute(sql`
+    SELECT count(*)::int AS pending
+    FROM wb_churned_subscribers s
+    WHERE s.trigger_need_confidence = 'high'
+      AND s.classified_at >= now() - (${windowDays}::int * interval '1 day')
+      AND s.reengagement_expired_at IS NULL
+      AND NOT EXISTS (
+        SELECT 1 FROM wb_emails_sent es
+        WHERE es.subscriber_id = s.id
+          AND es.type = 'reengagement'
+      )
+  `)
+  const pending = Number((pendingResult.rows?.[0] as Record<string, unknown> | undefined)?.pending ?? 0)
+  return { windowDays, eligible, emailed, expired, pending }
+}
+
+// ---------------------------------------------------------------------------
 // Spec 26 / pre-78 queries (kept until Phase D removes the old blocks)
 // ---------------------------------------------------------------------------
 
