@@ -17,13 +17,15 @@ import { z } from 'zod'
 
 import { MIN_THEME_SIZE } from '../lib/cluster-cancellations'
 
-// Mirror of the internal ThemeSchema for test purposes.
+// Mirror of the internal ThemeSchema for test purposes. The schema
+// itself accepts any non-empty subscriberIds array; the
+// MIN_THEME_SIZE filter runs as a separate pass after validation.
 const ThemeSchema = z.object({
   title:                  z.string().min(1).max(80),
   description:            z.string().min(1).max(280),
   category:               z.enum(['Price', 'Feature', 'Other']).nullable(),
   emoji:                  z.string().min(1).max(8),
-  subscriberIds:          z.array(z.string().uuid()).min(MIN_THEME_SIZE),
+  subscriberIds:          z.array(z.string().uuid()).min(1),
   sampleQuotes:           z.array(z.string().min(1)).min(1).max(5),
   addressesImprovementId: z.string().uuid().nullable(),
 })
@@ -56,9 +58,9 @@ describe('ClusterOutputSchema validation', () => {
     expect(res.success).toBe(true)
   })
 
-  it('rejects themes with fewer than MIN_THEME_SIZE subscribers', () => {
+  it('accepts themes with fewer than MIN_THEME_SIZE — the post-validation filter (not the schema) drops them', () => {
     const res = ClusterOutputSchema.safeParse({ themes: [validTheme({ subscriberIds: [UUID_A, UUID_B] })] })
-    expect(res.success).toBe(false)
+    expect(res.success).toBe(true)
   })
 
   it('rejects themes with non-UUID subscriber ids', () => {
