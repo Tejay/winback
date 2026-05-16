@@ -26,6 +26,7 @@ import { PromotionsSection, type PromotionView } from './promotions-section'
 import {
   WbPromotionMetadataSchema,
   formatPromotionTerms,
+  describePromotionRestrictions,
 } from '@/src/winback/lib/promotions'
 
 /**
@@ -100,15 +101,17 @@ export default async function ReasonsPage() {
     const parsed = WbPromotionMetadataSchema.safeParse(row.promotionMetadata)
     if (!parsed.success) continue
     const m = parsed.data
+    const { winbackChecks, merchantVerifies } = describePromotionRestrictions(m)
     promotionViews.push({
       id:           row.id,
       code:         m.code,
       description:  formatPromotionTerms(m),
       target:       m.appliesToPriceIds.length === 0 ? 'All plans' : `${m.appliesToPriceIds.length} plan${m.appliesToPriceIds.length === 1 ? '' : 's'}`,
       active:       m.active && row.status === 'published',
-      matchedCount: row.matchedCount,
       stripePromotionCodeId: m.stripePromotionCodeId,
       stripeAccountId: customer.stripeAccountId,
+      winbackChecks,
+      merchantVerifies,
     })
   }
 
@@ -173,10 +176,11 @@ export default async function ReasonsPage() {
             }))} />
           </div>
 
-          {/* Spec 78 — Stripe-native promotions, read-only */}
+          {/* Spec 78 — Stripe-native promotions, single-select */}
           <PromotionsSection
             initial={promotionViews}
             promotionsEnabled={!!customer.promotionsEnabled}
+            selectedId={customer.selectedPromotionImprovementId ?? null}
             stripeAccountId={customer.stripeAccountId}
           />
         </div>

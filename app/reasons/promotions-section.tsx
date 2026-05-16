@@ -4,23 +4,30 @@ import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 
 /**
- * Spec 78 — read-only list of Stripe-synced promotion codes for the
- * merchant. Editing happens in Stripe Dashboard. The Refresh button
- * triggers a manual re-pull (the webhook is the primary sync path).
+ * Spec 78 followup — single-selected-promotion UI.
  *
- * Visual matches the design system tokens in CLAUDE.md: rounded-2xl
- * card, blue-600 section label, status badges using the existing
- * palette.
+ * The merchant sees every active Stripe promotion code synced into
+ * Winback as a radio row, and picks at most one. Winback emails that
+ * promo to subscribers who pass the four bulletproof gates (active,
+ * redeemBy, maxRedemptions, appliesToPriceIds); anything Stripe checks
+ * at redemption that we don't pre-check (first_time_transaction,
+ * minimum_amount, currency mismatch, unknown restrictions) is the
+ * merchant's responsibility — shown verbatim under "You verify" so the
+ * pick is informed.
+ *
+ * The promotions-enabled toggle lives on this same card so the merchant
+ * sees their full promo state in one place.
  */
 export interface PromotionView {
-  id:            string
-  code:          string
-  description:   string         // human-readable terms
-  target:        string         // 'All plans' | comma-joined plan names
-  active:        boolean
-  matchedCount:  number
-  stripePromotionCodeId: string
-  stripeAccountId: string | null
+  id:                     string
+  code:                   string
+  description:            string         // human-readable terms ("25% off · 3 months")
+  target:                 string         // "All plans" | "N plans"
+  active:                 boolean
+  stripePromotionCodeId:  string
+  stripeAccountId:        string | null
+  winbackChecks:          string[]       // restrictions we DO enforce per-subscriber
+  merchantVerifies:       string[]       // restrictions we DON'T enforce — merchant problem
 }
 
 function StripeLink({ accountId, promotionCodeId }: { accountId: string | null; promotionCodeId: string }) {
@@ -43,17 +50,75 @@ function StripeLink({ accountId, promotionCodeId }: { accountId: string | null; 
 export function PromotionsSection({
   initial,
   promotionsEnabled,
+  selectedId,
   stripeAccountId,
 }: {
   initial: PromotionView[]
   promotionsEnabled: boolean
+  selectedId: string | null
   stripeAccountId: string | null
 }) {
   const router = useRouter()
   const [refreshing, setRefreshing] = useState(false)
   const [refreshError, setRefreshError] = useState<string | null>(null)
   const [lastSync, setLastSync] = useState<{ synced: number; archived: number } | null>(null)
+
+  // Optimistic local state for the toggle + selection so the UI doesn't
+  // wait a round-trip before reflecting the pick.
+  const [enabledLocal, setEnabledLocal] = useState(promotionsEnabled)
+  const [selectedLocal, setSelectedLocal] = useState<string | null>(selectedId)
+  const [pendingConfirm, setPendingConfirm] = useState<PromotionView | null>(null)
   const [, startTransition] = useTransition()
+  const [saveError, setSaveError] = useState<string | null>(null)
+
+  async function patch(body: Record<string, unknown>) {
+    setSaveError(null)
+    const res = await fetch('/api/customer/promotions-enabled', {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    if (!res.ok) {
+      const txt = await res.text().catch(() => '')
+      throw new Error(txt || `HTTP ${res.status}`)
+    }
+  }
+
+  async function toggleEnabled(next: boolean) {
+    const prev = enabledLocal
+    setEnabledLocal(next)
+    try {
+      await patch({ enabled: next })
+      startTransition(() => router.refresh())
+    } catch (err) {
+      setEnabledLocal(prev)
+      setSaveError(err instanceof Error ? err.message : 'Save failed')
+    }
+  }
+
+  function requestSelect(promo: PromotionView | null) {
+    // Clearing or selecting a promo with no merchant-verified restrictions
+    // can apply directly. Otherwise show the confirm dialog first so the
+    // merchant explicitly acknowledges the gaps.
+    if (!promo || promo.merchantVerifies.length === 0) {
+      void applySelect(promo?.id ?? null)
+      return
+    }
+    setPendingConfirm(promo)
+  }
+
+  async function applySelect(id: string | null) {
+    const prev = selectedLocal
+    setSelectedLocal(id)
+    setPendingConfirm(null)
+    try {
+      await patch({ selectedPromotionImprovementId: id })
+      startTransition(() => router.refresh())
+    } catch (err) {
+      setSelectedLocal(prev)
+      setSaveError(err instanceof Error ? err.message : 'Save failed')
+    }
+  }
 
   async function refresh() {
     setRefreshing(true)
@@ -79,7 +144,7 @@ export function PromotionsSection({
             Promotions
           </div>
           <p className="text-xs text-slate-500 mt-1">
-            Synced from Stripe ·{' '}
+            Pick one promotion to send to subscribers who cancel for price. Synced from Stripe ·{' '}
             <a
               href={stripeAccountId
                 ? `https://dashboard.stripe.com/${stripeAccountId}/promotion_codes`
@@ -103,8 +168,30 @@ export function PromotionsSection({
         </button>
       </div>
 
+      {/* Toggle row */}
+      <div className="mt-5 flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50 px-4 py-3">
+        <div>
+          <div className="text-sm font-medium text-slate-900">Send promo emails to price-cancellers</div>
+          <div className="text-xs text-slate-500 mt-0.5">
+            When off, no promo is ever attached, regardless of selection below.
+          </div>
+        </div>
+        <label className="relative inline-flex items-center cursor-pointer">
+          <input
+            type="checkbox"
+            className="sr-only peer"
+            checked={enabledLocal}
+            onChange={(e) => toggleEnabled(e.target.checked)}
+          />
+          <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-500 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600" />
+        </label>
+      </div>
+
       {refreshError && (
         <div className="mt-3 text-xs text-rose-700">{refreshError}</div>
+      )}
+      {saveError && (
+        <div className="mt-3 text-xs text-rose-700">{saveError}</div>
       )}
       {lastSync && !refreshError && (
         <div className="mt-3 text-xs text-slate-500">
@@ -119,50 +206,156 @@ export function PromotionsSection({
           webhook to land.
         </div>
       ) : (
-        <div className="mt-5">
-          <div className="grid grid-cols-12 gap-2 text-xs font-semibold uppercase tracking-wide text-slate-400 pb-3 border-b border-slate-100">
-            <div className="col-span-3">Code</div>
-            <div className="col-span-4">Terms</div>
-            <div className="col-span-2">Target</div>
-            <div className="col-span-2">Status</div>
-            <div className="col-span-1"></div>
-          </div>
-          {initial.map((p) => (
-            <div
-              key={p.id}
-              className="grid grid-cols-12 gap-2 py-3 border-b border-slate-100 items-center text-sm last:border-b-0"
-            >
-              <div className="col-span-3 font-mono text-slate-900">{p.code}</div>
-              <div className="col-span-4 text-slate-600">{p.description}</div>
-              <div className="col-span-2 text-slate-600 truncate" title={p.target}>{p.target}</div>
-              <div className="col-span-2">
-                {p.active ? (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-green-50 text-green-700 border border-green-200 px-2.5 py-0.5 text-xs font-medium">
-                    ● Active
-                  </span>
-                ) : (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 text-slate-500 border border-slate-200 px-2.5 py-0.5 text-xs font-medium">
-                    ○ Inactive
-                  </span>
-                )}
-              </div>
-              <div className="col-span-1 text-right">
-                <StripeLink accountId={p.stripeAccountId} promotionCodeId={p.stripePromotionCodeId} />
+        <div className="mt-5 space-y-2">
+          {/* "None" row so the merchant can clear without archiving in Stripe */}
+          <label className="flex items-start gap-3 rounded-xl border border-slate-100 p-4 cursor-pointer hover:bg-slate-50">
+            <input
+              type="radio"
+              name="selected-promo"
+              className="mt-1"
+              checked={selectedLocal === null}
+              onChange={() => requestSelect(null)}
+            />
+            <div>
+              <div className="text-sm font-medium text-slate-900">None</div>
+              <div className="text-xs text-slate-500 mt-0.5">
+                No promo attached. Price-cancellers get the standard re-engagement email.
               </div>
             </div>
-          ))}
+          </label>
+
+          {initial.map((p) => {
+            const selected = selectedLocal === p.id
+            const disabled = !p.active
+            return (
+              <label
+                key={p.id}
+                className={`flex items-start gap-3 rounded-xl border p-4 cursor-pointer ${
+                  selected
+                    ? 'border-blue-500 bg-blue-50'
+                    : 'border-slate-100 hover:bg-slate-50'
+                } ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+              >
+                <input
+                  type="radio"
+                  name="selected-promo"
+                  className="mt-1"
+                  checked={selected}
+                  disabled={disabled}
+                  onChange={() => !disabled && requestSelect(p)}
+                />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-sm text-slate-900">{p.code}</span>
+                    <span className="text-sm text-slate-500">·</span>
+                    <span className="text-sm text-slate-700">{p.description}</span>
+                    {!p.active && (
+                      <span className="ml-2 inline-flex items-center gap-1 rounded-full bg-slate-100 text-slate-500 border border-slate-200 px-2 py-0.5 text-xs">
+                        Inactive in Stripe
+                      </span>
+                    )}
+                    <span className="ml-auto">
+                      <StripeLink accountId={p.stripeAccountId} promotionCodeId={p.stripePromotionCodeId} />
+                    </span>
+                  </div>
+
+                  <div className="mt-2 grid grid-cols-2 gap-3 text-xs">
+                    <div>
+                      <div className="font-semibold text-emerald-700 uppercase tracking-wide text-[10px]">
+                        Winback checks
+                      </div>
+                      <ul className="mt-1 text-slate-600 space-y-0.5">
+                        {p.winbackChecks.map((c) => (
+                          <li key={c}>· {c}</li>
+                        ))}
+                      </ul>
+                    </div>
+                    <div>
+                      <div className="font-semibold text-amber-700 uppercase tracking-wide text-[10px]">
+                        You verify
+                      </div>
+                      {p.merchantVerifies.length === 0 ? (
+                        <div className="mt-1 text-slate-400 italic">— none —</div>
+                      ) : (
+                        <ul className="mt-1 text-slate-600 space-y-0.5">
+                          {p.merchantVerifies.map((c) => (
+                            <li key={c}>· {c}</li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </label>
+            )
+          })}
         </div>
       )}
 
       <div className="mt-5 p-4 bg-blue-50 border border-blue-100 rounded-xl text-xs text-blue-900 leading-relaxed">
-        <strong>Heads up.</strong> Promotions only fire when{' '}
-        {promotionsEnabled ? (
-          <>the toggle in <a href="/settings#billing" className="underline">Settings</a> is on (it is)</>
-        ) : (
-          <>the toggle in <a href="/settings#billing" className="underline">Settings</a> is on (currently off)</>
-        )}{' '}
-        and the customer cited price as their cancellation reason.
+        <strong>How it works.</strong> Winback only emails the promo above when{' '}
+        the toggle is on AND the subscriber cancelled for price AND the four
+        Winback-checked restrictions pass. Restrictions under <em>You verify</em>{' '}
+        are evaluated by Stripe at click time — if a subscriber doesn&apos;t
+        meet them, they&apos;ll see a Stripe error on the reactivation page.
+        Pick a promo whose restrictions match the audience you want to reach.
       </div>
+
+      <div className="mt-3 p-4 bg-slate-50 border border-slate-100 rounded-xl text-xs text-slate-600 leading-relaxed">
+        <strong>About our fee.</strong> Winback&apos;s 1× recovery fee is
+        charged on the customer&apos;s first paid invoice after they
+        reactivate — so promos reduce both the customer&apos;s payment and
+        our fee in lockstep.{' '}
+        <a href="/settings#billing" className="underline hover:text-slate-900">
+          Billing details ↗
+        </a>
+      </div>
+
+      {/* Confirm dialog for promos with uncovered restrictions */}
+      {pendingConfirm && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4"
+          onClick={() => setPendingConfirm(null)}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-base font-semibold text-slate-900">
+              Confirm {pendingConfirm.code}
+            </h3>
+            <p className="mt-2 text-sm text-slate-600">
+              This promo has restrictions Winback can&apos;t pre-check for each
+              subscriber:
+            </p>
+            <ul className="mt-3 rounded-xl bg-amber-50 border border-amber-100 p-3 text-sm text-amber-900 space-y-1">
+              {pendingConfirm.merchantVerifies.map((c) => (
+                <li key={c}>· {c}</li>
+              ))}
+            </ul>
+            <p className="mt-3 text-sm text-slate-600">
+              Subscribers who don&apos;t meet these will see a Stripe error
+              after clicking the link in their email.
+            </p>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setPendingConfirm(null)}
+                className="rounded-full border border-slate-200 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void applySelect(pendingConfirm.id)}
+                className="rounded-full bg-blue-600 text-white px-4 py-2 text-sm hover:bg-blue-700"
+              >
+                Use {pendingConfirm.code}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

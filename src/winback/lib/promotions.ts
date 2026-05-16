@@ -45,6 +45,17 @@ export const WbPromotionMetadataSchema = z.object({
   timesRedeemed:         z.number().int(),
   active:                z.boolean(),
   syncedAt:              z.string(),
+  // Spec 78 followup — raw Stripe promotion_code.restrictions (first-time-
+  // transaction flag, minimum_amount, currency_options, plus any future
+  // fields). Winback never pre-checks these per-subscriber — the merchant
+  // is responsible for picking a promo whose restrictions match their
+  // intended audience. We surface them in /reasons so the merchant sees
+  // what they're signing up for. Nullable for promo rows synced before
+  // this field existed.
+  restrictions:          z.record(z.string(), z.unknown()).nullable().optional(),
+  // Promotion code's own first_time_transaction flag (lifted up for easy
+  // UI summary; also present in `restrictions` raw).
+  firstTimeTransaction:  z.boolean().nullable().optional(),
 })
 
 export type WbPromotionMetadata = z.infer<typeof WbPromotionMetadataSchema>
@@ -113,7 +124,74 @@ export async function buildPromotionMetadata(
     // (a coupon can be expired/used-up while its promotion code is "active").
     active:                Boolean(promo.active) && Boolean(coupon.valid),
     syncedAt:              new Date().toISOString(),
+    // Captured verbatim so the UI can list every restriction Stripe will
+    // evaluate at redemption — including ones Winback doesn't pre-check.
+    restrictions:          (promo.restrictions as unknown as Record<string, unknown> | undefined) ?? null,
+    firstTimeTransaction:  promo.restrictions?.first_time_transaction ?? null,
   }
+}
+
+// --------------------------------------------------------------------------
+// Restriction disclosure — what's safe vs. what the merchant verifies
+// --------------------------------------------------------------------------
+/**
+ * Spec 78 followup — Winback only pre-checks four restriction fields
+ * deterministically against each subscriber: active state, redeemBy,
+ * maxRedemptions, and appliesToPriceIds. Anything else Stripe will reject
+ * at redemption (first_time_transaction, minimum_amount, customer pin,
+ * currency mismatch on amount-off coupons, plus future restriction fields
+ * we don't know about) is the merchant's responsibility to vet before
+ * picking a promo.
+ *
+ * Returns short human strings for each bucket. Empty array = no
+ * uncovered restrictions, safe to send to any subscriber the merchant's
+ * eligibility criteria allow.
+ */
+export function describePromotionRestrictions(
+  p: WbPromotionMetadata,
+): { winbackChecks: string[]; merchantVerifies: string[] } {
+  const winbackChecks: string[] = []
+  const merchantVerifies: string[] = []
+
+  // Always-checked
+  winbackChecks.push(p.active ? 'active' : 'inactive')
+  if (p.redeemBy) {
+    winbackChecks.push(`expires ${new Date(p.redeemBy).toLocaleDateString()}`)
+  }
+  if (p.maxRedemptions !== null) {
+    winbackChecks.push(`${p.timesRedeemed}/${p.maxRedemptions} redemptions`)
+  }
+  if (p.appliesToPriceIds.length === 0) {
+    winbackChecks.push('all plans')
+  } else {
+    winbackChecks.push(`${p.appliesToPriceIds.length} plan${p.appliesToPriceIds.length === 1 ? '' : 's'}`)
+  }
+
+  // Merchant-verified
+  if (p.firstTimeTransaction) {
+    merchantVerifies.push('first-time customers only')
+  }
+  const r = p.restrictions ?? {}
+  const minAmount = r.minimum_amount as number | undefined
+  const minCurrency = r.minimum_amount_currency as string | undefined
+  if (typeof minAmount === 'number' && minAmount > 0) {
+    merchantVerifies.push(
+      `min ${(minAmount / 100).toFixed(2)} ${(minCurrency ?? 'usd').toUpperCase()}`,
+    )
+  }
+  // Amount-off coupons only redeem in the coupon's currency
+  if (p.amountOffCents !== null && p.currency) {
+    merchantVerifies.push(`${p.currency.toUpperCase()} subscriptions only`)
+  }
+  // Unknown restriction keys (Stripe adds new ones over time)
+  const knownKeys = new Set(['first_time_transaction', 'minimum_amount', 'minimum_amount_currency', 'currency_options'])
+  for (const k of Object.keys(r)) {
+    if (!knownKeys.has(k) && r[k] !== null && r[k] !== undefined && r[k] !== false) {
+      merchantVerifies.push(`Stripe restriction "${k}" — Winback doesn't pre-check this`)
+    }
+  }
+
+  return { winbackChecks, merchantVerifies }
 }
 
 // --------------------------------------------------------------------------
@@ -202,6 +280,9 @@ export async function upsertPromotionImprovement(
         description: metadata.name ?? `Stripe promotion code ${metadata.code}`,
       })
       .where(eq(improvements.id, match.id))
+    if (!metadata.active) {
+      await clearSelectionIfMatches(customerId, match.id)
+    }
     return { created: false, archivedExisting: false }
   }
 
@@ -223,7 +304,10 @@ export async function upsertPromotionImprovement(
 
 /**
  * Marks a promotion as archived (the coupon was deleted or the promotion
- * code deactivated in Stripe). Idempotent.
+ * code deactivated in Stripe). Idempotent. Also clears the customer's
+ * selectedPromotionImprovementId if it pointed at this row — the FK is
+ * ON DELETE SET NULL, but we archive (not delete), so the cascade
+ * doesn't fire and we have to null explicitly.
  */
 export async function archivePromotionImprovement(
   customerId: string,
@@ -247,7 +331,10 @@ export async function archivePromotionImprovement(
   })
 
   if (!match) return { archived: false }
-  if (match.status === 'archived') return { archived: false }
+  if (match.status === 'archived') {
+    await clearSelectionIfMatches(customerId, match.id)
+    return { archived: false }
+  }
 
   await db
     .update(improvements)
@@ -258,7 +345,25 @@ export async function archivePromotionImprovement(
     })
     .where(eq(improvements.id, match.id))
 
+  await clearSelectionIfMatches(customerId, match.id)
+
   return { archived: true }
+}
+
+/**
+ * Nulls wb_customers.selected_promotion_improvement_id when it currently
+ * points at the given improvement id. No-op otherwise. Called whenever a
+ * promo row is archived so the merchant's selection stays consistent
+ * with what's actually available.
+ */
+async function clearSelectionIfMatches(customerId: string, improvementId: string): Promise<void> {
+  await db
+    .update(customers)
+    .set({ selectedPromotionImprovementId: null, updatedAt: new Date() })
+    .where(and(
+      eq(customers.id, customerId),
+      eq(customers.selectedPromotionImprovementId, improvementId),
+    ))
 }
 
 /**
@@ -323,6 +428,7 @@ export async function syncActivePromotionsFromStripe(
       .update(improvements)
       .set({ status: 'archived', archivedAt: new Date(), updatedAt: new Date() })
       .where(eq(improvements.id, row.id))
+    await clearSelectionIfMatches(customerId, row.id)
     archivedCount++
   }
 
