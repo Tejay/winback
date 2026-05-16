@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 
 /**
  * Spec 65 Phase 2 — Winback Reasons client.
@@ -27,9 +27,15 @@ interface Reason {
 const MAX_ACTIVE = 10
 const TOAST_TIMEOUT_MS = 10_000
 
+interface AddPrefill {
+  title?:            string
+  description?:      string
+  addressesPattern?: string
+}
+
 type ModalState =
   | { kind: 'closed' }
-  | { kind: 'add' }
+  | { kind: 'add'; prefill?: AddPrefill }
   | { kind: 'edit'; reason: Reason }
 
 interface PendingUndo {
@@ -43,10 +49,36 @@ interface Props {
 
 export function ReasonsClient({ initialReasons }: Props) {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [reasons, setReasons] = useState(initialReasons)
   const [modal, setModal] = useState<ModalState>({ kind: 'closed' })
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [pendingUndos, setPendingUndos] = useState<PendingUndo[]>([])
+
+  // Spec 79 — pre-fill the Add modal when the user clicked "+ Add as
+  // improvement" on a cancellation theme. Theme rows link to
+  // /reasons?prefill_title=...&prefill_description=...
+  // We read once on mount, open the modal pre-filled, then clear the
+  // params so a refresh doesn't keep re-opening the modal.
+  useEffect(() => {
+    const title = searchParams.get('prefill_title')
+    const description = searchParams.get('prefill_description')
+    const addressesPattern = searchParams.get('prefill_pattern')
+    if (title || description || addressesPattern) {
+      setModal({
+        kind: 'add',
+        prefill: {
+          title:            title ?? undefined,
+          description:      description ?? undefined,
+          addressesPattern: addressesPattern ?? undefined,
+        },
+      })
+      router.replace('/reasons', { scroll: false })
+    }
+    // Intentionally only run once on first mount — subsequent searchParams
+    // changes after the replace() are our own and should be ignored.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const atCap = reasons.length >= MAX_ACTIVE
 
@@ -172,6 +204,7 @@ export function ReasonsClient({ initialReasons }: Props) {
         <ReasonFormModal
           mode={modal.kind}
           initial={modal.kind === 'edit' ? modal.reason : undefined}
+          prefill={modal.kind === 'add' ? modal.prefill : undefined}
           onClose={() => setModal({ kind: 'closed' })}
           onSaved={(updated) => {
             setReasons((prev) => {
@@ -304,20 +337,22 @@ function UndoToast({ undo, onUndo }: { undo: PendingUndo; onUndo: () => void }) 
 function ReasonFormModal({
   mode,
   initial,
+  prefill,
   onClose,
   onSaved,
   onError,
 }: {
   mode: 'add' | 'edit'
   initial?: Reason
+  prefill?: AddPrefill
   onClose: () => void
   onSaved: (r: Reason) => void
   onError: (msg: string) => void
 }) {
-  const [title, setTitle] = useState(initial?.title ?? '')
-  const [description, setDescription] = useState(initial?.description ?? '')
+  const [title, setTitle] = useState(initial?.title ?? prefill?.title ?? '')
+  const [description, setDescription] = useState(initial?.description ?? prefill?.description ?? '')
   const [dateShipped, setDateShipped] = useState(initial?.dateShipped ?? new Date().toISOString().slice(0, 10))
-  const [addressesPattern, setAddressesPattern] = useState(initial?.addressesPattern ?? '')
+  const [addressesPattern, setAddressesPattern] = useState(initial?.addressesPattern ?? prefill?.addressesPattern ?? '')
   const [confirmed, setConfirmed] = useState(false)
   const [saving, setSaving] = useState(false)
 

@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Cancellation themes — mockup</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; }
+  .label-blue { color: #2563eb; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; }
+  .annotation { background: #fef3c7; border: 1px dashed #f59e0b; border-radius: 8px; padding: 10px 12px; font-size: 11px; color: #92400e; line-height: 1.4; }
+</style>
+</head>
+<body class="bg-[#f5f5f5]">
+
+<!-- Stand-in nav so the page feels like /reasons -->
+<nav class="bg-white border-b border-slate-200">
+  <div class="max-w-5xl mx-auto px-6 flex items-center justify-between h-14">
+    <div class="flex items-center gap-2">
+      <div class="w-7 h-7 rounded-xl bg-blue-500 flex items-center justify-center text-white font-semibold">w</div>
+      <span class="font-semibold text-slate-900">winback</span>
+    </div>
+    <div class="flex items-center gap-1">
+      <a class="text-slate-500 px-4 py-1.5 text-sm font-medium">Dashboard</a>
+      <a class="bg-[#0f172a] text-white rounded-full px-4 py-1.5 text-sm font-medium">Reasons</a>
+      <a class="text-slate-500 px-4 py-1.5 text-sm font-medium">Settings</a>
+    </div>
+    <div class="flex items-center gap-2">
+      <div class="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center text-white text-sm font-medium">T</div>
+      <span class="text-sm text-slate-700 font-medium">Thejas</span>
+    </div>
+  </div>
+</nav>
+
+<!-- Page header (same as today's /reasons) -->
+<div class="max-w-5xl mx-auto px-6 pt-10 pb-2">
+  <p class="label-blue">Winback</p>
+  <h1 class="text-4xl font-bold mt-1 text-slate-900">Winback reasons — why customers return.</h1>
+  <p class="text-sm text-slate-500 mt-3 max-w-2xl">
+    This is how cancelled customers learn you fixed what they wanted. Add a short, specific line per shipped reason. We do the matching and emailing. Up to <strong>10 active reasons</strong> at a time.
+  </p>
+</div>
+
+<!-- ============================================================ -->
+<!--  POST-SHIP INSIGHT                                           -->
+<!--  Surfaces when customers cancel after you shipped a fix      -->
+<!--  but their cancellation theme matches what you fixed.        -->
+<!--  Framed as actionable insight, not a warning.                -->
+<!-- ============================================================ -->
+<section class="max-w-5xl mx-auto px-6 pt-6">
+  <div class="bg-indigo-50/60 border border-indigo-200 rounded-2xl px-6 py-4 flex items-start gap-3">
+    <div class="text-lg leading-none mt-0.5">💡</div>
+    <div class="flex-1 min-w-0">
+      <div class="flex items-center gap-2">
+        <span class="text-[10px] font-semibold uppercase tracking-widest text-indigo-700">Insight</span>
+        <span class="text-xs text-indigo-500">post-ship feedback</span>
+      </div>
+      <div class="text-sm font-semibold text-indigo-900 mt-1">Customers still cite &ldquo;Bulk CSV&rdquo; after you shipped it.</div>
+      <p class="text-sm text-indigo-900/80 mt-1 leading-relaxed">
+        You shipped <span class="font-medium">&ldquo;Bulk CSV import — up to 100K rows&rdquo;</span> 18 days ago. Since then, <strong>3 customers</strong> cancelled mentioning the same area — here&rsquo;s where the current version is falling short.
+      </p>
+      <details class="mt-2 group">
+        <summary class="text-xs text-indigo-800 font-medium underline hover:no-underline cursor-pointer select-none">See what they said ▸</summary>
+        <ul class="mt-2 space-y-1.5 pl-3 border-l-2 border-indigo-200">
+          <li class="text-xs text-indigo-900 italic">"Bulk import still chokes on multi-line cells. Needed proper CSV escaping, not just bigger row limits."</li>
+          <li class="text-xs text-indigo-900 italic">"100K rows is nice but no way to map fields without re-uploading. Switching to a tool that has a real import wizard."</li>
+          <li class="text-xs text-indigo-900 italic">"Tried the new bulk import last week — still no way to update existing rows, only insert. Cancelling."</li>
+        </ul>
+      </details>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!--  THE NEW THING: Cancellation themes card                     -->
+<!--  Clusters UNMATCHED cancellations only — by definition       -->
+<!--  these are the gaps your current reasons aren't catching.    -->
+<!-- ============================================================ -->
+<section class="max-w-5xl mx-auto px-6 pt-4">
+  <div class="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+
+    <!-- Card header -->
+    <div class="px-6 py-5 border-b border-slate-100 flex items-start justify-between gap-4">
+      <div>
+        <p class="label-blue">What your cancelled customers asked for</p>
+        <h3 class="text-lg font-semibold text-slate-900 mt-1">Top cancellation themes — last 90 days</h3>
+        <p class="text-sm text-slate-500 mt-1">
+          Clustered weekly by AI from cancellations not yet addressed by an existing reason. Themes with 3+ customers surface here. Use this to decide what to ship next.
+        </p>
+      </div>
+      <div class="text-right text-xs text-slate-400 shrink-0 pt-1">
+        Last clustered <span class="text-slate-600 font-medium">3 days ago</span>
+        <div class="text-slate-400 mt-0.5">Next run: Sun</div>
+      </div>
+    </div>
+
+    <!-- Theme rows -->
+    <ul class="divide-y divide-slate-100">
+
+      <!-- Theme 1 -->
+      <li class="px-6 py-5 hover:bg-slate-50/40">
+        <div class="flex items-start gap-4">
+          <div class="w-10 h-10 rounded-full bg-red-50 border border-red-200 flex items-center justify-center flex-shrink-0 text-lg">🔥</div>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2 flex-wrap">
+              <h4 class="font-semibold text-slate-900">Native Slack integration</h4>
+              <span class="rounded-full px-2.5 py-0.5 text-xs font-medium bg-red-50 text-red-700 border border-red-200">5 customers</span>
+              <span class="rounded-full px-2.5 py-0.5 text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200">Feature</span>
+            </div>
+            <p class="text-sm text-slate-600 mt-1.5">Wanted a first-party Slack app with channel routing, not just the Zapier workaround.</p>
+            <details class="mt-2 group">
+              <summary class="text-xs text-slate-500 cursor-pointer hover:text-slate-700 select-none">In their own words ▸</summary>
+              <ul class="mt-2 space-y-1.5 pl-3 border-l-2 border-slate-100">
+                <li class="text-xs text-slate-600 italic">"If you ship native Slack integration I'll absolutely come back. The Zapier route is too brittle for our team."</li>
+                <li class="text-xs text-slate-600 italic">"We need real Slack support with channel routing — moving to Linear which has it built-in."</li>
+                <li class="text-xs text-slate-600 italic">"Cancelling for now, ping me when there's a proper Slack app — would re-sub same day."</li>
+              </ul>
+            </details>
+          </div>
+          <button class="bg-[#0f172a] text-white rounded-full px-4 py-2 text-sm font-medium hover:bg-[#1e293b] flex-shrink-0">+ Add as improvement</button>
+        </div>
+      </li>
+
+      <!-- Theme 2 -->
+      <li class="px-6 py-5 hover:bg-slate-50/40">
+        <div class="flex items-start gap-4">
+          <div class="w-10 h-10 rounded-full bg-amber-50 border border-amber-200 flex items-center justify-center flex-shrink-0 text-lg">📊</div>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2 flex-wrap">
+              <h4 class="font-semibold text-slate-900">SAML / SSO for enterprise</h4>
+              <span class="rounded-full px-2.5 py-0.5 text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200">4 customers</span>
+              <span class="rounded-full px-2.5 py-0.5 text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200">Feature</span>
+            </div>
+            <p class="text-sm text-slate-600 mt-1.5">Compliance teams blocked renewals because there&rsquo;s no SAML or SCIM. All on annual plans.</p>
+            <details class="mt-2 group">
+              <summary class="text-xs text-slate-500 cursor-pointer hover:text-slate-700 select-none">In their own words ▸</summary>
+              <ul class="mt-2 space-y-1.5 pl-3 border-l-2 border-slate-100">
+                <li class="text-xs text-slate-600 italic">"Our IT team said no SAML, no renewal. Hard requirement."</li>
+                <li class="text-xs text-slate-600 italic">"Need SSO for SOC2 — happy to talk when it lands."</li>
+              </ul>
+            </details>
+          </div>
+          <button class="bg-[#0f172a] text-white rounded-full px-4 py-2 text-sm font-medium hover:bg-[#1e293b] flex-shrink-0">+ Add as improvement</button>
+        </div>
+      </li>
+
+      <!-- Theme 3 -->
+      <li class="px-6 py-5 hover:bg-slate-50/40">
+        <div class="flex items-start gap-4">
+          <div class="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center flex-shrink-0 text-lg">🌱</div>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2 flex-wrap">
+              <h4 class="font-semibold text-slate-900">Mobile app — was promised, never shipped</h4>
+              <span class="rounded-full px-2.5 py-0.5 text-xs font-medium bg-slate-100 text-slate-700 border border-slate-200">3 customers</span>
+              <span class="rounded-full px-2.5 py-0.5 text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200">Feature</span>
+            </div>
+            <p class="text-sm text-slate-600 mt-1.5">Customers on the road want to check status from a phone.</p>
+            <details class="mt-2 group">
+              <summary class="text-xs text-slate-500 cursor-pointer hover:text-slate-700 select-none">In their own words ▸</summary>
+              <ul class="mt-2 space-y-1.5 pl-3 border-l-2 border-slate-100">
+                <li class="text-xs text-slate-600 italic">"The mobile app was on the roadmap when I signed up. It's been a year."</li>
+                <li class="text-xs text-slate-600 italic">"Need to check in from my phone during meetings. Web only is a dealbreaker."</li>
+              </ul>
+            </details>
+          </div>
+          <button class="bg-[#0f172a] text-white rounded-full px-4 py-2 text-sm font-medium hover:bg-[#1e293b] flex-shrink-0">+ Add as improvement</button>
+        </div>
+      </li>
+
+    </ul>
+
+    <!-- Footer -->
+    <div class="px-6 py-3 bg-slate-50 border-t border-slate-100 text-xs text-slate-500 flex justify-between items-center">
+      <span><strong>3 themes</strong> from 16 unmatched cancellations · 7 single complaints filtered out</span>
+      <a class="text-blue-600 hover:underline cursor-pointer">Show single complaints (7) →</a>
+    </div>
+  </div>
+
+  <div class="mt-3 grid grid-cols-2 gap-3">
+    <div class="annotation"><strong>Only unmatched cancellations</strong> are clustered — themes here are real gaps your current reasons aren&rsquo;t catching.</div>
+    <div class="annotation"><strong>"+ Add as improvement"</strong> pre-fills the editor with the theme title + a regex that matches the quotes. One click → next cron run notifies the matched customers.</div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!--  Existing /reasons editor — unchanged, shown for context     -->
+<!-- ============================================================ -->
+<section class="max-w-5xl mx-auto px-6 pt-10">
+  <div class="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+    <div class="px-6 py-5 border-b border-slate-100 flex items-center justify-between">
+      <div>
+        <p class="label-blue">Active reasons</p>
+        <h3 class="text-lg font-semibold mt-1 text-slate-900">3 / 10 active improvements</h3>
+        <p class="text-sm text-slate-500 mt-1">Latest first. Most merchants add one every 2 months.</p>
+      </div>
+      <button class="bg-[#0f172a] text-white rounded-full px-5 py-2 text-sm font-medium hover:bg-[#1e293b]">+ Add an improvement</button>
+    </div>
+    <div class="px-6 py-8 text-center text-sm text-slate-400">
+      (existing improvements list renders here — unchanged)
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!--  Empty state preview                                         -->
+<!-- ============================================================ -->
+<section class="max-w-5xl mx-auto px-6 pt-12 pb-12">
+  <h2 class="label-blue mb-3">Empty state — new merchant, not enough data yet</h2>
+  <div class="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
+    <p class="label-blue">What your cancelled customers asked for</p>
+    <h3 class="text-lg font-semibold text-slate-900 mt-1">Not enough data yet</h3>
+    <p class="text-sm text-slate-500 mt-1 max-w-xl leading-relaxed">
+      Themes appear once you&rsquo;ve accumulated <strong class="text-slate-700">3 months of cancellation history</strong> — or sooner if you hit enough volume to cluster meaningfully. We&rsquo;ll start showing themes here automatically as soon as the data&rsquo;s ready.
+    </p>
+    <div class="mt-3 inline-flex items-center gap-2 text-xs text-slate-400">
+      <span class="w-1.5 h-1.5 rounded-full bg-slate-300"></span>
+      <span>You&rsquo;re on day <strong class="text-slate-600">12</strong> of 90 · checked again every Sunday</span>
+    </div>
+  </div>
+</section>
+
+</body>
+</html>

@@ -304,6 +304,30 @@ export const improvementMatches = pgTable('wb_improvement_matches', {
   subscriberIdx: index('idx_wb_improvement_matches_subscriber').on(t.subscriberId),
 }))
 
+// Spec 79 — AI-clustered cancellation themes. Snapshot model: the weekly
+// cron wipes prior rows for a customer and inserts fresh on each run.
+// addressesImprovementId is NULL for primary themes (unmatched-cancellation
+// clusters surfacing what to ship next) and set for post-ship insights
+// (customers cancelled citing a problem you already shipped a reason for).
+// Migration 047.
+export const cancellationThemes = pgTable('wb_cancellation_themes', {
+  id:                       uuid('id').primaryKey().defaultRandom(),
+  customerId:               uuid('customer_id').notNull().references(() => customers.id, { onDelete: 'cascade' }),
+  addressesImprovementId:   uuid('addresses_improvement_id').references(() => improvements.id, { onDelete: 'cascade' }),
+  title:                    text('title').notNull(),
+  description:              text('description').notNull(),
+  category:                 text('category'),                                    // 'Price' | 'Feature' | 'Other'
+  emoji:                    text('emoji'),
+  customerCount:            integer('customer_count').notNull(),
+  subscriberIds:            uuid('subscriber_ids').array().notNull(),
+  sampleQuotes:             text('sample_quotes').array().notNull(),
+  windowStart:              timestamp('window_start', { withTimezone: true }).notNull(),
+  windowEnd:                timestamp('window_end', { withTimezone: true }).notNull(),
+  createdAt:                timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  customerCreatedIdx: index('idx_wb_cancellation_themes_customer_created').on(t.customerId, t.createdAt),
+}))
+
 // Spec 64 — Resend inbound webhook dedup ledger. Primary-keyed on
 // Resend's email_id; a second webhook with the same id conflicts on
 // INSERT and short-circuits before any DB mutation. See migration 038
