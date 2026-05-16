@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>/win-back — current state (as shipped)</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; }
+</style>
+</head>
+<body class="bg-white">
+
+<!-- ============================================================ -->
+<!--  Sticky nav (simplified from components/landing/sticky-nav)   -->
+<!-- ============================================================ -->
+<nav class="border-b border-slate-200 bg-white">
+  <div class="max-w-5xl mx-auto px-6 flex items-center justify-between h-14">
+    <div class="flex items-center gap-2">
+      <div class="w-7 h-7 rounded-xl bg-blue-500 flex items-center justify-center text-white font-semibold">w</div>
+      <span class="font-semibold text-slate-900">winback</span>
+    </div>
+    <div class="flex items-center gap-6 text-sm font-medium text-slate-600">
+      <a>Win-back</a>
+      <a>Payment recovery</a>
+      <a>Pricing</a>
+    </div>
+    <a class="px-4 py-1.5 text-sm font-medium bg-[#0f172a] text-white rounded-full">Sign in</a>
+  </div>
+</nav>
+
+<!-- ============================================================ -->
+<!--  HERO (components/win-back/hero.tsx)                          -->
+<!-- ============================================================ -->
+<section class="bg-[#eef2fb] py-20 sm:py-24">
+  <div class="max-w-5xl mx-auto px-6 flex flex-col items-center">
+    <div class="max-w-3xl text-center">
+      <p class="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">Win-back</p>
+      <h1 class="mt-4 text-4xl sm:text-5xl font-bold tracking-tight text-slate-900">
+        Bring back the customers who chose to leave.
+      </h1>
+      <p class="mt-5 text-base sm:text-lg text-slate-600 leading-relaxed">
+        Cancellations are recoverable — if the reason actually lands. Winback reads what the customer said — and when they didn&rsquo;t say anything, what they did. Account history, changelog matches, tenure, engagement signals. Then writes a personal, single email that fits.
+        <span class="text-blue-600 font-semibold">Every email is AI-drafted, personalised to that subscriber</span>
+        — not a templated broadcast.
+      </p>
+    </div>
+
+    <!-- FlowIllustration: cancellation → AI → recovery -->
+    <div class="w-full max-w-xl mx-auto mt-12">
+      <div class="flex items-center justify-between gap-2 sm:gap-3">
+        <div class="flex-1 bg-white rounded-xl border border-slate-200 shadow-sm px-3 py-3 text-center">
+          <div class="mx-auto w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center">
+            <svg class="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+          </div>
+          <div class="mt-2 text-[11px] font-semibold uppercase tracking-widest text-slate-400">Cancelled</div>
+          <div class="text-xs font-medium text-slate-700 mt-0.5">$24.99/mo</div>
+        </div>
+
+        <!-- Arrow -->
+        <svg class="w-12 sm:w-16 h-6 shrink-0" viewBox="0 0 48 24" fill="none">
+          <line x1="0" y1="12" x2="44" y2="12" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="6 6"/>
+          <polyline points="40,7 46,12 40,17" stroke="#94a3b8" stroke-width="1.5" fill="none"/>
+        </svg>
+
+        <!-- AI middle node with pulse -->
+        <div class="flex-1 bg-white rounded-xl border-2 border-blue-200 shadow-md px-3 py-3 text-center relative">
+          <div class="absolute inset-0 rounded-xl ring-4 ring-blue-100 animate-pulse pointer-events-none"></div>
+          <div class="mx-auto w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center relative">
+            <svg class="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 1.98-3A2.5 2.5 0 0 1 9.5 2Z"/></svg>
+          </div>
+          <div class="mt-2 text-[11px] font-semibold uppercase tracking-widest text-blue-600">AI reads</div>
+          <div class="text-xs font-medium text-slate-700 mt-0.5">+ decides</div>
+        </div>
+
+        <!-- Arrow -->
+        <svg class="w-12 sm:w-16 h-6 shrink-0" viewBox="0 0 48 24" fill="none">
+          <line x1="0" y1="12" x2="44" y2="12" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="6 6"/>
+          <polyline points="40,7 46,12 40,17" stroke="#94a3b8" stroke-width="1.5" fill="none"/>
+        </svg>
+
+        <!-- Recovered -->
+        <div class="flex-1 bg-white rounded-xl border border-emerald-200 shadow-sm px-3 py-3 text-center">
+          <div class="mx-auto w-8 h-8 rounded-lg bg-emerald-100 flex items-center justify-center">
+            <svg class="w-4 h-4 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+          </div>
+          <div class="mt-2 text-[11px] font-semibold uppercase tracking-widest text-emerald-600">Recovered</div>
+          <div class="text-xs font-medium text-slate-700 mt-0.5">$24.99/mo</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!--  HOW IT WORKS (components/win-back/how-it-works.tsx)          -->
+<!-- ============================================================ -->
+<section id="how-it-works" class="bg-white py-20 sm:py-24 border-t border-slate-100">
+  <div class="max-w-5xl mx-auto px-6">
+    <div class="text-center">
+      <div class="text-xs font-semibold tracking-widest uppercase text-blue-600">How it works</div>
+      <h2 class="text-3xl sm:text-4xl font-bold text-slate-900 mt-3">Three steps.</h2>
+      <h2 class="text-3xl sm:text-4xl font-bold text-slate-900">Zero manual work.</h2>
+      <p class="text-base sm:text-lg text-slate-500 mt-4 max-w-2xl mx-auto">
+        No fixed workflows, no generic templates. Every email is written from scratch for the subscriber in front of it.
+      </p>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mt-16">
+      <!-- Detect — amber rail to match icon -->
+      <div class="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 border-l-4 border-l-amber-500">
+        <div class="w-14 h-14 rounded-2xl bg-amber-100 flex items-center justify-center">
+          <svg class="w-7 h-7 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.25"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+        </div>
+        <div class="mt-6 text-xs font-semibold uppercase tracking-[0.18em] text-orange-500">01 — Detect</div>
+        <h3 class="mt-2 text-lg font-semibold text-slate-900">Catch every cancellation.</h3>
+        <p class="mt-2 text-sm text-slate-600 leading-relaxed">
+          The moment a subscriber cancels on Stripe, Winback picks it up — with the customer, plan, and exit reason attached.
+        </p>
+      </div>
+
+      <!-- Decide — sky rail -->
+      <div class="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 border-l-4 border-l-sky-500">
+        <div class="w-14 h-14 rounded-2xl bg-sky-100 flex items-center justify-center">
+          <svg class="w-7 h-7 text-sky-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.25"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 1.98-3A2.5 2.5 0 0 1 9.5 2Z"/></svg>
+        </div>
+        <div class="mt-6 text-xs font-semibold uppercase tracking-[0.18em] text-sky-600">02 — Decide</div>
+        <h3 class="mt-2 text-lg font-semibold text-slate-900">Read the full situation.</h3>
+        <p class="mt-2 text-sm text-slate-600 leading-relaxed">
+          AI weighs the exit reason, account history, tenure, and product fit — then picks the angle most likely to bring them back.
+        </p>
+      </div>
+
+      <!-- Act — emerald rail -->
+      <div class="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 border-l-4 border-l-emerald-500">
+        <div class="w-14 h-14 rounded-2xl bg-emerald-100 flex items-center justify-center">
+          <svg class="w-7 h-7 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.25"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+        </div>
+        <div class="mt-6 text-xs font-semibold uppercase tracking-[0.18em] text-emerald-600">03 — Act</div>
+        <h3 class="mt-2 text-lg font-semibold text-slate-900">Send the email that fits.</h3>
+        <p class="mt-2 text-sm text-slate-600 leading-relaxed">
+          A personalised message tailored to their exact situation. Replies route to your inbox. Not a generic drip. Not a blast.
+        </p>
+      </div>
+    </div>
+
+    <!-- Powered by Stripe -->
+    <div class="mt-6 flex justify-center">
+      <p class="text-xs text-slate-400">Powered by Stripe Connect</p>
+    </div>
+
+    <div class="mt-16 flex justify-center">
+      <a class="bg-[#0f172a] text-white rounded-full px-6 py-2.5 text-sm font-medium">
+        Start recovering customers today →
+      </a>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!--  REASONS card — the configuration surface, told as a         -->
+<!--  before → after pair so the value lands in one glance.       -->
+<!--  Sits between How it works (the system) and Dashboard (the   -->
+<!--  outcomes) so the story reads: how it works → your part →    -->
+<!--  what you see.                                                -->
+<!-- ============================================================ -->
+<section class="bg-[#f5f5f5] py-20 sm:py-24 border-t border-slate-100">
+  <div class="max-w-5xl mx-auto px-6">
+    <div class="text-center max-w-3xl mx-auto">
+      <div class="text-xs font-semibold tracking-widest uppercase text-blue-600">Your part</div>
+      <h2 class="mt-3 text-3xl sm:text-4xl font-bold text-slate-900 tracking-tight">
+        You handle the change. We notify everyone who cancelled over it.
+      </h2>
+      <p class="mt-4 text-sm sm:text-base text-slate-600 leading-relaxed">
+        Our AI groups cancellation reasons into themes — so when you fix something, we email only the customers who specifically asked for it.
+      </p>
+    </div>
+
+    <!-- The "before / after" loop — both cards share the same shape so
+         the visual rhyme (5 → 5, red rail → emerald rail) carries the
+         metaphor. -->
+    <div class="mt-12 grid grid-cols-1 lg:grid-cols-[1fr_auto_1fr] items-stretch gap-6 lg:gap-4">
+      <!-- LEFT — clustered cancellation theme -->
+      <div class="rounded-2xl border border-slate-100 shadow-sm p-6 border-l-4 border-l-red-600 flex flex-col"
+           style="background: linear-gradient(to right, #fef2f2 0%, #ffffff 30%);">
+        <div class="text-[10px] font-semibold uppercase tracking-widest text-red-700 mb-3">What customers asked for</div>
+        <div class="flex items-start gap-4 flex-1">
+          <div class="text-center shrink-0 w-14">
+            <div class="text-4xl font-bold text-red-600 leading-none">5</div>
+            <div class="text-[10px] uppercase tracking-widest text-slate-500 mt-1.5 font-medium">customers</div>
+          </div>
+          <div class="flex-1 min-w-0">
+            <h4 class="font-semibold text-slate-900 leading-tight">Native Slack integration</h4>
+            <p class="text-xs text-slate-600 mt-1.5">Wanted a first-party Slack app with channel routing, not the Zapier workaround.</p>
+            <p class="text-xs text-slate-500 italic mt-2">&ldquo;Cancelling — ping me when there&rsquo;s a proper Slack app.&rdquo;</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- ARROW -->
+      <div class="flex items-center justify-center lg:flex-col gap-1 text-slate-400">
+        <span class="text-xs font-semibold uppercase tracking-widest">You ship</span>
+        <svg class="w-8 h-8 lg:rotate-0 rotate-90" viewBox="0 0 32 32" fill="none">
+          <line x1="4" y1="16" x2="26" y2="16" stroke="#3b82f6" stroke-width="2" stroke-dasharray="4 4"/>
+          <polyline points="22,10 28,16 22,22" stroke="#3b82f6" stroke-width="2" fill="none" stroke-linejoin="round"/>
+        </svg>
+      </div>
+
+      <!-- RIGHT — your shipped reason. Same shape as LEFT: rail + soft
+           gradient + big count + content. Color flips red → emerald and
+           label flips "customers" → "emailed". -->
+      <div class="rounded-2xl border border-slate-100 shadow-sm p-6 border-l-4 border-l-emerald-600 flex flex-col"
+           style="background: linear-gradient(to right, #ecfdf5 0%, #ffffff 30%);">
+        <div class="text-[10px] font-semibold uppercase tracking-widest text-emerald-700 mb-3">Your shipped reason</div>
+        <div class="flex items-start gap-4 flex-1">
+          <div class="text-center shrink-0 w-14">
+            <div class="text-4xl font-bold text-emerald-600 leading-none">5</div>
+            <div class="text-[10px] uppercase tracking-widest text-slate-500 mt-1.5 font-medium">emailed</div>
+          </div>
+          <div class="flex-1 min-w-0">
+            <h4 class="font-semibold text-slate-900 leading-tight">Shipped Slack integration with channel routing</h4>
+            <p class="text-xs text-slate-600 mt-1.5">Live Slack app · two-way sync · per-channel routing.</p>
+            <p class="text-xs text-slate-500 italic mt-2">Shipped 3 days ago — sent in your name, from your domain.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <p class="mt-10 text-center text-xs text-slate-500">
+      Plus a <strong class="text-slate-700">Promotions</strong> tab for price-cancellers — pick a Stripe coupon, we apply it on reactivation.
+    </p>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!--  DASHBOARD PREVIEW (inline section in app/win-back/page.tsx)  -->
+<!--  Moved AFTER Reasons so the page flow reads:                  -->
+<!--    Hero → How it works → Reasons (your part) → Dashboard      -->
+<!--    (what you see) → CTA                                       -->
+<!-- ============================================================ -->
+<section class="py-20 sm:py-24 px-6 bg-white border-t border-slate-100">
+  <div class="max-w-5xl mx-auto">
+    <div class="text-center mb-8 max-w-3xl mx-auto">
+      <div class="text-xs font-semibold tracking-widest uppercase text-blue-600">Dashboard · What you see</div>
+      <h2 class="mt-3 text-3xl sm:text-4xl font-bold text-slate-900 tracking-tight">
+        Every cancellation, classified, scored, and queued for action.
+      </h2>
+      <p class="mt-4 text-sm sm:text-base text-slate-600 leading-relaxed">
+        A snapshot below. Click &ldquo;Explore the dashboard&rdquo; for the full preview with the per-subscriber drawer.
+      </p>
+    </div>
+
+    <!-- Placeholder for the dashboard-preview-strip — actual page renders WinBackPreviewStrip -->
+    <div class="bg-white rounded-2xl border border-slate-100 shadow-sm p-10 text-center text-sm text-slate-400">
+      (WinBackPreviewStrip — dashboard pipeline + KPIs snapshot renders here in the real page)
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!--  CTA (components/win-back/cta.tsx)                            -->
+<!-- ============================================================ -->
+<section class="bg-[#eef2fb] py-20 sm:py-24">
+  <div class="max-w-5xl mx-auto px-6 text-center">
+    <div class="text-xs font-semibold tracking-widest uppercase text-violet-600">Ready to start?</div>
+    <h2 class="text-3xl sm:text-4xl font-bold text-slate-900 mt-3">Bring back the cancellers.</h2>
+    <p class="mt-4 text-sm text-slate-600 max-w-xl mx-auto">
+      Win-back is performance-billed: 1 month&apos;s subscription fee per recovered customer, refundable for 14 days, $0 if we don&apos;t recover anyone.
+      <a class="text-blue-600 hover:text-blue-700 font-medium">See full pricing →</a>
+    </p>
+    <div class="mt-8 flex flex-wrap items-center justify-center gap-3">
+      <a class="bg-[#0f172a] text-white rounded-full px-6 py-2.5 text-sm font-medium">Connect Stripe →</a>
+    </div>
+    <p class="mt-6 text-xs text-slate-500">Stripe Connect Standard · No card at signup.</p>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!--  Footer (simplified)                                          -->
+<!-- ============================================================ -->
+<footer class="bg-slate-50 border-t border-slate-200 py-10">
+  <div class="max-w-5xl mx-auto px-6 text-center text-xs text-slate-500">
+    © Winback · <a class="underline">Privacy</a> · <a class="underline">Terms</a>
+  </div>
+</footer>
+
+</body>
+</html>
