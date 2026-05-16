@@ -56,29 +56,34 @@ export function ReasonsClient({ initialReasons }: Props) {
   const [pendingUndos, setPendingUndos] = useState<PendingUndo[]>([])
 
   // Spec 79 — pre-fill the Add modal when the user clicked "+ Add as
-  // improvement" on a cancellation theme. Theme rows link to
-  // /reasons?prefill_title=...&prefill_description=...
-  // We read once on mount, open the modal pre-filled, then clear the
-  // params so a refresh doesn't keep re-opening the modal.
+  // reason" on a cancellation theme. Theme rows link to
+  //   /reasons?tab=active&prefill_title=...&prefill_description=...
+  // Must depend on searchParams so soft-navigations (where this client
+  // component stays mounted across tab switches) still trigger the
+  // modal — otherwise the first click works but subsequent ones
+  // silently fail. The early return when prefill params are absent
+  // prevents an infinite loop after we clear them via router.replace.
+  // We preserve the `tab` param when clearing so the user stays on
+  // Active.
   useEffect(() => {
     const title = searchParams.get('prefill_title')
     const description = searchParams.get('prefill_description')
     const addressesPattern = searchParams.get('prefill_pattern')
-    if (title || description || addressesPattern) {
-      setModal({
-        kind: 'add',
-        prefill: {
-          title:            title ?? undefined,
-          description:      description ?? undefined,
-          addressesPattern: addressesPattern ?? undefined,
-        },
-      })
-      router.replace('/reasons', { scroll: false })
-    }
-    // Intentionally only run once on first mount — subsequent searchParams
-    // changes after the replace() are our own and should be ignored.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+    if (!title && !description && !addressesPattern) return
+    setModal({
+      kind: 'add',
+      prefill: {
+        title:            title ?? undefined,
+        description:      description ?? undefined,
+        addressesPattern: addressesPattern ?? undefined,
+      },
+    })
+    const kept = new URLSearchParams()
+    const tab = searchParams.get('tab')
+    if (tab) kept.set('tab', tab)
+    const query = kept.toString()
+    router.replace(query ? `/reasons?${query}` : '/reasons', { scroll: false })
+  }, [searchParams, router])
 
   const atCap = reasons.length >= MAX_ACTIVE
 
@@ -352,7 +357,13 @@ function ReasonFormModal({
   const [title, setTitle] = useState(initial?.title ?? prefill?.title ?? '')
   const [description, setDescription] = useState(initial?.description ?? prefill?.description ?? '')
   const [dateShipped, setDateShipped] = useState(initial?.dateShipped ?? new Date().toISOString().slice(0, 10))
-  const [addressesPattern, setAddressesPattern] = useState(initial?.addressesPattern ?? prefill?.addressesPattern ?? '')
+  // Spec 79 follow-up — the "which customer reason does this address?"
+  // input is gone from the UI; the LLM matcher operates on title +
+  // description alone. We still send the field to preserve the existing
+  // addressesPattern on edit (so removing the input doesn't silently
+  // wipe a value the merchant typed pre-cutover) and default to null on
+  // new rows.
+  const [addressesPattern] = useState<string>(initial?.addressesPattern ?? '')
   const [confirmed, setConfirmed] = useState(false)
   const [saving, setSaving] = useState(false)
 
@@ -422,11 +433,6 @@ function ReasonFormModal({
           <Field label="Short description">
             <textarea rows={3} value={description} maxLength={500} onChange={(e) => setDescription(e.target.value)} placeholder="One or two sentences. Name the feature concretely." className="border border-slate-200 rounded-2xl px-4 py-2.5 text-sm w-full focus:outline-none focus:ring-2 focus:ring-blue-500" />
             <FieldHint>{description.trim().length} / 500 characters</FieldHint>
-          </Field>
-
-          <Field label="Which customer reason does this address? (optional)">
-            <input type="text" value={addressesPattern ?? ''} onChange={(e) => setAddressesPattern(e.target.value)} placeholder="e.g. Native Slack integration" className="border border-slate-200 rounded-full px-4 py-2.5 text-sm w-full focus:outline-none focus:ring-2 focus:ring-blue-500" />
-            <FieldHint>Leave blank for pre-emptive ships (no customer asked for it yet).</FieldHint>
           </Field>
 
           <label className="flex items-start gap-3 cursor-pointer rounded-xl bg-amber-50 border border-amber-200 p-4">
