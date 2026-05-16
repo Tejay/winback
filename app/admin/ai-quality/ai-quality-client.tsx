@@ -29,6 +29,44 @@ interface AutoLostAuditRow {
   properties: Record<string, unknown>
 }
 
+// Spec 78 Phase C
+
+interface RankedAuditRow {
+  subscriberId: string
+  customerId: string | null
+  name: string | null
+  email: string | null
+  productName: string | null
+  customerEmail: string | null
+  mrrCents: number
+  tenureDays: number | null
+  cancellationReason: string | null
+  cancellationCategory: string | null
+  recoveryLikelihood: 'high' | 'medium' | 'low' | null
+  handoffReasoning: string | null
+  replyCount: number
+  billingPortalClicked: boolean
+  interestScore: number
+  occurredAt: string | null
+}
+
+interface RankedHandoffRow extends RankedAuditRow {
+  founderHandoffAt: string | null
+  founderHandoffResolvedAt: string | null
+  resolutionState: 'open_fresh' | 'open_stale' | 'resolved_recovered' | 'resolved_lost'
+  finalStatus: string | null
+}
+
+interface HandoffAuditSummary {
+  windowDays: number
+  total: number
+  resolved: number
+  recovered: number
+  open: number
+  stale: number
+  recoveryPct: number
+}
+
 // Spec 78 Phase A — new payload pieces
 
 interface DriftMetric {
@@ -111,8 +149,6 @@ interface Payload {
   handoffs: DayBucket[]
   autoLost: DayBucket[]
   tier: TierBucket[]
-  recentHandoffs: HandoffAuditRow[]
-  recentAutoLost: AutoLostAuditRow[]
   // Spec 78 Phase A
   drift: { metrics: DriftMetric[] }
   categoryMix: { rows: CategoryMixRow[]; total30d: number }
@@ -120,6 +156,10 @@ interface Payload {
   // Spec 78 Phase B
   calibration: CalibrationCohort
   matchRate: ReengagementMatchRate
+  // Spec 78 Phase C
+  rankedAutoLost: RankedAuditRow[]
+  rankedHandoffs: RankedHandoffRow[]
+  handoffSummary: HandoffAuditSummary
 }
 
 export function AiQualityClient() {
@@ -179,46 +219,23 @@ export function AiQualityClient() {
       {/* Block 3 — Cancellation category mix (replaces old Block C tier distribution) */}
       <CategoryMixBlock data={data.categoryMix} />
 
+      {/* Block 4 — Smart-ranked auto-lost audit (replaces legacy Block E) */}
+      <RankedAuditBlock
+        kind="auto_lost"
+        rows={data.rankedAutoLost}
+      />
+
+      {/* Block 5 — Smart-ranked handoff audit + founder resolution (replaces legacy Block D) */}
+      <RankedHandoffBlock
+        rows={data.rankedHandoffs}
+        summary={data.handoffSummary}
+      />
+
       {/* Block 6 — Low-confidence classifications (new) */}
       <LowConfidenceBlock rows={data.lowConfidence} />
 
-      {/* Block 7 — Re-engagement match rate (new) */}
+      {/* Block 7 — Re-engagement match rate */}
       <MatchRateBlock data={data.matchRate} />
-
-      {/* Block D (legacy — Phase C will replace with smart-ranked handoff audit) */}
-      <section className="bg-white rounded-2xl border border-slate-200 p-5">
-        <div className="text-xs font-semibold uppercase tracking-widest text-slate-500 mb-3">
-          Last 50 hand-off reasonings (audit sample)
-        </div>
-        <p className="text-xs text-slate-500 italic mb-3 max-w-2xl">
-          Spot-read 10 a week. If you find 3 you'd disagree with, the prompt needs work.
-          Phase C will rank these by miss-likelihood (MRR + engagement) so the 10 you read
-          are the 10 most worth reading.
-        </p>
-        <div className="space-y-2 max-h-[28rem] overflow-y-auto">
-          {data.recentHandoffs.length === 0
-            ? <div className="text-sm text-slate-400 italic">No hand-offs on record yet.</div>
-            : data.recentHandoffs.map((r) => <HandoffAuditCard key={r.id} row={r} />)}
-        </div>
-      </section>
-
-      {/* Block E (legacy — Phase C will replace with smart-ranked auto-lost audit) */}
-      <section className="bg-white rounded-2xl border border-slate-200 p-5">
-        <div className="text-xs font-semibold uppercase tracking-widest text-slate-500 mb-3">
-          Last 50 reply threads ended without escalation
-        </div>
-        <p className="text-xs text-slate-500 italic mb-3 max-w-2xl">
-          Auto-lost only fires after 1-3 emails AND at least one subscriber reply, when
-          the reply-thread budget runs out without the AI choosing to escalate. Read for
-          missed escalations. Phase C will smart-rank these by MRR, reply count, and
-          cancellation category — the cases most likely to be misses surface first.
-        </p>
-        <div className="space-y-2 max-h-[28rem] overflow-y-auto">
-          {data.recentAutoLost.length === 0
-            ? <div className="text-sm text-slate-400 italic">No auto-lost subscribers yet.</div>
-            : data.recentAutoLost.map((r) => <AutoLostAuditCard key={r.id} row={r} />)}
-        </div>
-      </section>
     </div>
   )
 }
@@ -768,76 +785,344 @@ function MatchRateRow({ label, n, pct, color }: { label: string; n: number; pct:
 }
 
 // ===========================================================================
-// Legacy blocks (Phase C will replace these)
+// Spec 78 Phase C — Smart-ranked audit blocks
 // ===========================================================================
 
-function HandoffAuditCard({ row }: { row: HandoffAuditRow }) {
+function RankedAuditBlock({
+  kind,
+  rows,
+}: {
+  kind: 'auto_lost'
+  rows: RankedAuditRow[]
+}) {
+  // kind currently only 'auto_lost' (Block 5 has its own component
+  // because of the resolution column + summary footer).
+  void kind
+  return (
+    <section className="bg-white rounded-2xl border border-slate-200 p-5">
+      <div className="text-xs font-semibold uppercase tracking-widest text-slate-500 mb-1">
+        Auto-lost audit
+      </div>
+      <h2 className="text-lg font-semibold text-slate-900 mb-2">
+        Highest-stakes auto-lost cases
+        <span className="text-sm font-normal text-slate-400 ml-2">
+          (top {rows.length} by interest score)
+        </span>
+      </h2>
+      <p className="text-xs text-slate-500 italic mb-4 max-w-2xl">
+        Auto-lost only fires after 1-3 emails AND at least one reply, when the AI runs out
+        of follow-up budget without escalating. These are cases where the AI engaged in
+        conversation and decided not to hand off. <strong>Ranked top-to-bottom by
+        miss-likelihood</strong> (+MRR, +reply count, +portal-click, +addressable category,
+        −dead-text patterns). Read the top 5; if any feel like a missed escalation, the
+        prompt is too conservative on the second-reply decision.
+      </p>
+      {rows.length === 0 ? (
+        <div className="text-sm text-slate-400 italic">No auto-lost cases on record yet.</div>
+      ) : (
+        <div className="space-y-2 max-h-[40rem] overflow-y-auto">
+          {rows.map((r) => <RankedAuditCard key={r.subscriberId} row={r} />)}
+        </div>
+      )}
+    </section>
+  )
+}
+
+function RankedHandoffBlock({
+  rows,
+  summary,
+}: {
+  rows: RankedHandoffRow[]
+  summary: HandoffAuditSummary
+}) {
+  return (
+    <section className="bg-white rounded-2xl border border-slate-200 p-5">
+      <div className="text-xs font-semibold uppercase tracking-widest text-slate-500 mb-1">
+        Handoff audit
+      </div>
+      <h2 className="text-lg font-semibold text-slate-900 mb-2">
+        Highest-stakes handoffs
+        <span className="text-sm font-normal text-slate-400 ml-2">
+          (top {rows.length} by interest score)
+        </span>
+      </h2>
+      <p className="text-xs text-slate-500 italic mb-4 max-w-2xl">
+        Each handoff costs founder inbox attention. The resolution column shows whether
+        that attention is earning recoveries. <strong>Stale opens (≥7d)</strong> are
+        either founder backlog or the AI escalating things that didn't warrant it. If
+        most resolved handoffs are "lost" not "recovered," the AI is escalating cases
+        that won't convert.
+      </p>
+      <HandoffSummaryFooter summary={summary} />
+      {rows.length === 0 ? (
+        <div className="text-sm text-slate-400 italic mt-4">No handoffs on record yet.</div>
+      ) : (
+        <div className="space-y-2 max-h-[40rem] overflow-y-auto mt-4">
+          {rows.map((r) => <RankedHandoffCard key={r.subscriberId} row={r} />)}
+        </div>
+      )}
+    </section>
+  )
+}
+
+function HandoffSummaryFooter({ summary }: { summary: HandoffAuditSummary }) {
+  return (
+    <div className="text-xs text-slate-600 bg-slate-50 rounded-lg p-3 border border-slate-100">
+      <strong>Last {summary.windowDays} days:</strong> {summary.total} handoffs ·{' '}
+      {summary.resolved} resolved · {summary.recovered} recovered{' '}
+      {summary.resolved > 0 && (
+        <span className="text-slate-700">({summary.recoveryPct.toFixed(0)}% conversion)</span>
+      )}{' '}
+      · {summary.open} open
+      {summary.stale > 0 && (
+        <>
+          {' · '}
+          <span className="text-amber-700 font-semibold">{summary.stale} stale (≥7d)</span>
+        </>
+      )}
+    </div>
+  )
+}
+
+/**
+ * Shared card body for Block 4 and Block 5. Lazy-fetches the full
+ * inspector payload (emails + replies + events) on expand from
+ * `/api/admin/subscribers/[id]` — no double-fetch.
+ */
+function RankedAuditCard({ row }: { row: RankedAuditRow }) {
+  const [expanded, setExpanded] = useState(false)
   return (
     <div className="border border-slate-100 rounded-lg p-3 hover:bg-slate-50">
-      <div className="flex items-start justify-between gap-3">
-        <div className="text-sm">
-          <div className="font-medium text-slate-900">{row.name ?? '(no name)'} <span className="text-slate-400 font-normal">· {row.email}</span></div>
-          <div className="text-xs text-slate-500 mt-0.5">
-            on{' '}
-            <span className="text-slate-700">{row.productName ?? row.customerEmail ?? '?'}</span>
-            {' · '}
-            ${(row.mrrCents / 100).toFixed(2)}/mo
-            {row.founderHandoffAt && <> · {new Date(row.founderHandoffAt).toLocaleDateString()}</>}
-          </div>
+      <CardHeader row={row} />
+      <CardBody row={row} />
+      <div className="flex items-center gap-3 mt-2">
+        <button
+          type="button"
+          onClick={() => setExpanded((e) => !e)}
+          className="text-xs text-blue-600 hover:underline"
+        >
+          {expanded ? '↑ Hide conversation' : '↓ Show conversation'}
+        </button>
+        <Link
+          href={`/admin/subscribers/${row.subscriberId}`}
+          className="text-xs text-blue-600 hover:underline"
+        >
+          Full inspector →
+        </Link>
+      </div>
+      {expanded && <ThreadExpansion subscriberId={row.subscriberId} />}
+    </div>
+  )
+}
+
+function RankedHandoffCard({ row }: { row: RankedHandoffRow }) {
+  const [expanded, setExpanded] = useState(false)
+  return (
+    <div className="border border-slate-100 rounded-lg p-3 hover:bg-slate-50">
+      <CardHeader row={row} resolutionState={row.resolutionState} />
+      <CardBody row={row} />
+      <div className="flex items-center gap-3 mt-2">
+        <button
+          type="button"
+          onClick={() => setExpanded((e) => !e)}
+          className="text-xs text-blue-600 hover:underline"
+        >
+          {expanded ? '↑ Hide conversation' : '↓ Show conversation'}
+        </button>
+        <Link
+          href={`/admin/subscribers/${row.subscriberId}`}
+          className="text-xs text-blue-600 hover:underline"
+        >
+          Full inspector →
+        </Link>
+      </div>
+      {expanded && <ThreadExpansion subscriberId={row.subscriberId} />}
+    </div>
+  )
+}
+
+function CardHeader({
+  row,
+  resolutionState,
+}: {
+  row: RankedAuditRow
+  resolutionState?: RankedHandoffRow['resolutionState']
+}) {
+  return (
+    <div className="flex items-start justify-between gap-3">
+      <div className="text-sm flex-1">
+        <div className="font-medium text-slate-900">
+          {row.name ?? '(no name)'}{' '}
+          <span className="text-slate-400 font-normal">· {row.email ?? '—'}</span>
         </div>
+        <div className="text-xs text-slate-500 mt-0.5">
+          on <span className="text-slate-700">{row.productName ?? row.customerEmail ?? '?'}</span>
+          {' · '}${(row.mrrCents / 100).toFixed(2)}/mo
+          {row.tenureDays !== null && <> · {row.tenureDays}d tenure</>}
+          {row.occurredAt && <> · {new Date(row.occurredAt).toLocaleDateString()}</>}
+        </div>
+      </div>
+      <div className="flex flex-wrap items-center justify-end gap-1.5 max-w-[40%]">
+        {resolutionState && <ResolutionBadge state={resolutionState} />}
+        {row.replyCount > 0 && (
+          <span className="text-xs px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
+            {row.replyCount} {row.replyCount === 1 ? 'reply' : 'replies'}
+          </span>
+        )}
+        {row.billingPortalClicked && (
+          <span className="text-xs px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200">
+            portal clicked
+          </span>
+        )}
+        {row.cancellationCategory && (
+          <span className="text-xs px-2 py-0.5 rounded-full bg-slate-50 text-slate-700 border border-slate-200">
+            {row.cancellationCategory}
+          </span>
+        )}
         {row.recoveryLikelihood && (
           <span className={`text-xs px-2 py-0.5 rounded-full border whitespace-nowrap ${
             row.recoveryLikelihood === 'high'   ? 'bg-green-50 text-green-700 border-green-200' :
             row.recoveryLikelihood === 'medium' ? 'bg-amber-50 text-amber-700 border-amber-200' :
                                                    'bg-slate-100 text-slate-500 border-slate-200'
           }`}>
-            recovery: {row.recoveryLikelihood}
+            {row.recoveryLikelihood}
           </span>
         )}
+        <span
+          title="Internal interest_score — MRR/reply/portal/category bonuses minus dead-text penalties"
+          className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 border border-slate-200 tabular-nums"
+        >
+          score {row.interestScore}
+        </span>
       </div>
-      {row.cancellationReason && (
-        <div className="text-xs text-slate-600 italic mt-1">"{row.cancellationReason}"</div>
-      )}
-      {row.handoffReasoning && (
-        <div className="text-xs text-slate-700 italic bg-slate-50 rounded p-2 mt-2">
-          AI: "{row.handoffReasoning}"
-        </div>
-      )}
-      <Link
-        href={`/admin/subscribers?email=${encodeURIComponent(row.email ?? '')}`}
-        className="inline-block text-xs text-blue-600 hover:underline mt-2"
-      >
-        View full thread →
-      </Link>
     </div>
   )
 }
 
-function AutoLostAuditCard({ row }: { row: AutoLostAuditRow }) {
-  const reasoning = typeof row.properties.reasoningExcerpt === 'string'
-    ? row.properties.reasoningExcerpt
-    : null
-  const likelihood = typeof row.properties.recoveryLikelihood === 'string'
-    ? row.properties.recoveryLikelihood
-    : null
+function CardBody({ row }: { row: RankedAuditRow }) {
   return (
-    <div className="border border-slate-100 rounded-lg p-3 hover:bg-slate-50">
-      <div className="flex items-start justify-between gap-3">
-        <div className="text-sm">
-          <div className="font-medium text-slate-900">{row.productName ?? row.customerEmail ?? '(unknown customer)'}</div>
-          <div className="text-xs text-slate-500 mt-0.5">{new Date(row.createdAt).toLocaleString()}</div>
-        </div>
-        {likelihood && (
-          <span className="text-xs px-2 py-0.5 rounded-full border whitespace-nowrap bg-slate-100 text-slate-500 border-slate-200">
-            recovery: {likelihood}
-          </span>
-        )}
-      </div>
-      {reasoning && (
+    <>
+      {row.cancellationReason && (
+        <div className="text-xs text-slate-600 italic mt-1.5">"{row.cancellationReason}"</div>
+      )}
+      {row.handoffReasoning && (
         <div className="text-xs text-slate-700 italic bg-slate-50 rounded p-2 mt-2">
-          AI: "{reasoning}"
+          <span className="font-semibold not-italic text-slate-500">AI:</span> "{row.handoffReasoning}"
         </div>
       )}
+    </>
+  )
+}
+
+function ResolutionBadge({ state }: { state: RankedHandoffRow['resolutionState'] }) {
+  switch (state) {
+    case 'resolved_recovered':
+      return <span className="text-xs px-2 py-0.5 rounded-full bg-green-50 text-green-700 border border-green-200">✓ recovered</span>
+    case 'resolved_lost':
+      return <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200">✗ resolved · lost</span>
+    case 'open_stale':
+      return <span className="text-xs px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200">⚠ open ≥7d</span>
+    case 'open_fresh':
+    default:
+      return <span className="text-xs px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">⏳ open</span>
+  }
+}
+
+/**
+ * Lazy-fetched thread view. Hits the existing inspector endpoint
+ * (`GET /api/admin/subscribers/[id]`) which already returns emails +
+ * replies + outcome events in a single payload. Renders a compact
+ * chronological thread. State is local to the card — collapse +
+ * re-expand re-fetches; for normal use it's a one-time fetch since
+ * the supervisor reads top to bottom.
+ */
+function ThreadExpansion({ subscriberId }: { subscriberId: string }) {
+  const [data, setData] = useState<InspectorPayloadShape | null>(null)
+  const [err, setErr]   = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    let cancelled = false
+    async function load() {
+      try {
+        const res = await fetch(`/api/admin/subscribers/${subscriberId}`, { cache: 'no-store' })
+        const json = await res.json()
+        if (cancelled) return
+        if (!res.ok) throw new Error(json.error ?? 'Failed to load thread')
+        setData(json)
+      } catch (e) {
+        if (!cancelled) setErr(e instanceof Error ? e.message : String(e))
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
+    load()
+    return () => { cancelled = true }
+  }, [subscriberId])
+
+  if (loading) return <div className="text-xs text-slate-400 italic mt-3">Loading thread…</div>
+  if (err)     return <div className="text-xs text-rose-600 mt-3">Failed to load: {err}</div>
+  if (!data)   return null
+
+  // Build a chronological turn list from emailsSent + replies.
+  type Turn =
+    | { kind: 'outbound'; at: string; type: string; subject: string | null; body: string | null }
+    | { kind: 'reply';    at: string; from: string | null; body: string }
+  const turns: Turn[] = []
+  for (const e of data.emails ?? []) {
+    turns.push({ kind: 'outbound', at: e.sentAt ?? '', type: e.type, subject: e.subject, body: e.bodyText })
+  }
+  for (const r of data.replies ?? []) {
+    turns.push({ kind: 'reply', at: r.receivedAt ?? '', from: r.fromEmail, body: r.body })
+  }
+  turns.sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime())
+
+  if (turns.length === 0) {
+    return <div className="text-xs text-slate-500 italic mt-3">No emails or replies on record.</div>
+  }
+
+  return (
+    <div className="mt-3 space-y-2 max-h-96 overflow-y-auto border-t border-slate-100 pt-3">
+      {turns.map((t, i) => (
+        <div
+          key={i}
+          className={`text-xs rounded p-2 ${
+            t.kind === 'outbound' ? 'bg-blue-50/40 border border-blue-100'
+                                  : 'bg-amber-50/40 border border-amber-100'
+          }`}
+        >
+          <div className="flex items-center gap-2 mb-1">
+            <span className={`font-semibold ${t.kind === 'outbound' ? 'text-blue-700' : 'text-amber-700'}`}>
+              {t.kind === 'outbound' ? `→ ${t.type}` : `← reply${t.from ? ` from ${t.from}` : ''}`}
+            </span>
+            <span className="text-slate-400">{t.at ? new Date(t.at).toLocaleString() : ''}</span>
+          </div>
+          {t.kind === 'outbound' && t.subject && (
+            <div className="font-medium text-slate-800 mb-1">{t.subject}</div>
+          )}
+          <div className="text-slate-700 whitespace-pre-wrap break-words">{t.body ?? '(no body)'}</div>
+        </div>
+      ))}
     </div>
   )
+}
+
+/**
+ * Slim shape of `/api/admin/subscribers/[id]` — only the fields we
+ * render. Full schema in `lib/admin/inspector-queries.ts::InspectorPayload`.
+ */
+interface InspectorPayloadShape {
+  emails?: Array<{
+    id: string
+    type: string
+    subject: string | null
+    bodyText: string | null
+    sentAt: string | null
+  }>
+  replies?: Array<{
+    id: string
+    body: string
+    fromEmail: string | null
+    receivedAt: string | null
+  }>
 }

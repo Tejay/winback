@@ -788,6 +788,237 @@ export async function reengagementMatchRate(windowDays = 90): Promise<Reengageme
 }
 
 // ---------------------------------------------------------------------------
+// Spec 78 — Phase C queries (smart-ranked audits)
+// ---------------------------------------------------------------------------
+
+export interface RankedAuditRow {
+  subscriberId: string
+  customerId: string | null
+  name: string | null
+  email: string | null
+  productName: string | null
+  customerEmail: string | null
+  mrrCents: number
+  tenureDays: number | null
+  cancellationReason: string | null
+  cancellationCategory: string | null
+  recoveryLikelihood: 'high' | 'medium' | 'low' | null
+  handoffReasoning: string | null
+  replyCount: number
+  billingPortalClicked: boolean
+  interestScore: number
+  /** Timestamp of the audit-relevant event (auto-lost event or handoff). */
+  occurredAt: Date | null
+}
+
+export interface RankedHandoffRow extends RankedAuditRow {
+  founderHandoffAt: Date | null
+  founderHandoffResolvedAt: Date | null
+  /** Derived state for the UI: open / stale / resolved + outcome. */
+  resolutionState: 'open_fresh' | 'open_stale' | 'resolved_recovered' | 'resolved_lost'
+  finalStatus: string | null
+}
+
+/**
+ * Block 4 — Smart-ranked auto-lost audit.
+ *
+ * Ranks `subscriber_auto_lost` events by miss-likelihood
+ * (`interest_score` = MRR + reply count + portal-click + addressable
+ * category − dead-text patterns). Top N (default 15). Same dataset
+ * as the legacy `autoLostAudit`, just sorted by worth-investigating-ness
+ * instead of recency, with the ranking computed at the DB level so
+ * LIMIT is honoured at the query layer.
+ *
+ * The dead-text regex is intentionally narrow — only matches
+ * unambiguous "definitely not coming back" signals so we don't
+ * accidentally demote recoverable cases.
+ */
+export async function rankedAutoLostAudit(limit = 15): Promise<RankedAuditRow[]> {
+  const db = getDbReadOnly()
+  const result = await db.execute(sql`
+    SELECT
+      s.id                        AS subscriber_id,
+      s.customer_id               AS customer_id,
+      s.name                      AS name,
+      s.email                     AS email,
+      c.product_name              AS product_name,
+      u.email                     AS customer_email,
+      s.mrr_cents                 AS mrr_cents,
+      s.tenure_days               AS tenure_days,
+      s.cancellation_reason       AS cancellation_reason,
+      s.cancellation_category     AS cancellation_category,
+      s.recovery_likelihood       AS recovery_likelihood,
+      s.handoff_reasoning         AS handoff_reasoning,
+      (s.billing_portal_clicked_at IS NOT NULL) AS billing_portal_clicked,
+      coalesce(rc.reply_count, 0) AS reply_count,
+      e.created_at                AS occurred_at,
+      (
+        (CASE WHEN s.mrr_cents > 5000 THEN 3 ELSE 0 END) +
+        (CASE WHEN coalesce(rc.reply_count, 0) >= 2 THEN 2 ELSE 0 END) +
+        (CASE WHEN s.billing_portal_clicked_at IS NOT NULL THEN 2 ELSE 0 END) +
+        (CASE WHEN s.cancellation_category IN ('Feature', 'Quality') THEN 2 ELSE 0 END) +
+        (CASE WHEN s.tenure_days > 90 THEN 1 ELSE 0 END) -
+        (CASE WHEN
+          lower(coalesce(s.stripe_comment, '') || ' ' || coalesce(s.cancellation_reason, ''))
+            ~ '(going out of business|deceased|switching jobs|company shut down|no longer in business|closing down)'
+          THEN 2 ELSE 0 END)
+      ) AS interest_score
+    FROM wb_events e
+    JOIN wb_churned_subscribers s ON s.id = (e.properties->>'subscriberId')::uuid
+    LEFT JOIN wb_customers c ON c.id = s.customer_id
+    LEFT JOIN wb_users u     ON u.id = c.user_id
+    LEFT JOIN (
+      SELECT subscriber_id, count(*)::int AS reply_count
+      FROM wb_subscriber_replies
+      GROUP BY subscriber_id
+    ) rc ON rc.subscriber_id = s.id
+    WHERE e.name = 'subscriber_auto_lost'
+    ORDER BY interest_score DESC, s.mrr_cents DESC, e.created_at DESC
+    LIMIT ${limit}
+  `)
+  return ((result.rows ?? []) as Array<Record<string, unknown>>).map(coerceRankedRow)
+}
+
+/**
+ * Block 5 — Smart-ranked handoff audit (with founder-resolution column).
+ *
+ * Same ranking heuristic as Block 4. Adds a derived `resolutionState`:
+ *   - open_fresh        — handed off < 7 days ago, not resolved
+ *   - open_stale        — handed off >= 7 days ago, not resolved
+ *   - resolved_recovered — resolved AND status='recovered'
+ *   - resolved_lost     — resolved AND status not 'recovered' (lost / unsubscribed)
+ *
+ * Stale opens (>=7d) are the actionable signal: either founder
+ * backlog or the AI escalated a case that didn't warrant it.
+ */
+export async function rankedHandoffAudit(limit = 15): Promise<RankedHandoffRow[]> {
+  const db = getDbReadOnly()
+  const result = await db.execute(sql`
+    SELECT
+      s.id                          AS subscriber_id,
+      s.customer_id                 AS customer_id,
+      s.name                        AS name,
+      s.email                       AS email,
+      c.product_name                AS product_name,
+      u.email                       AS customer_email,
+      s.mrr_cents                   AS mrr_cents,
+      s.tenure_days                 AS tenure_days,
+      s.cancellation_reason         AS cancellation_reason,
+      s.cancellation_category       AS cancellation_category,
+      s.recovery_likelihood         AS recovery_likelihood,
+      s.handoff_reasoning           AS handoff_reasoning,
+      (s.billing_portal_clicked_at IS NOT NULL) AS billing_portal_clicked,
+      coalesce(rc.reply_count, 0)   AS reply_count,
+      s.founder_handoff_at          AS occurred_at,
+      s.founder_handoff_at          AS founder_handoff_at,
+      s.founder_handoff_resolved_at AS founder_handoff_resolved_at,
+      s.status                      AS final_status,
+      (
+        (CASE WHEN s.mrr_cents > 5000 THEN 3 ELSE 0 END) +
+        (CASE WHEN coalesce(rc.reply_count, 0) >= 2 THEN 2 ELSE 0 END) +
+        (CASE WHEN s.billing_portal_clicked_at IS NOT NULL THEN 2 ELSE 0 END) +
+        (CASE WHEN s.cancellation_category IN ('Feature', 'Quality') THEN 2 ELSE 0 END) +
+        (CASE WHEN s.tenure_days > 90 THEN 1 ELSE 0 END) -
+        (CASE WHEN
+          lower(coalesce(s.stripe_comment, '') || ' ' || coalesce(s.cancellation_reason, ''))
+            ~ '(going out of business|deceased|switching jobs|company shut down|no longer in business|closing down)'
+          THEN 2 ELSE 0 END)
+      ) AS interest_score
+    FROM wb_churned_subscribers s
+    LEFT JOIN wb_customers c ON c.id = s.customer_id
+    LEFT JOIN wb_users u     ON u.id = c.user_id
+    LEFT JOIN (
+      SELECT subscriber_id, count(*)::int AS reply_count
+      FROM wb_subscriber_replies
+      GROUP BY subscriber_id
+    ) rc ON rc.subscriber_id = s.id
+    WHERE s.founder_handoff_at IS NOT NULL
+    ORDER BY interest_score DESC, s.mrr_cents DESC, s.founder_handoff_at DESC
+    LIMIT ${limit}
+  `)
+  return ((result.rows ?? []) as Array<Record<string, unknown>>).map((r): RankedHandoffRow => {
+    const base = coerceRankedRow(r)
+    const handoffAt  = r.founder_handoff_at          ? new Date(String(r.founder_handoff_at))          : null
+    const resolvedAt = r.founder_handoff_resolved_at ? new Date(String(r.founder_handoff_resolved_at)) : null
+    const finalStatus = r.final_status === null ? null : String(r.final_status ?? '')
+    let resolutionState: RankedHandoffRow['resolutionState']
+    if (resolvedAt) {
+      resolutionState = finalStatus === 'recovered' ? 'resolved_recovered' : 'resolved_lost'
+    } else {
+      const ageMs = handoffAt ? Date.now() - handoffAt.getTime() : 0
+      const STALE_MS = 7 * 24 * 60 * 60 * 1000
+      resolutionState = ageMs >= STALE_MS ? 'open_stale' : 'open_fresh'
+    }
+    return {
+      ...base,
+      founderHandoffAt: handoffAt,
+      founderHandoffResolvedAt: resolvedAt,
+      resolutionState,
+      finalStatus,
+    }
+  })
+}
+
+export interface HandoffAuditSummary {
+  windowDays: number
+  total: number
+  resolved: number
+  recovered: number
+  open: number
+  stale: number
+  recoveryPct: number   // recovered / resolved (resolved=0 → 0)
+}
+
+/**
+ * Aggregate footer for Block 5 — last `windowDays` handoff stats:
+ * total, resolved, recovered, open, stale (>=7d unresolved).
+ */
+export async function handoffAuditSummary(windowDays = 30): Promise<HandoffAuditSummary> {
+  const db = getDbReadOnly()
+  const result = await db.execute(sql`
+    SELECT
+      count(*)::int                                                                   AS total,
+      count(*) FILTER (WHERE s.founder_handoff_resolved_at IS NOT NULL)::int          AS resolved,
+      count(*) FILTER (WHERE s.founder_handoff_resolved_at IS NOT NULL
+                        AND s.status = 'recovered')::int                              AS recovered,
+      count(*) FILTER (WHERE s.founder_handoff_resolved_at IS NULL)::int              AS open,
+      count(*) FILTER (WHERE s.founder_handoff_resolved_at IS NULL
+                        AND s.founder_handoff_at < now() - interval '7 days')::int    AS stale
+    FROM wb_churned_subscribers s
+    WHERE s.founder_handoff_at >= now() - (${windowDays}::int * interval '1 day')
+  `)
+  const r = (result.rows?.[0] ?? {}) as Record<string, unknown>
+  const total     = Number(r.total     ?? 0)
+  const resolved  = Number(r.resolved  ?? 0)
+  const recovered = Number(r.recovered ?? 0)
+  const open      = Number(r.open      ?? 0)
+  const stale     = Number(r.stale     ?? 0)
+  const recoveryPct = resolved > 0 ? (recovered / resolved) * 100 : 0
+  return { windowDays, total, resolved, recovered, open, stale, recoveryPct }
+}
+
+function coerceRankedRow(r: Record<string, unknown>): RankedAuditRow {
+  return {
+    subscriberId:         String(r.subscriber_id),
+    customerId:           r.customer_id === null ? null : String(r.customer_id ?? ''),
+    name:                 r.name        === null ? null : String(r.name ?? ''),
+    email:                r.email       === null ? null : String(r.email ?? ''),
+    productName:          r.product_name === null ? null : String(r.product_name ?? ''),
+    customerEmail:        r.customer_email === null ? null : String(r.customer_email ?? ''),
+    mrrCents:             Number(r.mrr_cents ?? 0),
+    tenureDays:           r.tenure_days === null ? null : Number(r.tenure_days ?? 0),
+    cancellationReason:   r.cancellation_reason === null ? null : String(r.cancellation_reason ?? ''),
+    cancellationCategory: r.cancellation_category === null ? null : String(r.cancellation_category ?? ''),
+    recoveryLikelihood:   (r.recovery_likelihood as RankedAuditRow['recoveryLikelihood']) ?? null,
+    handoffReasoning:     r.handoff_reasoning === null ? null : String(r.handoff_reasoning ?? ''),
+    replyCount:           Number(r.reply_count ?? 0),
+    billingPortalClicked: Boolean(r.billing_portal_clicked),
+    interestScore:        Number(r.interest_score ?? 0),
+    occurredAt:           r.occurred_at ? new Date(String(r.occurred_at)) : null,
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Spec 26 / pre-78 queries (kept until Phase D removes the old blocks)
 // ---------------------------------------------------------------------------
 
