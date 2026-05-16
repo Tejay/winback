@@ -40,6 +40,17 @@ vi.mock('@/lib/schema', () => ({
     subscriberId: 'subscriber_id',
     repliedAt:    'replied_at',
   },
+  // Spec 78 — referenced by the applied-promotion-chip lookup added
+  // after the main SELECT/COUNT. The test mock just needs symbolic
+  // identifiers; the chain is fully mocked via selectChain.
+  recoveries: {
+    subscriberId:           'subscriber_id',
+    appliedPromotionCodeId: 'applied_promotion_code_id',
+  },
+  improvements: {
+    id:                'id',
+    promotionMetadata: 'promotion_metadata',
+  },
 }))
 
 vi.mock('drizzle-orm', () => ({
@@ -48,6 +59,8 @@ vi.mock('drizzle-orm', () => ({
   or:        vi.fn((...c) => ({ op: 'or', c })),
   ne:        vi.fn((a, b) => ({ op: 'ne', a, b })),
   isNull:    vi.fn((c) => ({ op: 'isNull', c })),
+  isNotNull: vi.fn((c) => ({ op: 'isNotNull', c })),
+  inArray:   vi.fn((c, vs) => ({ op: 'inArray', c, vs })),
   ilike:     vi.fn((a, b) => ({ op: 'ilike', a, b })),
   desc:      vi.fn((c) => ({ op: 'desc', c })),
   count:     vi.fn(() => 'count_marker'),
@@ -75,20 +88,23 @@ import { GET } from '@/app/api/subscribers/route'
 
 // Drizzle chain helper. SELECT chain: from → where → orderBy → limit → offset
 // (terminal, awaitable). COUNT chain: from → where (terminal, awaitable).
+// Spec 78 — promo-lookup chain adds .leftJoin between .from and .where.
 function selectChain(rows: unknown[]) {
-  const step: { then: unknown; orderBy: unknown; limit: unknown; offset: unknown; from: unknown; where: unknown } = {
+  const step: { then: unknown; orderBy: unknown; limit: unknown; offset: unknown; from: unknown; where: unknown; leftJoin: unknown } = {
     then: (resolve: (v: unknown[]) => unknown) => Promise.resolve(rows).then(resolve),
-    orderBy: vi.fn(),
-    limit:   vi.fn(),
-    offset:  vi.fn(),
-    from:    vi.fn(),
-    where:   vi.fn(),
+    orderBy:  vi.fn(),
+    limit:    vi.fn(),
+    offset:   vi.fn(),
+    from:     vi.fn(),
+    where:    vi.fn(),
+    leftJoin: vi.fn(),
   }
-  ;(step.orderBy as ReturnType<typeof vi.fn>).mockReturnValue(step)
-  ;(step.limit   as ReturnType<typeof vi.fn>).mockReturnValue(step)
-  ;(step.offset  as ReturnType<typeof vi.fn>).mockReturnValue(step)
-  ;(step.from    as ReturnType<typeof vi.fn>).mockReturnValue(step)
-  ;(step.where   as ReturnType<typeof vi.fn>).mockReturnValue(step)
+  ;(step.orderBy  as ReturnType<typeof vi.fn>).mockReturnValue(step)
+  ;(step.limit    as ReturnType<typeof vi.fn>).mockReturnValue(step)
+  ;(step.offset   as ReturnType<typeof vi.fn>).mockReturnValue(step)
+  ;(step.from     as ReturnType<typeof vi.fn>).mockReturnValue(step)
+  ;(step.where    as ReturnType<typeof vi.fn>).mockReturnValue(step)
+  ;(step.leftJoin as ReturnType<typeof vi.fn>).mockReturnValue(step)
   return step
 }
 
@@ -115,6 +131,7 @@ describe('GET /api/subscribers — Spec 73 pagination', () => {
       .mockReturnValueOnce(customerLookup('cust_1'))     // resolveCustomer
       .mockReturnValueOnce(selectChain(rows))            // SELECT
       .mockReturnValueOnce(selectChain([{ n: 2 }]))      // COUNT
+      .mockReturnValueOnce(selectChain([]))              // Spec 78 promo lookup
 
     const res = await GET(makeReq() as never)
     expect(res.status).toBe(200)
@@ -193,6 +210,7 @@ describe('GET /api/subscribers — Spec 73 pagination', () => {
       .mockReturnValueOnce(customerLookup('cust_1'))
       .mockReturnValueOnce(selectChain(rows))
       .mockReturnValueOnce(selectChain([{ n: 73 }]))
+      .mockReturnValueOnce(selectChain([]))               // Spec 78 promo lookup
 
     const res = await GET(makeReq('?page=2&pageSize=3') as never)
     const body = await res.json() as { rows: unknown[]; total: number; page: number; pageSize: number }

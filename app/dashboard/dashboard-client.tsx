@@ -52,6 +52,11 @@ interface Subscriber {
   // payment-recovery tab uses createdAt as the "failed at" anchor (the
   // moment the failure was first observed).
   createdAt: string | null
+  // Spec 78 — short chip like "WINBACK25 · -25% × 3mo" if this
+  // subscriber's recovery used a Stripe promotion code. Server-computed
+  // in /api/subscribers from recoveries.appliedPromotionCodeId joined
+  // to the promotion's wb_improvements row.
+  appliedPromotionChip?: string | null
 }
 
 // Spec 39/40 — KPIs split by recovery type and time window plus
@@ -952,12 +957,24 @@ export function DashboardClient({
                   <td className="hidden sm:table-cell text-sm text-slate-600 py-4 px-4">
                     {sub.cancelledAt ? new Date(sub.cancelledAt).toISOString().split('T')[0] : '—'}
                   </td>
-                  <td className="hidden md:table-cell text-sm text-slate-600 py-4 px-4">
-                    {sub.cancellationReason
-                      ? sub.cancellationReason.length > 45
-                        ? sub.cancellationReason.slice(0, 45) + '…'
-                        : sub.cancellationReason
-                      : '—'}
+                  <td className="hidden md:table-cell text-sm text-slate-600 py-4 px-4 align-top">
+                    <div>
+                      {sub.cancellationReason
+                        ? sub.cancellationReason.length > 45
+                          ? sub.cancellationReason.slice(0, 45) + '…'
+                          : sub.cancellationReason
+                        : '—'}
+                    </div>
+                    {sub.appliedPromotionChip && (
+                      <div className="mt-1">
+                        {/* Spec 78 — promo chip rendered on its own line under
+                            the cancellation reason; long reasons wrap cleanly
+                            instead of fighting the chip inline. */}
+                        <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 text-[11px] font-medium">
+                          {sub.appliedPromotionChip}
+                        </span>
+                      </div>
+                    )}
                   </td>
                   <td className="py-4 px-4">
                     <AiStateBadge sub={sub} compact billingPaused={isPaused} />

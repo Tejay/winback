@@ -22,6 +22,11 @@ import { and, eq, desc, sql } from 'drizzle-orm'
 import { TopNav } from '@/components/top-nav'
 import { ImpersonationBanner } from '@/components/impersonation-banner'
 import { ReasonsClient } from './reasons-client'
+import { PromotionsSection, type PromotionView } from './promotions-section'
+import {
+  WbPromotionMetadataSchema,
+  formatPromotionTerms,
+} from '@/src/winback/lib/promotions'
 
 /**
  * Spec 65 Phase 2 — Winback Reasons page.
@@ -49,6 +54,8 @@ export default async function ReasonsPage() {
   // Filter to published only — archived rows still exist in DB for
   // attribution but the merchant UI is a living document of what's
   // currently active.
+  // Spec 78 — restrict the Improvements list to kind='product'; the
+  // Promotions section below pulls the kind='promotion' rows.
   const rows = await db
     .select({
       id:               improvements.id,
@@ -63,9 +70,47 @@ export default async function ReasonsPage() {
     })
     .from(improvements)
     .leftJoin(improvementMatches, eq(improvementMatches.improvementId, improvements.id))
-    .where(and(eq(improvements.customerId, customer.id), eq(improvements.status, 'published'))!)
+    .where(and(
+      eq(improvements.customerId, customer.id),
+      eq(improvements.status, 'published'),
+      eq(improvements.kind, 'product'),
+    )!)
     .groupBy(improvements.id)
     .orderBy(desc(improvements.dateShipped))
+
+  // Spec 78 — promotion-kind rows, with same match-count join.
+  const promotionRowsRaw = await db
+    .select({
+      id:                improvements.id,
+      promotionMetadata: improvements.promotionMetadata,
+      status:            improvements.status,
+      matchedCount:      sql<number>`COALESCE(COUNT(${improvementMatches.improvementId}), 0)::int`,
+    })
+    .from(improvements)
+    .leftJoin(improvementMatches, eq(improvementMatches.improvementId, improvements.id))
+    .where(and(
+      eq(improvements.customerId, customer.id),
+      eq(improvements.kind, 'promotion'),
+    )!)
+    .groupBy(improvements.id)
+    .orderBy(desc(improvements.createdAt))
+
+  const promotionViews: PromotionView[] = []
+  for (const row of promotionRowsRaw) {
+    const parsed = WbPromotionMetadataSchema.safeParse(row.promotionMetadata)
+    if (!parsed.success) continue
+    const m = parsed.data
+    promotionViews.push({
+      id:           row.id,
+      code:         m.code,
+      description:  formatPromotionTerms(m),
+      target:       m.appliesToPriceIds.length === 0 ? 'All plans' : `${m.appliesToPriceIds.length} plan${m.appliesToPriceIds.length === 1 ? '' : 's'}`,
+      active:       m.active && row.status === 'published',
+      matchedCount: row.matchedCount,
+      stripePromotionCodeId: m.stripePromotionCodeId,
+      stripeAccountId: customer.stripeAccountId,
+    })
+  }
 
   return (
     <>
@@ -127,6 +172,13 @@ export default async function ReasonsPage() {
               matchedCount:     r.matchedCount,
             }))} />
           </div>
+
+          {/* Spec 78 — Stripe-native promotions, read-only */}
+          <PromotionsSection
+            initial={promotionViews}
+            promotionsEnabled={!!customer.promotionsEnabled}
+            stripeAccountId={customer.stripeAccountId}
+          />
         </div>
       </main>
     </>
