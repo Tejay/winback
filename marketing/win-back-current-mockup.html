@@ -176,13 +176,15 @@
       </p>
     </div>
 
-    <!-- The "before / after" loop card -->
-    <div class="mt-12 grid grid-cols-1 lg:grid-cols-[1fr_auto_1fr] items-center gap-6 lg:gap-4">
-      <!-- LEFT — voice of customer (Suggested theme) -->
-      <div class="rounded-2xl border border-slate-100 shadow-sm p-6 border-l-4 border-l-red-600"
+    <!-- The "before / after" loop — both cards share the same shape so
+         the visual rhyme (5 → 5, red rail → emerald rail) carries the
+         metaphor. -->
+    <div class="mt-12 grid grid-cols-1 lg:grid-cols-[1fr_auto_1fr] items-stretch gap-6 lg:gap-4">
+      <!-- LEFT — clustered cancellation theme -->
+      <div class="rounded-2xl border border-slate-100 shadow-sm p-6 border-l-4 border-l-red-600 flex flex-col"
            style="background: linear-gradient(to right, #fef2f2 0%, #ffffff 30%);">
-        <div class="text-[10px] font-semibold uppercase tracking-widest text-slate-500 mb-3">What customers asked for</div>
-        <div class="flex items-start gap-4">
+        <div class="text-[10px] font-semibold uppercase tracking-widest text-red-700 mb-3">What customers asked for</div>
+        <div class="flex items-start gap-4 flex-1">
           <div class="text-center shrink-0 w-14">
             <div class="text-4xl font-bold text-red-600 leading-none">5</div>
             <div class="text-[10px] uppercase tracking-widest text-slate-500 mt-1.5 font-medium">customers</div>
@@ -192,11 +194,6 @@
             <p class="text-xs text-slate-600 mt-1.5">Wanted a first-party Slack app with channel routing, not the Zapier workaround.</p>
             <p class="text-xs text-slate-500 italic mt-2">&ldquo;Cancelling — ping me when there&rsquo;s a proper Slack app.&rdquo;</p>
           </div>
-        </div>
-        <div class="mt-4 text-right">
-          <span class="inline-flex items-center gap-1.5 text-xs font-medium text-slate-700">
-            + Add as reason
-          </span>
         </div>
       </div>
 
@@ -209,24 +206,22 @@
         </svg>
       </div>
 
-      <!-- RIGHT — what becomes of it (Active reason) -->
-      <div class="rounded-2xl border border-emerald-200 bg-white shadow-sm p-6">
+      <!-- RIGHT — your shipped reason. Same shape as LEFT: rail + soft
+           gradient + big count + content. Color flips red → emerald and
+           label flips "customers" → "emailed". -->
+      <div class="rounded-2xl border border-slate-100 shadow-sm p-6 border-l-4 border-l-emerald-600 flex flex-col"
+           style="background: linear-gradient(to right, #ecfdf5 0%, #ffffff 30%);">
         <div class="text-[10px] font-semibold uppercase tracking-widest text-emerald-700 mb-3">Your shipped reason</div>
-        <div class="flex items-start gap-3">
-          <div class="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center flex-shrink-0">
-            <svg class="w-4 h-4 text-emerald-700" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5">
-              <polyline points="20 6 9 17 4 12"/>
-            </svg>
+        <div class="flex items-start gap-4 flex-1">
+          <div class="text-center shrink-0 w-14">
+            <div class="text-4xl font-bold text-emerald-600 leading-none">5</div>
+            <div class="text-[10px] uppercase tracking-widest text-slate-500 mt-1.5 font-medium">emailed</div>
           </div>
           <div class="flex-1 min-w-0">
             <h4 class="font-semibold text-slate-900 leading-tight">Shipped Slack integration with channel routing</h4>
             <p class="text-xs text-slate-600 mt-1.5">Live Slack app · two-way sync · per-channel routing.</p>
-            <p class="text-xs text-slate-400 mt-2">Shipped 3 days ago</p>
+            <p class="text-xs text-slate-500 italic mt-2">Shipped 3 days ago — sent in your name, from your domain.</p>
           </div>
-        </div>
-        <div class="mt-4 pt-4 border-t border-slate-100 flex items-center gap-2 text-xs">
-          <svg class="w-3.5 h-3.5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-          <span class="text-slate-700"><span class="font-semibold text-slate-900">5 customers</span> emailed automatically</span>
         </div>
       </div>
     </div>

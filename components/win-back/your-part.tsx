@@ -37,17 +37,19 @@ export function YourPart() {
           </p>
         </div>
 
-        {/* Before → after loop */}
-        <div className="mt-12 grid grid-cols-1 lg:grid-cols-[1fr_auto_1fr] items-center gap-6 lg:gap-4">
+        {/* Before → after loop — both cards share the same shape so the
+            visual rhyme carries the metaphor: a "5" became a "5". Only
+            the color and label differ. */}
+        <div className="mt-12 grid grid-cols-1 lg:grid-cols-[1fr_auto_1fr] items-stretch gap-6 lg:gap-4">
           {/* LEFT — clustered cancellation theme (what customers asked for) */}
           <div
-            className="rounded-2xl border border-slate-100 shadow-sm p-6 border-l-4 border-l-red-600"
+            className="rounded-2xl border border-slate-100 shadow-sm p-6 border-l-4 border-l-red-600 flex flex-col"
             style={{ backgroundImage: 'linear-gradient(to right, #fef2f2 0%, #ffffff 30%)' }}
           >
-            <div className="text-[10px] font-semibold uppercase tracking-widest text-slate-500 mb-3">
+            <div className="text-[10px] font-semibold uppercase tracking-widest text-red-700 mb-3">
               What customers asked for
             </div>
-            <div className="flex items-start gap-4">
+            <div className="flex items-start gap-4 flex-1">
               <div className="text-center shrink-0 w-14">
                 <div className="text-4xl font-bold text-red-600 leading-none">5</div>
                 <div className="text-[10px] uppercase tracking-widest text-slate-500 mt-1.5 font-medium">
@@ -82,23 +84,23 @@ export function YourPart() {
             </svg>
           </div>
 
-          {/* RIGHT — your shipped reason (active row) */}
-          <div className="rounded-2xl border border-emerald-200 bg-white shadow-sm p-6">
+          {/* RIGHT — your shipped reason. Same shape as LEFT: 4px rail,
+              soft gradient, big count anchor + content. Color flips
+              red → emerald and "customers" → "emailed" so the eye reads
+              the loop: 5 cancelled over X → 5 emailed about X. */}
+          <div
+            className="rounded-2xl border border-slate-100 shadow-sm p-6 border-l-4 border-l-emerald-600 flex flex-col"
+            style={{ backgroundImage: 'linear-gradient(to right, #ecfdf5 0%, #ffffff 30%)' }}
+          >
             <div className="text-[10px] font-semibold uppercase tracking-widest text-emerald-700 mb-3">
               Your shipped reason
             </div>
-            <div className="flex items-start gap-3">
-              <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center flex-shrink-0">
-                <svg
-                  className="w-4 h-4 text-emerald-700"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                  strokeWidth={2.5}
-                  aria-hidden
-                >
-                  <polyline points="20 6 9 17 4 12" />
-                </svg>
+            <div className="flex items-start gap-4 flex-1">
+              <div className="text-center shrink-0 w-14">
+                <div className="text-4xl font-bold text-emerald-600 leading-none">5</div>
+                <div className="text-[10px] uppercase tracking-widest text-slate-500 mt-1.5 font-medium">
+                  emailed
+                </div>
               </div>
               <div className="flex-1 min-w-0">
                 <h4 className="font-semibold text-slate-900 leading-tight">
@@ -107,24 +109,10 @@ export function YourPart() {
                 <p className="text-xs text-slate-600 mt-1.5">
                   Live Slack app · two-way sync · per-channel routing.
                 </p>
-                <p className="text-xs text-slate-400 mt-2">Shipped 3 days ago</p>
+                <p className="text-xs text-slate-500 italic mt-2">
+                  Shipped 3 days ago — sent in your name, from your domain.
+                </p>
               </div>
-            </div>
-            <div className="mt-4 pt-4 border-t border-slate-100 flex items-center gap-2 text-xs">
-              <svg
-                className="w-3.5 h-3.5 text-blue-600"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-                strokeWidth={2}
-                aria-hidden
-              >
-                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-              </svg>
-              <span className="text-slate-700">
-                <span className="font-semibold text-slate-900">5 customers</span>{' '}
-                emailed automatically
-              </span>
             </div>
           </div>
         </div>
