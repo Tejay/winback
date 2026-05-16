@@ -1,6 +1,6 @@
 import Stripe from 'stripe'
 import { db } from '@/lib/db'
-import { users, customers, churnedSubscribers, recoveries, emailsSent } from '@/lib/schema'
+import { users, customers, churnedSubscribers, recoveries, emailsSent, improvements } from '@/lib/schema'
 import { eq, and, ne, inArray, desc, gt, isNull, isNotNull } from 'drizzle-orm'
 import { decrypt } from '@/src/winback/lib/encryption'
 import { extractSignals, getConnectStripe, getInvoiceSubscriptionId } from '@/src/winback/lib/stripe'
@@ -17,6 +17,10 @@ import {
 } from '@/src/winback/lib/platform-billing'
 import { ensureActivation } from '@/src/winback/lib/activation'
 import { refundPerformanceFee, chargePerformanceFee, PERF_FEE_REFUND_WINDOW_DAYS } from '@/src/winback/lib/performance-fee'
+import {
+  buildPromotionMetadata,
+  upsertPromotionImprovement,
+} from '@/src/winback/lib/promotions'
 import { sendPlatformPaymentFailedEmail } from '@/src/winback/lib/billing-notifications'
 import { processDunningPaymentUpdate } from '@/src/winback/lib/dunning-checkout'
 
@@ -280,6 +284,24 @@ export async function POST(req: Request) {
     // customer portal too). Only process on platform account.
     if (event.type === 'invoice.paid' && !event.account) {
       await processPlatformInvoiceEvent(event)
+    }
+    // Spec 78 — Stripe-native promotions ingestion. Connect-side events
+    // only (event.account set). promotion_code.created/updated fire on
+    // creation and any edit (active toggle, expiry change, etc.).
+    // coupon.updated covers edits that change the discount terms.
+    // coupon.deleted archives the row (in-flight recoveries referencing
+    // it activate without discount; matcher skips going forward).
+    if (
+      event.account &&
+      (event.type === 'promotion_code.created' || event.type === 'promotion_code.updated')
+    ) {
+      await processPromotionCodeUpsert(event)
+    }
+    if (event.account && event.type === 'coupon.updated') {
+      await processCouponUpdated(event)
+    }
+    if (event.account && event.type === 'coupon.deleted') {
+      await processCouponDeleted(event)
     }
   } catch (err) {
     console.error('Webhook processing error:', err)
@@ -1134,5 +1156,160 @@ async function processPlatformInvoiceEvent(event: Stripe.Event) {
         hostedInvoiceUrl: invoice.hosted_invoice_url ?? null,
       })
     }
+  }
+}
+
+/**
+ * Spec 78 — Connect-side promotion_code.created/updated handler.
+ *
+ * Looks up the Winback customer by the Connect account id, fetches the
+ * promotion code (with coupon expanded), pre-expands the coupon's
+ * applies_to.products into price ids, and upserts a kind='promotion'
+ * row into wb_improvements.
+ *
+ * No-op if the promotion code is missing or the customer doesn't exist.
+ * Errors are logged but don't fail the webhook (Stripe would retry
+ * indefinitely otherwise).
+ */
+async function processPromotionCodeUpsert(event: Stripe.Event): Promise<void> {
+  const accountId = event.account
+  if (!accountId) return
+  const promo = event.data.object as Stripe.PromotionCode
+
+  const [customer] = await db
+    .select()
+    .from(customers)
+    .where(eq(customers.stripeAccountId, accountId))
+    .limit(1)
+  if (!customer?.stripeAccessToken) return
+
+  try {
+    const stripe = getConnectStripe(decrypt(customer.stripeAccessToken))
+    // Re-retrieve with the nested coupon expanded so buildPromotionMetadata
+    // doesn't have to fetch it separately. API ≥ 2026-03-25.dahlia uses
+    // promotion.coupon (not the legacy top-level coupon path).
+    const full = await stripe.promotionCodes.retrieve(promo.id, {
+      expand: ['promotion.coupon'],
+    })
+    const metadata = await buildPromotionMetadata(stripe, full)
+    const { created } = await upsertPromotionImprovement(customer.id, metadata)
+    logEvent({
+      name: 'promotion_synced',
+      customerId: customer.id,
+      properties: {
+        stripePromotionCodeId: promo.id,
+        stripeCouponId: metadata.stripeCouponId,
+        code: metadata.code,
+        active: metadata.active,
+        created,
+      },
+    })
+  } catch (err) {
+    console.error('[webhook:promotion_code] failed for', promo.id, err)
+    logEvent({
+      name: 'promotion_sync_failed',
+      customerId: customer.id,
+      properties: {
+        stripePromotionCodeId: promo.id,
+        errorMessage: err instanceof Error ? err.message : String(err),
+      },
+    })
+  }
+}
+
+/**
+ * Spec 78 — Connect-side coupon.updated handler. A coupon edit
+ * (toggling valid, changing redeem_by, etc.) may invalidate previously-
+ * synced promotion codes. We re-fetch every active promotion code that
+ * uses this coupon and re-upsert.
+ */
+async function processCouponUpdated(event: Stripe.Event): Promise<void> {
+  const accountId = event.account
+  if (!accountId) return
+  const coupon = event.data.object as Stripe.Coupon
+
+  const [customer] = await db
+    .select()
+    .from(customers)
+    .where(eq(customers.stripeAccountId, accountId))
+    .limit(1)
+  if (!customer?.stripeAccessToken) return
+
+  try {
+    const stripe = getConnectStripe(decrypt(customer.stripeAccessToken))
+    // API ≥ 2026-03-25.dahlia: list params now nest the coupon filter
+    // under `promotion.coupon` to match the resource's new shape.
+    const codes = await stripe.promotionCodes.list({
+      promotion: { coupon: coupon.id },
+      limit: 100,
+    } as Stripe.PromotionCodeListParams)
+    for (const promo of codes.data) {
+      const metadata = await buildPromotionMetadata(stripe, promo)
+      await upsertPromotionImprovement(customer.id, metadata)
+    }
+    logEvent({
+      name: 'coupon_synced',
+      customerId: customer.id,
+      properties: {
+        stripeCouponId: coupon.id,
+        promotionCodeCount: codes.data.length,
+        valid: coupon.valid,
+      },
+    })
+  } catch (err) {
+    console.error('[webhook:coupon_updated] failed for', coupon.id, err)
+  }
+}
+
+/**
+ * Spec 78 — Connect-side coupon.deleted handler. Archives every
+ * wb_improvements row whose metadata.stripeCouponId matches. In-flight
+ * recoveries that referenced one of these promo codes activate without
+ * discount and emit a `promo_deleted_at_activation` event.
+ */
+async function processCouponDeleted(event: Stripe.Event): Promise<void> {
+  const accountId = event.account
+  if (!accountId) return
+  const coupon = event.data.object as Stripe.Coupon
+
+  const [customer] = await db
+    .select()
+    .from(customers)
+    .where(eq(customers.stripeAccountId, accountId))
+    .limit(1)
+  if (!customer) return
+
+  // Pull all this customer's promotion improvements and archive the ones
+  // whose coupon id matches. (Stripe API doesn't tell us which promotion
+  // codes were on this coupon at the time of deletion.)
+  const candidates = await db
+    .select({
+      id: improvements.id,
+      status: improvements.status,
+      promotionMetadata: improvements.promotionMetadata,
+    })
+    .from(improvements)
+    .where(and(
+      eq(improvements.customerId, customer.id),
+      eq(improvements.kind, 'promotion'),
+    ))
+
+  let archivedCount = 0
+  for (const row of candidates) {
+    const meta = row.promotionMetadata as { stripeCouponId?: string; stripePromotionCodeId?: string } | null
+    if (meta?.stripeCouponId !== coupon.id) continue
+    if (row.status === 'archived') continue
+    await db
+      .update(improvements)
+      .set({ status: 'archived', archivedAt: new Date(), updatedAt: new Date() })
+      .where(eq(improvements.id, row.id))
+    archivedCount++
+  }
+  if (archivedCount > 0) {
+    logEvent({
+      name: 'coupon_deleted_archived_promos',
+      customerId: customer.id,
+      properties: { stripeCouponId: coupon.id, archivedCount },
+    })
   }
 }
