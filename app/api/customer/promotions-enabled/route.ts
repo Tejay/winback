@@ -1,15 +1,34 @@
 import { z } from 'zod'
+import { and, eq } from 'drizzle-orm'
 import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
-import { customers } from '@/lib/schema'
-import { eq } from 'drizzle-orm'
+import { customers, improvements } from '@/lib/schema'
 import { logEvent } from '@/src/winback/lib/events'
 
 /**
- * Spec 78 — flips wb_customers.promotions_enabled for the signed-in
- * merchant. Off by default; merchant opts in from /settings.
+ * Spec 78 followup — single PATCH endpoint that updates either the
+ * promotions_enabled toggle, the selected_promotion_improvement_id, or
+ * both. Both fields live on wb_customers, both flip from /reasons, both
+ * have the same auth shape — keeping them on one route avoids two
+ * round-trips when the merchant turns promos on for the first time and
+ * picks one in the same flow.
+ *
+ * Body shape: { enabled?: boolean, selectedPromotionImprovementId?: string | null }
+ *   - enabled: flips the toggle. Off = no promo emails regardless of selection.
+ *   - selectedPromotionImprovementId: id of a published kind='promotion'
+ *     improvement owned by this customer, or null to clear. We verify
+ *     ownership before writing.
+ *
+ * Path kept at /api/customer/promotions-enabled for backward compatibility
+ * with the now-removed /settings toggle; the field is just the body shape.
  */
-const Body = z.object({ enabled: z.boolean() })
+const Body = z.object({
+  enabled:                          z.boolean().optional(),
+  selectedPromotionImprovementId:   z.string().uuid().nullable().optional(),
+}).refine(
+  (b) => b.enabled !== undefined || b.selectedPromotionImprovementId !== undefined,
+  { message: 'must supply enabled or selectedPromotionImprovementId' },
+)
 
 export async function PATCH(req: Request) {
   const session = await auth()
@@ -32,15 +51,43 @@ export async function PATCH(req: Request) {
     return Response.json({ error: 'No customer record' }, { status: 404 })
   }
 
-  await db
-    .update(customers)
-    .set({ promotionsEnabled: parsed.data.enabled, updatedAt: new Date() })
-    .where(eq(customers.id, customer.id))
+  // If a selection was provided (non-null), confirm it's actually one of
+  // this customer's published promotion rows. Prevents a forged id from
+  // pointing the customer at an unrelated improvement (which the matcher
+  // would then load and treat as a promo).
+  if (parsed.data.selectedPromotionImprovementId) {
+    const [target] = await db
+      .select({ id: improvements.id })
+      .from(improvements)
+      .where(and(
+        eq(improvements.id, parsed.data.selectedPromotionImprovementId),
+        eq(improvements.customerId, customer.id),
+        eq(improvements.kind, 'promotion'),
+        eq(improvements.status, 'published'),
+      ))
+      .limit(1)
+    if (!target) {
+      return Response.json({ error: 'Promotion not found' }, { status: 404 })
+    }
+  }
+
+  const update: Record<string, unknown> = { updatedAt: new Date() }
+  if (parsed.data.enabled !== undefined) {
+    update.promotionsEnabled = parsed.data.enabled
+  }
+  if (parsed.data.selectedPromotionImprovementId !== undefined) {
+    update.selectedPromotionImprovementId = parsed.data.selectedPromotionImprovementId
+  }
+
+  await db.update(customers).set(update).where(eq(customers.id, customer.id))
 
   await logEvent({
-    name: 'promotions_enabled_changed',
+    name: 'promotions_settings_changed',
     customerId: customer.id,
-    properties: { enabled: parsed.data.enabled },
+    properties: {
+      enabled:                        parsed.data.enabled,
+      selectedPromotionImprovementId: parsed.data.selectedPromotionImprovementId,
+    },
   })
 
   return Response.json({ ok: true })

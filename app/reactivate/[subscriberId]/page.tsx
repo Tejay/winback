@@ -6,6 +6,10 @@ import { eq } from 'drizzle-orm'
 import { decrypt } from '@/src/winback/lib/encryption'
 import { getConnectStripe } from '@/src/winback/lib/stripe'
 import { verifySubscriberToken } from '@/src/winback/lib/unsubscribe-token'
+import {
+  formatPromotionTerms,
+  loadAppliedPromotionForSubscriber,
+} from '@/src/winback/lib/promotions'
 import { ChooserForm } from './chooser-form'
 
 /**
@@ -97,6 +101,13 @@ export default async function ReactivateChooserPage({
     return (a.unitAmount ?? 0) - (b.unitAmount ?? 0)
   })
 
+  // Spec 78 followup — surface the applied promo on the chooser so the
+  // customer sees the discount before they pick a plan. The promo was
+  // selected by the merchant on /reasons and attached to the most recent
+  // re-engagement email; loadAppliedPromotionForSubscriber re-validates
+  // it (active, not expired, not max-redeemed) at click time.
+  const appliedPromo = await loadAppliedPromotionForSubscriber(subscriberId)
+
   const firstName = subscriber.name?.split(' ')[0] ?? 'there'
 
   // Spec 36 — render the merchant's brand (NOT Winback's). Same pattern
@@ -127,6 +138,22 @@ export default async function ReactivateChooserPage({
         <p className="text-sm text-slate-600 mb-6">
           Pick a plan to resubscribe.
         </p>
+
+        {appliedPromo && (
+          <div className="mb-6 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3">
+            <div className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
+              Discount applied
+            </div>
+            <div className="mt-1 text-sm text-emerald-900">
+              <span className="font-mono">{appliedPromo.code}</span>
+              {' · '}
+              {formatPromotionTerms(appliedPromo)}
+            </div>
+            <div className="mt-1 text-xs text-emerald-700/80">
+              Automatically applied at checkout.
+            </div>
+          </div>
+        )}
 
         <ChooserForm subscriberId={subscriberId} token={t!} options={options} />
 

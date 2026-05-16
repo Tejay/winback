@@ -22,7 +22,7 @@ import {
   type ImprovementForMatcher,
 } from './improvement-match'
 import {
-  findBestPromotionForSubscriber,
+  getApplicablePromotionForSubscriber,
   parsePromotionRows,
   summarizePromotion,
   type PromotionRow,
@@ -115,10 +115,11 @@ async function tryPromotionPath(
   customer: CustomerRow,
 ): Promise<PerSubscriberOutcome | null> {
   if (!customer.promotionsEnabled) return null
+  if (!customer.selectedPromotionImprovementId) return null
   if (sub.tier !== 1) return null
   if (sub.cancellationCategory !== 'Price') return null
 
-  // Load active kind='promotion' rows for this customer
+  // Load only the customer's selected promo row (must still be published).
   const rawRows = await db
     .select({
       id:                improvements.id,
@@ -127,12 +128,13 @@ async function tryPromotionPath(
     })
     .from(improvements)
     .where(and(
+      eq(improvements.id, customer.selectedPromotionImprovementId),
       eq(improvements.customerId, customer.id),
       eq(improvements.kind, 'promotion'),
       eq(improvements.status, 'published'),
     ))
+    .limit(1)
 
-  // Cast row.createdAt to Date (drizzle returns Date for withTimezone:true)
   const promos: PromotionRow[] = parsePromotionRows(
     rawRows.map((r) => ({
       id: r.id,
@@ -141,9 +143,9 @@ async function tryPromotionPath(
     })),
   )
 
-  const best = findBestPromotionForSubscriber(
+  const best = getApplicablePromotionForSubscriber(
     { tier: sub.tier, cancellationCategory: sub.cancellationCategory, mrrCents: sub.mrrCents, stripePriceId: sub.stripePriceId },
-    promos,
+    promos[0] ?? null,
     customer.promotionsEnabled,
   )
   if (!best) return null

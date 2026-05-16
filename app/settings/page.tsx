@@ -15,7 +15,6 @@ import { PoweredByStripe } from '@/components/powered-by-stripe'
 import { fetchPlatformPaymentMethod, fetchPlatformInvoices } from '@/src/winback/lib/platform-billing'
 import { getSubscriptionDetails } from '@/src/winback/lib/subscription'
 import { SubscriptionActions } from './subscription-actions'
-import { PromotionsToggle } from './promotions-toggle'
 
 export default async function SettingsPage({
   searchParams,
@@ -285,14 +284,6 @@ export default async function SettingsPage({
               <button className="border border-slate-200 bg-white text-slate-700 rounded-full px-4 py-1.5 text-sm font-medium">
                 Update
               </button>
-            </div>
-
-            {/* Promotions opt-in (spec 78) */}
-            <div className="py-4 border-t border-slate-100">
-              <PromotionsToggle
-                enabled={!!customer?.promotionsEnabled}
-                stripeConnected={stripeConnected}
-              />
             </div>
 
             {/* Invoices (spec 24b) */}

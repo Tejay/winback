@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, integer, bigint, boolean, decimal, timestamp, date, jsonb, index, uniqueIndex, primaryKey } from 'drizzle-orm/pg-core'
+import { pgTable, uuid, text, integer, bigint, boolean, decimal, timestamp, date, jsonb, index, uniqueIndex, primaryKey, type AnyPgColumn } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
 
 export const users = pgTable('wb_users', {
@@ -75,8 +75,13 @@ export const customers = pgTable('wb_customers', {
   customMonthlyCents:       integer('custom_monthly_cents'),
   // Spec 78 — opt-in for the promo-aware win-back path. Off by default
   // preserves the "we don't recover by discounting" positioning. Flipped
-  // on from /settings.
+  // on from /reasons.
   promotionsEnabled:        boolean('promotions_enabled').notNull().default(false),
+  // Spec 78 followup — the single promo improvement the merchant has
+  // chosen to send. NULL = no promo on outbound emails even when
+  // promotionsEnabled is true. Migration 046.
+  selectedPromotionImprovementId: uuid('selected_promotion_improvement_id')
+    .references((): AnyPgColumn => improvements.id, { onDelete: 'set null' }),
   // Spec 41 — cumulative lifetime revenue saved across all this customer's
   // recoveries. Cached value: written daily by /api/cron/cumulative-revenue
   // and read directly by /api/stats. BIGINT because mrr × months at high

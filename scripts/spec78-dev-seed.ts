@@ -43,6 +43,8 @@ type PromoMeta = {
   timesRedeemed:         number
   active:                boolean
   syncedAt:              string
+  restrictions:          Record<string, unknown> | null
+  firstTimeTransaction:  boolean | null
 }
 
 const PROMO_WINBACK25: PromoMeta = {
@@ -61,8 +63,13 @@ const PROMO_WINBACK25: PromoMeta = {
   timesRedeemed:         0,
   active:                true,
   syncedAt:              new Date().toISOString(),
+  restrictions:          null,
+  firstTimeTransaction:  null,
 }
 
+// Carries a first-time-transaction restriction so the /reasons confirm
+// dialog has something to show. Winback can't pre-check this, so picking
+// it should trigger the "You verify" warning before it can be selected.
 const PROMO_COMEBACK50: PromoMeta = {
   stripeCouponId:        'cpn_dev_comeback50',
   stripePromotionCodeId: 'promo_dev_comeback50',
@@ -79,6 +86,8 @@ const PROMO_COMEBACK50: PromoMeta = {
   timesRedeemed:         0,
   active:                true,
   syncedAt:              new Date().toISOString(),
+  restrictions:          { first_time_transaction: true },
+  firstTimeTransaction:  true,
 }
 
 async function findCustomer(): Promise<string> {
@@ -233,8 +242,19 @@ async function main() {
     return
   }
 
-  await upsertPromoImprovement(customerId, PROMO_WINBACK25)
+  const winback25Id = await upsertPromoImprovement(customerId, PROMO_WINBACK25)
   await upsertPromoImprovement(customerId, PROMO_COMEBACK50)
+
+  // Pre-select WINBACK25 + enable so the seed reproduces today's end state
+  // (Acme + StoryFlow already have applied promo codes on their recoveries
+  // so the dashboard chip renders regardless of the selection — but the
+  // toggle + selection make /reasons immediately usable).
+  await db.update(customers).set({
+    promotionsEnabled: true,
+    selectedPromotionImprovementId: winback25Id,
+    updatedAt: new Date(),
+  }).where(eq(customers.id, customerId))
+  console.log(`[seed] enabled promotions + selected WINBACK25 (${winback25Id})`)
 
   await upsertSyntheticRecovery({
     customerId,
@@ -259,8 +279,7 @@ async function main() {
   })
 
   console.log('\n[seed] done. Now visit:')
-  console.log('  http://localhost:3000/reasons    ← Promotions card with 2 rows')
-  console.log('  http://localhost:3000/settings   ← flip the new toggle (currently off)')
+  console.log('  http://localhost:3000/reasons    ← Promotions card: toggle on, WINBACK25 selected, COMEBACK50 triggers confirm dialog')
   console.log('  http://localhost:3000/dashboard  ← Acme + StoryFlow rows with promo chips under "Too expensive"')
 }
 

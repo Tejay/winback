@@ -7,6 +7,7 @@ import { decrypt } from '@/src/winback/lib/encryption'
 import { logEvent } from '@/src/winback/lib/events'
 import { getConnectStripe } from '@/src/winback/lib/stripe'
 import { verifySubscriberToken } from '@/src/winback/lib/unsubscribe-token'
+import { loadAppliedPromotionForSubscriber } from '@/src/winback/lib/promotions'
 
 /**
  * Spec 20c — Creates a Stripe Checkout session for the price chosen by the
@@ -68,6 +69,12 @@ export async function POST(
     return NextResponse.json({ error: 'Selected plan is not available' }, { status: 400 })
   }
 
+  // Spec 78 — mirror the main reactivate route: if a promotion email was
+  // sent to this subscriber AND the promo is still valid, attach it to the
+  // new subscription. Without this the chooser path silently drops the
+  // discount the merchant promised in the email.
+  const appliedPromo = await loadAppliedPromotionForSubscriber(subscriberId)
+
   try {
     const session = await stripe.checkout.sessions.create({
       mode: 'subscription',
@@ -80,7 +87,9 @@ export async function POST(
       metadata: {
         winback_subscriber_id: subscriberId,
         winback_customer_id: customer.id,
+        ...(appliedPromo ? { winback_applied_promotion_code_id: appliedPromo.stripePromotionCodeId } : {}),
       },
+      ...(appliedPromo ? { discounts: [{ promotion_code: appliedPromo.stripePromotionCodeId }] } : {}),
     })
 
     logEvent({

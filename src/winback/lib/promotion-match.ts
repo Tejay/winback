@@ -3,21 +3,19 @@ import type { WbPromotionMetadata } from './promotions'
 import { WbPromotionMetadataSchema, formatPromotionTerms } from './promotions'
 
 /**
- * Spec 78 — deterministic promotion selection.
+ * Spec 78 followup — single-selected-promotion gate.
  *
- * Pure code, no LLM. Given:
- *   • a subscriber (tier, cancellationCategory, mrrCents, stripePriceId)
- *   • the merchant's promotionsEnabled flag
- *   • a list of kind='promotion' improvement rows for that merchant
+ * The merchant picks one promo from the synced list on /reasons. The
+ * re-engagement path either uses that promo (when the four bulletproof
+ * gates pass for this specific subscriber) or sends a no-promo email.
  *
- * Returns the single best applicable promotion, or null. The LLM's role
- * is upstream (classifier produces Price category + tier) and downstream
- * (email composer renders the chosen promo). Selection itself is
- * predictable so merchants can reason about which promo will be used
- * by adjusting Stripe-side primitives (appliesToPriceIds, redeemBy,
- * maxRedemptions).
+ * Selection is no longer a tiebreak — there's only one candidate. Anything
+ * Stripe will evaluate at redemption that we *don't* check below
+ * (first_time_transaction, minimum_amount, customer pin, currency mismatch
+ * on amount-off coupons, plus future restriction fields) is the merchant's
+ * responsibility — surfaced in the /reasons UI before they pick.
  *
- * Eligibility gate (all must be true):
+ * Eligibility (all must be true):
  *   - promotionsEnabled = true
  *   - subscriber.tier = 1
  *   - subscriber.cancellationCategory = 'Price'
@@ -25,11 +23,6 @@ import { WbPromotionMetadataSchema, formatPromotionTerms } from './promotions'
  *   - promo.redeemBy is null OR > now
  *   - promo.timesRedeemed < (promo.maxRedemptions ?? Infinity)
  *   - promo.appliesToPriceIds is empty (= all) OR contains subscriber.stripePriceId
- *
- * Tiebreak:
- *   1. max(percentOff/100 × subscriber.mrrCents, amountOffCents)
- *   2. soonest redeemBy
- *   3. newest createdAt (use improvement row's createdAt)
  */
 
 export interface PromotionSubscriberSignals {
@@ -42,7 +35,7 @@ export interface PromotionSubscriberSignals {
 export interface PromotionRow {
   id: string                                  // wb_improvements.id
   promotionMetadata: WbPromotionMetadata
-  createdAt: Date                             // for the newest-wins tiebreak
+  createdAt: Date
 }
 
 const PromotionRowSchema = z.object({
@@ -67,64 +60,36 @@ export function parsePromotionRows(
   return out
 }
 
-function isEligible(
-  promo: PromotionRow,
+/**
+ * Returns the selected promo if it passes the bulletproof gates for this
+ * subscriber, otherwise null. Caller falls back to no-promo email path.
+ *
+ * `selected` may be null when the merchant hasn't picked anything yet —
+ * we short-circuit in that case so the caller doesn't have to.
+ */
+export function getApplicablePromotionForSubscriber(
   sub: PromotionSubscriberSignals,
-  promotionsEnabled: boolean,
-  now: Date = new Date(),
-): boolean {
-  if (!promotionsEnabled) return false
-  if (sub.tier !== 1) return false
-  if (sub.cancellationCategory !== 'Price') return false
-
-  const m = promo.promotionMetadata
-  if (!m.active) return false
-  if (m.redeemBy) {
-    const expiresAt = new Date(m.redeemBy)
-    if (!Number.isNaN(expiresAt.getTime()) && expiresAt <= now) return false
-  }
-  if (m.maxRedemptions !== null && m.timesRedeemed >= m.maxRedemptions) return false
-  if (m.appliesToPriceIds.length > 0) {
-    if (!sub.stripePriceId) return false
-    if (!m.appliesToPriceIds.includes(sub.stripePriceId)) return false
-  }
-  return true
-}
-
-function discountValueCents(promo: PromotionRow, sub: PromotionSubscriberSignals): number {
-  const m = promo.promotionMetadata
-  if (m.percentOff !== null) {
-    return Math.round((m.percentOff / 100) * sub.mrrCents)
-  }
-  if (m.amountOffCents !== null) {
-    return m.amountOffCents
-  }
-  return 0
-}
-
-export function findBestPromotionForSubscriber(
-  sub: PromotionSubscriberSignals,
-  promos: PromotionRow[],
+  selected: PromotionRow | null,
   promotionsEnabled: boolean,
   now: Date = new Date(),
 ): PromotionRow | null {
-  const eligible = promos.filter((p) => isEligible(p, sub, promotionsEnabled, now))
-  if (eligible.length === 0) return null
+  if (!promotionsEnabled) return null
+  if (!selected) return null
+  if (sub.tier !== 1) return null
+  if (sub.cancellationCategory !== 'Price') return null
 
-  eligible.sort((a, b) => {
-    // 1. Highest discount value (descending)
-    const va = discountValueCents(a, sub)
-    const vb = discountValueCents(b, sub)
-    if (va !== vb) return vb - va
-    // 2. Soonest redeemBy (nulls last)
-    const ra = a.promotionMetadata.redeemBy ? new Date(a.promotionMetadata.redeemBy).getTime() : Infinity
-    const rb = b.promotionMetadata.redeemBy ? new Date(b.promotionMetadata.redeemBy).getTime() : Infinity
-    if (ra !== rb) return ra - rb
-    // 3. Newest createdAt (descending)
-    return b.createdAt.getTime() - a.createdAt.getTime()
-  })
-
-  return eligible[0]
+  const m = selected.promotionMetadata
+  if (!m.active) return null
+  if (m.redeemBy) {
+    const expiresAt = new Date(m.redeemBy)
+    if (!Number.isNaN(expiresAt.getTime()) && expiresAt <= now) return null
+  }
+  if (m.maxRedemptions !== null && m.timesRedeemed >= m.maxRedemptions) return null
+  if (m.appliesToPriceIds.length > 0) {
+    if (!sub.stripePriceId) return null
+    if (!m.appliesToPriceIds.includes(sub.stripePriceId)) return null
+  }
+  return selected
 }
 
 /**
