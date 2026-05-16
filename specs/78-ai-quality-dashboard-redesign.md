@@ -154,21 +154,24 @@ Median confidence              0.62      0.71        -13%     ⚠
 ```
 Price        24%   →
 Unused       21%   ↓ -2pp
-Competitor   18%   ↑ +2pp     → drill in
+Competitor   18%   ↑ +2pp
 Other        18%   →
-Feature      11%   ↑ +3pp     → drill in
+Feature      11%   ↑ +3pp
 Quality       8%   →
 ```
 
-Each row is clickable; click drills to a filtered case list (cases in
-the 30-day window with that category). Out of scope: the drill-in view
-itself — for now, click links to `/admin/subscribers?category=...`
-with a new optional filter.
+Rows are display-only. Drill-in (click → filtered case list) is
+**deferred** — implementing it requires extending
+`/api/admin/subscribers/search` with a `?category=` filter and the
+corresponding UI on the subscribers page. That's scope creep for this
+spec and lives as a future follow-up. The category mix itself still
+surfaces the signal — when "Feature +3pp" lights up, the supervisor
+knows what to investigate.
 
 **Inline explanation:**
 > *Tier tells us how the AI wrote the email. Category tells us what
-> subscribers actually said. A spike in "Feature" is actionable —
-> click to see exactly what they asked for. A spike in "Competitor"
+> subscribers actually said. A "Feature" or "Quality" spike is
+> actionable — those are complaints you can fix. A "Competitor" spike
 > tells you which competitor and how often.*
 
 ### Block 4 — Auto-lost audit (smart-ranked)
@@ -393,10 +396,10 @@ by default) gives the supervisor-cadence summary:
    spec — the count is displayed but click-through is deferred. A
    follow-up spec can add the case-list view.
 
-7. **Block 3 drill-in.** Click sends to `/admin/subscribers?category=X`
-   which requires the subscribers page to support that query param. If
-   it doesn't today, this spec adds the filter (small addition; the
-   subscribers search already supports `email=` and `name=`).
+7. **Block 3 drill-in.** Deferred to a future spec. Display-only here;
+   the drill-in requires `/api/admin/subscribers/search` and the
+   subscribers UI to accept a `?category=` filter, which is real
+   touch-work outside this spec's surface area.
 
 ## Phasing
 
@@ -427,8 +430,8 @@ commit on the branch so the diff is reviewable in chunks.
       (zero-classifications) case
 - [ ] Each block renders on present-data case (seed via dev DB)
 - [ ] Inline explanation copy renders verbatim from spec
-- [ ] Subscribers page accepts `?category=` filter; click from Block 3
-      lands on filtered list
+- [ ] Block 3 rows are display-only (drill-in deferred — confirm no
+      orphan Link components or routing logic for category filter)
 - [ ] Auto-lost card expansion fetches and renders conversation
       thread; no double-fetch on re-expand
 - [ ] Block 1 cohort window string ("classified between Mar 16 –
