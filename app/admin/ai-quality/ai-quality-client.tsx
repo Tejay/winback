@@ -353,13 +353,14 @@ function CategoryMixBlock({ data }: { data: { rows: CategoryMixRow[]; total30d: 
                 <div className="w-24 text-sm font-medium text-slate-700">{r.category}</div>
                 <div className="flex-1 h-5 bg-slate-100 rounded-full overflow-hidden">
                   <div
-                    className={`h-full ${categoryColor(r.category)} flex items-center justify-end pr-2 text-xs font-medium`}
-                    style={{ width: `${Math.max(r.pct30d, r.count30d > 0 ? 4 : 0)}%` }}
-                  >
-                    {r.count30d > 0 && (
-                      <span className="text-white">{r.count30d} ({r.pct30d.toFixed(0)}%)</span>
-                    )}
-                  </div>
+                    className={`h-full ${categoryColor(r.category)} rounded-full`}
+                    style={{ width: `${Math.max(r.pct30d, r.count30d > 0 ? 1.5 : 0)}%` }}
+                  />
+                </div>
+                {/* Count label lives OUTSIDE the bar so small bars (like
+                   "Switched" at 2%) remain readable. Bar is purely visual. */}
+                <div className="w-20 text-right text-sm tabular-nums text-slate-900 font-medium">
+                  {r.count30d > 0 ? <span>{r.count30d} <span className="text-slate-400 text-xs">({r.pct30d.toFixed(0)}%)</span></span> : <span className="text-slate-300">—</span>}
                 </div>
                 <div className={`w-20 text-right text-xs tabular-nums ${
                   shiftFlag ? (r.pctShift7d > 0 ? 'text-amber-700 font-semibold' : 'text-blue-700 font-semibold')
@@ -376,15 +377,17 @@ function CategoryMixBlock({ data }: { data: { rows: CategoryMixRow[]; total30d: 
   )
 }
 
+// Bar background colors paired so white text on them stays readable.
+// Avoid the 300-400 range for yellows/grays — they make white text vanish.
 function categoryColor(category: string): string {
   switch (category) {
-    case 'Competitor': return 'bg-purple-400'
-    case 'Price':      return 'bg-amber-400'
-    case 'Quality':    return 'bg-rose-400'
-    case 'Unused':     return 'bg-slate-400'
-    case 'Feature':    return 'bg-blue-400'
-    case 'Other':      return 'bg-slate-300'
-    default:           return 'bg-slate-300'
+    case 'Competitor': return 'bg-purple-500'
+    case 'Price':      return 'bg-amber-600'
+    case 'Quality':    return 'bg-rose-500'
+    case 'Unused':     return 'bg-slate-500'
+    case 'Feature':    return 'bg-blue-500'
+    case 'Other':      return 'bg-slate-400'
+    default:           return 'bg-slate-400'
   }
 }
 
