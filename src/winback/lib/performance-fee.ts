@@ -23,11 +23,20 @@ const PERF_FEE_CREATING_LOCK_TTL_MS = 30_000
 /**
  * Phase A — Performance-fee charging and refunding.
  *
- * The performance fee is 1× MRR per voluntary-cancellation win-back, charged
- * once and refundable in full if the subscriber re-cancels within 14 days.
- * It rides on the customer's existing Stripe Subscription as a one-off
- * invoice item, attached to the subscription so it lands on the next
- * cycle's invoice automatically.
+ * The performance fee is 1× the recovered subscriber's first paid invoice
+ * amount per voluntary-cancellation win-back, charged once and refundable
+ * in full if the subscriber re-cancels within 14 days. It rides on the
+ * merchant's Winback platform Stripe Subscription as a one-off invoice
+ * item, attached to the subscription so it lands on the next cycle's
+ * invoice automatically.
+ *
+ * Spec 78 — firing trigger is the Connect-side invoice.payment_succeeded
+ * webhook (the recovered subscriber's first non-zero paid invoice), not
+ * activation time. Callers pass the invoice's amount_paid + invoice id
+ * so the fee mirrors the actual revenue the merchant collected and we
+ * have a basis-invoice audit trail. The legacy "use planMrrCents at
+ * activation" path is retained for diagnostic scripts only — production
+ * never calls it without opts.
  *
  * Idempotency: every operation keys off `wb_recoveries.perf_fee_stripe_item_id`.
  * Charge is no-op if the column is set; refund decides between item deletion
@@ -43,8 +52,10 @@ interface RecoveryRow {
   planMrrCents: number
   recoveryType: string | null
   perfFeeStripeItemId: string | null
+  perfFeeAmountCents: number | null
   perfFeeChargedAt: Date | null
   perfFeeRefundedAt: Date | null
+  perfFeeBasisInvoiceId: string | null
 }
 
 interface CustomerRow {
@@ -61,8 +72,10 @@ async function loadRecovery(recoveryId: string): Promise<RecoveryRow | null> {
       planMrrCents: recoveries.planMrrCents,
       recoveryType: recoveries.recoveryType,
       perfFeeStripeItemId: recoveries.perfFeeStripeItemId,
+      perfFeeAmountCents: recoveries.perfFeeAmountCents,
       perfFeeChargedAt: recoveries.perfFeeChargedAt,
       perfFeeRefundedAt: recoveries.perfFeeRefundedAt,
+      perfFeeBasisInvoiceId: recoveries.perfFeeBasisInvoiceId,
     })
     .from(recoveries)
     .where(eq(recoveries.id, recoveryId))
@@ -92,7 +105,7 @@ async function loadSubscriberEmail(subscriberId: string): Promise<string> {
 }
 
 /**
- * Charges the 1× MRR performance fee for a strong-attribution win-back
+ * Charges the 1× performance fee for a strong-attribution win-back
  * recovery as a Stripe invoice item.
  *
  * Two paths:
@@ -102,15 +115,23 @@ async function loadSubscriberEmail(subscriberId: string): Promise<string> {
  *     `subscription` field). The next time a subscription invoice is
  *     generated for this customer (typically in `ensurePlatformSubscription`
  *     immediately after this call), Stripe bundles the pending items onto
- *     that first invoice automatically. This is how the prorated $99 plus
- *     all win-back fees end up on a single first invoice.
+ *     that first invoice automatically.
+ *
+ * Spec 78 — opts let the production webhook path pass the actual
+ * first-paid-invoice amount (and that invoice's id, for audit/idempotency)
+ * instead of falling back to `planMrrCents`. The default-no-opts call
+ * shape is retained for diagnostic scripts and the deprecated
+ * `chargePendingPerformanceFees` self-heal path.
  *
  * Preconditions:
  *   • Recovery must exist and have `recoveryType = 'win_back'`.
  *   • Customer must have a platform Stripe customer.
  *   • If `perfFeeStripeItemId` is already set on the recovery, this is a no-op.
  */
-export async function chargePerformanceFee(recoveryId: string): Promise<{
+export async function chargePerformanceFee(
+  recoveryId: string,
+  opts?: { amountCents?: number; basisInvoiceId?: string },
+): Promise<{
   invoiceItemId: string | null
   amountCents: number
   alreadyCharged: boolean
@@ -123,10 +144,15 @@ export async function chargePerformanceFee(recoveryId: string): Promise<{
       `recovery ${recoveryId} is not a win-back (recoveryType=${rec.recoveryType})`,
     )
   }
+  // Spec 78 — the effective fee amount. Callers from the new
+  // invoice.payment_succeeded webhook pass the actual amount_paid;
+  // legacy callers (diagnostic scripts only after spec 78) get the
+  // pre-change behaviour of 1× planMrrCents.
+  const amountCents = opts?.amountCents ?? rec.planMrrCents
   if (rec.perfFeeStripeItemId) {
     return {
       invoiceItemId: rec.perfFeeStripeItemId,
-      amountCents: rec.planMrrCents,
+      amountCents: rec.perfFeeAmountCents ?? amountCents,
       alreadyCharged: true,
     }
   }
@@ -142,12 +168,13 @@ export async function chargePerformanceFee(recoveryId: string): Promise<{
       customerId: rec.customerId,
       properties: {
         recoveryId,
-        skippedAmountCents: rec.planMrrCents,
+        skippedAmountCents: amountCents,
+        basisInvoiceId: opts?.basisInvoiceId ?? null,
       },
     })
     return {
       invoiceItemId: null,
-      amountCents: rec.planMrrCents,
+      amountCents,
       alreadyCharged: false,
       skipped: 'pilot',
     }
@@ -170,13 +197,14 @@ export async function chargePerformanceFee(recoveryId: string): Promise<{
       customerId: rec.customerId,
       properties: {
         recoveryId,
-        skippedAmountCents: rec.planMrrCents,
+        skippedAmountCents: amountCents,
         customMonthlyCents: flatRateCents,
+        basisInvoiceId: opts?.basisInvoiceId ?? null,
       },
     })
     return {
       invoiceItemId: null,
-      amountCents: rec.planMrrCents,
+      amountCents,
       alreadyCharged: false,
       skipped: 'flat_rate',
     }
@@ -214,18 +242,18 @@ export async function chargePerformanceFee(recoveryId: string): Promise<{
     if (fresh?.perfFeeStripeItemId) {
       return {
         invoiceItemId: fresh.perfFeeStripeItemId,
-        amountCents: rec.planMrrCents,
+        amountCents: fresh.perfFeeAmountCents ?? amountCents,
         alreadyCharged: true,
       }
     }
     await logEvent({
       name: 'perf_fee_create_skipped_race',
       customerId: rec.customerId,
-      properties: { recoveryId },
+      properties: { recoveryId, basisInvoiceId: opts?.basisInvoiceId ?? null },
     })
     return {
       invoiceItemId: null,
-      amountCents: rec.planMrrCents,
+      amountCents,
       alreadyCharged: false,
       skipped: 'race',
     }
@@ -246,12 +274,16 @@ export async function chargePerformanceFee(recoveryId: string): Promise<{
 
   const params: Stripe.InvoiceItemCreateParams = {
     customer: cust.stripePlatformCustomerId,
-    amount: rec.planMrrCents,
+    amount: amountCents,
     currency: PLATFORM_FEE_CURRENCY,
     description: `Win-back: ${email}`,
     metadata: {
       winback_recovery_id: recoveryId,
       winback_customer_id: rec.customerId,
+      // Spec 78 — preserve the audit trail in Stripe metadata too, so the
+      // recovered subscriber's invoice that set the basis is one click
+      // away from the invoice item in the Stripe dashboard.
+      ...(opts?.basisInvoiceId ? { winback_basis_invoice_id: opts.basisInvoiceId } : {}),
     },
   }
   // When a subscription is already live, attach the item to it so it lands
@@ -268,9 +300,13 @@ export async function chargePerformanceFee(recoveryId: string): Promise<{
     // ever). If the DB lock ever leaks (refactor regression, weird Postgres
     // edge case), Stripe will dedup by key for 24h and return the same
     // invoice item id rather than billing twice.
-    item = await stripe.invoiceItems.create(params, {
-      idempotencyKey: `wb-perf-${recoveryId}`,
-    })
+    // Spec 78 — basis-invoice id added to the key (when present) so a
+    // retried webhook for the same recovered subscriber's invoice
+    // (post-DB-lock, pre-DB-update window) still hits Stripe's 24h dedup.
+    const idempotencyKey = opts?.basisInvoiceId
+      ? `wb-perf-${recoveryId}-${opts.basisInvoiceId}`
+      : `wb-perf-${recoveryId}`
+    item = await stripe.invoiceItems.create(params, { idempotencyKey })
   } catch (err) {
     // Release the lock so the next caller (or a retry) isn't blocked
     // for 30s waiting for the TTL.
@@ -288,13 +324,14 @@ export async function chargePerformanceFee(recoveryId: string): Promise<{
     .update(recoveries)
     .set({
       perfFeeStripeItemId: item.id,
-      perfFeeAmountCents: rec.planMrrCents,
+      perfFeeAmountCents: amountCents,
       perfFeeChargedAt: new Date(),
       perfFeeCreatingAt: null,
+      ...(opts?.basisInvoiceId ? { perfFeeBasisInvoiceId: opts.basisInvoiceId } : {}),
     })
     .where(eq(recoveries.id, recoveryId))
 
-  return { invoiceItemId: item.id, amountCents: rec.planMrrCents, alreadyCharged: false }
+  return { invoiceItemId: item.id, amountCents, alreadyCharged: false }
 }
 
 /**
@@ -373,12 +410,19 @@ export async function refundPerformanceFee(recoveryId: string): Promise<{
         // so Stripe issues a real refund back to the merchant's card
         // alongside the credit note. Semantically: "the win-back didn't
         // stick — give the merchant their perf fee back."
+        // Spec 78 — refund what we actually charged (perfFeeAmountCents),
+        // not planMrrCents. Under the deferred firing model the basis is
+        // the first paid invoice's amount_paid, which can differ from
+        // planMrrCents (free-month promos, plan changes). Fall back to
+        // planMrrCents for pre-spec-78 recoveries where the column might
+        // not have been written.
+        const refundCents = rec.perfFeeAmountCents ?? rec.planMrrCents
         await stripe.creditNotes.create({
           invoice: invoiceId,
           lines: [
             { type: 'invoice_line_item', invoice_line_item: line.id, quantity: 1 },
           ],
-          refund_amount: rec.planMrrCents,
+          refund_amount: refundCents,
         })
         method = 'credit_note'
       }

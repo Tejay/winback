@@ -16,7 +16,7 @@ import {
   detachPaymentMethod,
 } from '@/src/winback/lib/platform-billing'
 import { ensureActivation } from '@/src/winback/lib/activation'
-import { refundPerformanceFee, PERF_FEE_REFUND_WINDOW_DAYS } from '@/src/winback/lib/performance-fee'
+import { refundPerformanceFee, chargePerformanceFee, PERF_FEE_REFUND_WINDOW_DAYS } from '@/src/winback/lib/performance-fee'
 import { sendPlatformPaymentFailedEmail } from '@/src/winback/lib/billing-notifications'
 import { processDunningPaymentUpdate } from '@/src/winback/lib/dunning-checkout'
 
@@ -44,6 +44,105 @@ async function triggerActivation(wbCustomerId: string, ctx: string): Promise<voi
       customerId: wbCustomerId,
       properties: {
         context: ctx,
+        errorMessage: err instanceof Error ? err.message : String(err),
+      },
+    })
+  }
+}
+
+/**
+ * Spec 78 — when the recovered subscriber's first non-zero invoice settles
+ * on the merchant's Stripe account, fire the 1× performance fee on the
+ * merchant's Winback platform subscription. The basis is invoice.amount_paid,
+ * not planMrrCents — this correctly handles free-month promos, free trials,
+ * and plan upgrades/downgrades.
+ *
+ * Independent of processPaymentSucceeded (which handles dunning recoveries
+ * via the cancellationReason='Payment failed' subscriber filter). Both can
+ * fire on the same event without conflict.
+ *
+ * Idempotency:
+ *   • recovery.perf_fee_stripe_item_id set → no-op (already charged)
+ *   • recovery.perf_fee_basis_invoice_id matches this invoice → no-op
+ *     (defends against duplicate webhook delivery)
+ *   • Stripe Idempotency-Key on invoiceItems.create includes basis-invoice-id
+ *     (chargePerformanceFee adds this) — 24h dedup at Stripe edge
+ *
+ * Skip cases (return without action, no error):
+ *   • amount_paid <= 0 (free-month / fully-discounted invoice — wait for
+ *     the next paid invoice)
+ *   • Invoice not for a subscription
+ *   • Subscription id doesn't map to a Winback recovery
+ *   • Recovery type isn't 'win_back' (card-saves are covered by $99 plan)
+ *   • Recovery already has perfFeeChargedAt set
+ *   • Connect account id doesn't match the recovery's customer (defense
+ *     in depth — should be impossible given the join key)
+ */
+async function maybeFireWinBackPerfFee(event: Stripe.Event): Promise<void> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const invoice = event.data.object as any
+  const accountId = event.account
+  if (!accountId) return
+
+  const subId = getInvoiceSubscriptionId(invoice)
+  if (!subId) return
+
+  const amountPaid = typeof invoice.amount_paid === 'number' ? invoice.amount_paid : 0
+  if (amountPaid <= 0) return
+
+  const invoiceId: string | null = typeof invoice.id === 'string' ? invoice.id : null
+
+  const [rec] = await db
+    .select({
+      id: recoveries.id,
+      customerId: recoveries.customerId,
+      recoveryType: recoveries.recoveryType,
+      perfFeeChargedAt: recoveries.perfFeeChargedAt,
+      perfFeeStripeItemId: recoveries.perfFeeStripeItemId,
+      perfFeeBasisInvoiceId: recoveries.perfFeeBasisInvoiceId,
+    })
+    .from(recoveries)
+    .where(eq(recoveries.newStripeSubId, subId))
+    .limit(1)
+
+  if (!rec) return
+  if (rec.recoveryType !== 'win_back') return
+  if (rec.perfFeeChargedAt || rec.perfFeeStripeItemId) return
+  if (invoiceId && rec.perfFeeBasisInvoiceId === invoiceId) return
+
+  const [cust] = await db
+    .select({ id: customers.id })
+    .from(customers)
+    .where(eq(customers.stripeAccountId, accountId))
+    .limit(1)
+  if (!cust || cust.id !== rec.customerId) return
+
+  try {
+    const result = await chargePerformanceFee(rec.id, {
+      amountCents: amountPaid,
+      basisInvoiceId: invoiceId ?? undefined,
+    })
+    logEvent({
+      name: 'win_back_perf_fee_fired',
+      customerId: rec.customerId,
+      properties: {
+        recoveryId: rec.id,
+        amountCents: result.amountCents,
+        basisInvoiceId: invoiceId,
+        alreadyCharged: result.alreadyCharged,
+        skipped: result.skipped ?? null,
+      },
+    })
+  } catch (err) {
+    // Don't fail the webhook — Stripe would retry infinitely. Log instead;
+    // admin can retry via diagnostic script.
+    console.error('[win_back_perf_fee] failed for recovery', rec.id, err)
+    logEvent({
+      name: 'win_back_perf_fee_failed',
+      customerId: rec.customerId,
+      properties: {
+        recoveryId: rec.id,
+        basisInvoiceId: invoiceId,
         errorMessage: err instanceof Error ? err.message : String(err),
       },
     })
@@ -166,6 +265,12 @@ export async function POST(req: Request) {
     if (event.type === 'invoice.payment_succeeded') {
       if (event.account) {
         await processPaymentSucceeded(event)
+        // Spec 78 — also try to fire any pending win-back perf fee whose
+        // basis is this invoice. Independent of processPaymentSucceeded
+        // (which only handles dunning recoveries); maybeFireWinBackPerfFee
+        // gates on recoveryType='win_back'. Both handlers can fire on the
+        // same event without conflict.
+        await maybeFireWinBackPerfFee(event)
       } else {
         await processPlatformInvoiceEvent(event)
       }
