@@ -1,10 +1,6 @@
 import { NextResponse } from 'next/server'
 import { requireAdmin } from '@/lib/auth'
 import {
-  // Spec 26 (legacy — removed in Phase D)
-  handoffVolumeTrend,
-  autoLostTrend,
-  tierDistribution,
   // Spec 78 Phase A
   weekVsBaseline,
   cancellationCategoryMix,
@@ -21,11 +17,18 @@ import {
 /**
  * GET /api/admin/ai-quality
  *
- * Spec 78 redesign. Returns the full `/admin/ai-quality` payload in
- * parallel. Phase A adds drift detection, cancellation-category mix,
- * and low-confidence classification audit. Phases B (calibration +
- * match rate) and C (smart-ranked audits) extend this payload; legacy
- * Spec 26 fields stay until Phase D removes them.
+ * Spec 78 redesign. Seven blocks served from a single parallel
+ * Promise.all so the page loads in one round-trip:
+ *
+ *   1. Calibration — predictions joined to outcomes on a 30-90d cohort
+ *   2. Drift detection — last 7d vs prior 23d on 6 quality metrics
+ *   3. Cancellation category mix — 30d distribution + 7d shift
+ *   4. Smart-ranked auto-lost audit — top 15 by interest_score
+ *   5. Smart-ranked handoff audit — top 15 + resolution column + 30d summary
+ *   6. Low-confidence classifications — last 25 with confidence < 0.4
+ *   7. Re-engagement match rate — 90d eligible / emailed / expired / pending
+ *
+ * All read-only against `DATABASE_URL_READONLY`. No schema changes.
  */
 export async function GET() {
   const auth = await requireAdmin()
@@ -33,9 +36,6 @@ export async function GET() {
     return NextResponse.json({ error: auth.error }, { status: auth.status })
   }
   const [
-    handoffs,
-    autoLost,
-    tier,
     drift,
     categoryMix,
     lowConfidence,
@@ -45,9 +45,6 @@ export async function GET() {
     rankedHandoffs,
     handoffSummary,
   ] = await Promise.all([
-    handoffVolumeTrend(30),
-    autoLostTrend(30),
-    tierDistribution(30),
     weekVsBaseline(),
     cancellationCategoryMix(),
     lowConfidenceClassifications(25),
@@ -58,18 +55,11 @@ export async function GET() {
     handoffAuditSummary(30),
   ])
   return NextResponse.json({
-    // Legacy — Phase D removes these
-    handoffs,
-    autoLost,
-    tier,
-    // Spec 78 Phase A
     drift,
     categoryMix,
     lowConfidence,
-    // Spec 78 Phase B
     calibration,
     matchRate,
-    // Spec 78 Phase C
     rankedAutoLost,
     rankedHandoffs,
     handoffSummary,

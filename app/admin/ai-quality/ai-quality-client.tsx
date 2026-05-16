@@ -3,32 +3,6 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 
-interface DayBucket { day: string; n: number }
-
-interface TierBucket { day: string; tier: number; n: number }
-
-interface HandoffAuditRow {
-  id: string
-  name: string | null
-  email: string | null
-  handoffReasoning: string | null
-  recoveryLikelihood: 'high' | 'medium' | 'low' | null
-  mrrCents: number
-  cancellationReason: string | null
-  founderHandoffAt: string | null
-  productName: string | null
-  customerEmail: string | null
-}
-
-interface AutoLostAuditRow {
-  id: string
-  createdAt: string
-  customerId: string | null
-  customerEmail: string | null
-  productName: string | null
-  properties: Record<string, unknown>
-}
-
 // Spec 78 Phase C
 
 interface RankedAuditRow {
@@ -145,18 +119,14 @@ interface ReengagementMatchRate {
 }
 
 interface Payload {
-  // Legacy (Phase D removes)
-  handoffs: DayBucket[]
-  autoLost: DayBucket[]
-  tier: TierBucket[]
-  // Spec 78 Phase A
+  // Phase A
   drift: { metrics: DriftMetric[] }
   categoryMix: { rows: CategoryMixRow[]; total30d: number }
   lowConfidence: LowConfidenceRow[]
-  // Spec 78 Phase B
+  // Phase B
   calibration: CalibrationCohort
   matchRate: ReengagementMatchRate
-  // Spec 78 Phase C
+  // Phase C
   rankedAutoLost: RankedAuditRow[]
   rankedHandoffs: RankedHandoffRow[]
   handoffSummary: HandoffAuditSummary
