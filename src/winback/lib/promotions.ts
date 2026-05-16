@@ -1,8 +1,8 @@
 import type Stripe from 'stripe'
 import { z } from 'zod'
-import { and, eq } from 'drizzle-orm'
+import { and, desc, eq } from 'drizzle-orm'
 import { db } from '@/lib/db'
-import { customers, improvements } from '@/lib/schema'
+import { customers, emailsSent, improvements } from '@/lib/schema'
 import { getConnectStripe } from './stripe'
 import { decrypt } from './encryption'
 import { logEvent } from './events'
@@ -333,4 +333,55 @@ export async function syncActivePromotionsFromStripe(
   })
 
   return { synced: syncedCount, archived: archivedCount }
+}
+
+/**
+ * Looks up the most recent re-engagement email sent to this subscriber.
+ * If it was a promotion email AND the underlying promotion is still
+ * valid (active, not expired, not max-redeemed), returns the metadata.
+ * Returns null otherwise — caller activates without discount.
+ *
+ * Used by the reactivation flow to decide whether to attach a promotion
+ * code to the resumed/new Stripe subscription.
+ */
+export async function loadAppliedPromotionForSubscriber(
+  subscriberId: string,
+): Promise<WbPromotionMetadata | null> {
+  const [latest] = await db
+    .select({ improvementId: emailsSent.improvementId })
+    .from(emailsSent)
+    .where(and(
+      eq(emailsSent.subscriberId, subscriberId),
+      eq(emailsSent.type, 'reengagement'),
+    ))
+    .orderBy(desc(emailsSent.sentAt))
+    .limit(1)
+  if (!latest?.improvementId) return null
+
+  const [imp] = await db
+    .select({
+      kind:     improvements.kind,
+      metadata: improvements.promotionMetadata,
+    })
+    .from(improvements)
+    .where(eq(improvements.id, latest.improvementId))
+    .limit(1)
+  if (!imp || imp.kind !== 'promotion') return null
+
+  const parsed = WbPromotionMetadataSchema.safeParse(imp.metadata)
+  if (!parsed.success) return null
+
+  // Re-check validity at click time — promotion might have expired or
+  // been exhausted between email send and click.
+  const promo = parsed.data
+  if (!promo.active) return null
+  if (promo.redeemBy) {
+    const expiresAt = new Date(promo.redeemBy)
+    if (!Number.isNaN(expiresAt.getTime()) && expiresAt <= new Date()) return null
+  }
+  if (promo.maxRedemptions !== null && promo.timesRedeemed >= promo.maxRedemptions) {
+    return null
+  }
+
+  return promo
 }

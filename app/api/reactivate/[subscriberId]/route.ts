@@ -7,6 +7,7 @@ import { decrypt } from '@/src/winback/lib/encryption'
 import { logEvent } from '@/src/winback/lib/events'
 import { getConnectStripe } from '@/src/winback/lib/stripe'
 import { signSubscriberToken } from '@/src/winback/lib/unsubscribe-token'
+import { loadAppliedPromotionForSubscriber } from '@/src/winback/lib/promotions'
 
 /**
  * Reactivation entry point clicked from email links.
@@ -101,6 +102,11 @@ export async function GET(
   const accessToken = decrypt(customer.stripeAccessToken)
   const stripe = getConnectStripe(accessToken)
 
+  // Spec 78 — if a promotion email was sent to this subscriber AND the
+  // promotion is still valid, attach it to the resumed/new subscription.
+  // Loaded once up front so both resume and checkout paths can use it.
+  const appliedPromo = await loadAppliedPromotionForSubscriber(subscriberId)
+
   try {
     // ─── Stage 1: Try to resume existing subscription ───────────────────
     if (subscriber.stripeSubscriptionId) {
@@ -111,12 +117,37 @@ export async function GET(
           // Resume: flip the cancel flag → strong recovery
           await stripe.subscriptions.update(sub.id, { cancel_at_period_end: false })
 
+          // Spec 78 — attach the promotion (if any) so it applies on the
+          // next cycle. If Stripe rejects (already-applied, ineligible),
+          // log and continue without — better to recover the subscriber
+          // than to reject the reactivation over a discount edge case.
+          if (appliedPromo) {
+            try {
+              await stripe.subscriptions.update(sub.id, {
+                discounts: [{ promotion_code: appliedPromo.stripePromotionCodeId }],
+              })
+            } catch (err) {
+              console.warn('[reactivate] could not attach promotion on resume:', err)
+              logEvent({
+                name: 'promo_attach_failed',
+                customerId: customer.id,
+                properties: {
+                  subscriberId,
+                  stripePromotionCodeId: appliedPromo.stripePromotionCodeId,
+                  context: 'resume',
+                  errorMessage: err instanceof Error ? err.message : String(err),
+                },
+              })
+            }
+          }
+
           await db.insert(recoveries).values({
             subscriberId,
             customerId: customer.id,
             planMrrCents: subscriber.mrrCents,
             newStripeSubId: sub.id,
             attributionType: 'strong',
+            appliedPromotionCodeId: appliedPromo?.stripePromotionCodeId ?? null,
           })
 
           await db
@@ -225,7 +256,16 @@ export async function GET(
       metadata: {
         winback_subscriber_id: subscriberId,
         winback_customer_id: customer.id,
+        // Spec 78 — surface the applied promo on the checkout completion
+        // webhook so processCheckoutRecovery can persist it on the recovery
+        // row when the new subscription is created.
+        ...(appliedPromo ? { winback_applied_promotion_code_id: appliedPromo.stripePromotionCodeId } : {}),
       },
+      // Spec 78 — apply the promotion code on the resulting subscription.
+      // Stripe attaches it to the subscription created by the checkout
+      // session; the first invoice (and any subsequent invoices matching
+      // the coupon's `duration`) will reflect the discount.
+      ...(appliedPromo ? { discounts: [{ promotion_code: appliedPromo.stripePromotionCodeId }] } : {}),
     })
 
     return NextResponse.redirect(session.url!)

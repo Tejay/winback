@@ -598,6 +598,9 @@ async function processCheckoutRecovery(event: Stripe.Event) {
   const session = event.data.object as Stripe.Checkout.Session
   const subscriberId = session.metadata?.winback_subscriber_id
   const customerId = session.metadata?.winback_customer_id
+  // Spec 78 — surfaces the promo applied in the reactivate route's
+  // checkout-session create so we can persist it on the recovery row.
+  const appliedPromoCodeId = session.metadata?.winback_applied_promotion_code_id ?? null
 
   if (!subscriberId || !customerId) return // Not a Winback checkout
 
@@ -619,6 +622,7 @@ async function processCheckoutRecovery(event: Stripe.Event) {
     newStripeSubId: session.subscription as string ?? null,
     attributionType: 'strong',
     recoveryType: 'win_back',
+    appliedPromotionCodeId: appliedPromoCodeId,
   })
 
   // Spec 21b — also resolve any pending handoff
