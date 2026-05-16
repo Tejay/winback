@@ -17,17 +17,19 @@ function toIsoDateTime(v: unknown): string {
 }
 
 import { db } from '@/lib/db'
-import { customers, improvements, improvementMatches } from '@/lib/schema'
-import { and, eq, desc, sql } from 'drizzle-orm'
+import { customers, improvements, improvementMatches, churnedSubscribers, cancellationThemes } from '@/lib/schema'
+import { and, eq, desc, sql, gte, isNotNull, min, count } from 'drizzle-orm'
 import { TopNav } from '@/components/top-nav'
 import { ImpersonationBanner } from '@/components/impersonation-banner'
 import { ReasonsClient } from './reasons-client'
 import { PromotionsSection, type PromotionView } from './promotions-section'
+import { CancellationThemes, type ThemeView } from './cancellation-themes'
 import {
   WbPromotionMetadataSchema,
   formatPromotionTerms,
   describePromotionRestrictions,
 } from '@/src/winback/lib/promotions'
+import { WINDOW_DAYS } from '@/src/winback/lib/cluster-cancellations'
 
 /**
  * Spec 65 Phase 2 — Winback Reasons page.
@@ -115,6 +117,91 @@ export default async function ReasonsPage() {
     })
   }
 
+  // Spec 79 — load cancellation themes (LEFT JOIN improvements for the
+  // post-ship insights' addressed improvement title/date).
+  const themeRows = await db
+    .select({
+      id:                     cancellationThemes.id,
+      addressesImprovementId: cancellationThemes.addressesImprovementId,
+      title:                  cancellationThemes.title,
+      description:            cancellationThemes.description,
+      category:               cancellationThemes.category,
+      emoji:                  cancellationThemes.emoji,
+      customerCount:          cancellationThemes.customerCount,
+      sampleQuotes:           cancellationThemes.sampleQuotes,
+      createdAt:              cancellationThemes.createdAt,
+      addressesImprovementTitle:       improvements.title,
+      addressesImprovementDateShipped: improvements.dateShipped,
+    })
+    .from(cancellationThemes)
+    .leftJoin(improvements, eq(improvements.id, cancellationThemes.addressesImprovementId))
+    .where(eq(cancellationThemes.customerId, customer.id))
+    .orderBy(desc(cancellationThemes.customerCount), desc(cancellationThemes.createdAt))
+
+  const primaryThemes: ThemeView[] = []
+  const postShipInsights: ThemeView[] = []
+  let lastClusteredAt: Date | null = null
+  for (const r of themeRows) {
+    const view: ThemeView = {
+      id:                              r.id,
+      title:                           r.title,
+      description:                     r.description,
+      category:                        r.category,
+      emoji:                           r.emoji,
+      customerCount:                   r.customerCount,
+      sampleQuotes:                    r.sampleQuotes,
+      addressesImprovementId:          r.addressesImprovementId,
+      addressesImprovementTitle:       r.addressesImprovementTitle ?? null,
+      addressesImprovementDateShipped: r.addressesImprovementDateShipped ?? null,
+    }
+    if (r.addressesImprovementId) {
+      postShipInsights.push(view)
+    } else {
+      primaryThemes.push(view)
+    }
+    const created = r.createdAt instanceof Date ? r.createdAt : new Date(r.createdAt as unknown as string)
+    if (!lastClusteredAt || created > lastClusteredAt) lastClusteredAt = created
+  }
+
+  // Footer counts + empty-state inputs. One round-trip with three aggs.
+  const windowStart = new Date(Date.now() - WINDOW_DAYS * 24 * 60 * 60 * 1000)
+  const [cancellationStats] = await db
+    .select({
+      totalInWindow: count(churnedSubscribers.id),
+      earliest:      min(churnedSubscribers.cancelledAt),
+    })
+    .from(churnedSubscribers)
+    .where(eq(churnedSubscribers.customerId, customer.id))
+  const cancellationsSoFar = Number(cancellationStats?.totalInWindow ?? 0)
+  const earliest = cancellationStats?.earliest instanceof Date
+    ? cancellationStats.earliest
+    : cancellationStats?.earliest ? new Date(cancellationStats.earliest as unknown as string) : null
+  const daysOfHistory = earliest
+    ? Math.floor((Date.now() - earliest.getTime()) / (24 * 60 * 60 * 1000))
+    : 0
+
+  // "Total unmatched in window" — used to compute single-complaints filter
+  // count for the themes-card footer. Only computed when we actually have
+  // themes; otherwise the empty state renders and these numbers are unused.
+  let totalUnmatchedInWindow = 0
+  if (primaryThemes.length > 0 || postShipInsights.length > 0) {
+    const [unmatchedAgg] = await db
+      .select({
+        n: sql<number>`COUNT(*)::int`,
+      })
+      .from(churnedSubscribers)
+      .where(and(
+        eq(churnedSubscribers.customerId, customer.id),
+        gte(churnedSubscribers.cancelledAt, windowStart),
+        isNotNull(churnedSubscribers.triggerNeed),
+        eq(churnedSubscribers.triggerNeedConfidence, 'high'),
+        sql`NOT EXISTS (SELECT 1 FROM wb_improvement_matches m WHERE m.subscriber_id = ${churnedSubscribers.id})`,
+      ))
+    totalUnmatchedInWindow = Number(unmatchedAgg?.n ?? 0)
+  }
+  const themedSubscriberCount = primaryThemes.reduce((sum, t) => sum + t.customerCount, 0)
+  const singleComplaints = Math.max(0, totalUnmatchedInWindow - themedSubscriberCount)
+
   return (
     <>
       <ImpersonationBanner />
@@ -162,6 +249,21 @@ export default async function ReasonsPage() {
               </div>
             </div>
           </details>
+
+          {/* Spec 79 — voice-of-customer card. Renders above the editor
+              so the merchant sees demand before deciding what to ship. */}
+          <div className="mt-8">
+            <CancellationThemes
+              primaryThemes={primaryThemes}
+              postShipInsights={postShipInsights}
+              lastClusteredAt={lastClusteredAt}
+              totalCancellations={totalUnmatchedInWindow}
+              singleComplaints={singleComplaints}
+              windowDays={WINDOW_DAYS}
+              cancellationsSoFar={cancellationsSoFar}
+              daysOfHistory={daysOfHistory}
+            />
+          </div>
 
           <div className="mt-8">
             <ReasonsClient initialReasons={rows.map((r) => ({
