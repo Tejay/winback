@@ -2,12 +2,18 @@
 
 A weekly spot-read tool for catching classifier prompt drift before
 merchants notice it. The classifier (Spec 72 producer/consumer) makes
-~thousands of judgments per week: which subscribers to email, what tier
-to assign, whether to hand off to the founder, whether to silently close
-a case as unrecoverable. This dashboard surfaces *patterns* in those
-judgments — so you can catch the bad failure modes (overly optimistic,
-overly pessimistic, suppressing things it shouldn't) before customers
-complain.
+thousands of judgments per week: what tier to assign, whether to
+hand off to the founder, whether to follow up on a reply or escalate.
+This dashboard surfaces *patterns* in those judgments — so you can
+catch bad failure modes before customers complain.
+
+Designed around the **three questions a supervisor actually asks
+weekly:**
+
+1. **Is the AI getting better or worse over time?** — drift detection
+2. **Where is the AI most likely to be wrong right now?** — smart-ranked
+   audits
+3. **Are the AI's predictions tracking actual outcomes?** — calibration
 
 The complement to this dashboard:
 - **`/admin` overview dead-letter tile + Spec 76 drawer** — surfaces when
@@ -26,114 +32,180 @@ Source:
 - API: `app/api/admin/ai-quality/route.ts`
 - Queries: `lib/admin/ai-quality-queries.ts`
 
-All five blocks below load in parallel from one API call (no per-block
-fetches; this is a load-once dashboard).
+All seven blocks load in parallel from one API call (no per-block
+fetches; this is a load-once dashboard). Conversation threads under
+audit cards are lazy-fetched on expand from the existing inspector
+endpoint.
 
-## The five blocks
+## A note on auto-lost framing
 
-### Block A — Paired 30-day trend bars
+This dashboard previously framed "auto-lost" as the AI silently
+abandoning a recoverable customer. That framing was wrong. The
+`subscriber_auto_lost` event only fires after:
 
-Two bar charts side-by-side, daily counts over the last 30 days:
+1. We sent the exit email
+2. The subscriber replied at least once
+3. The AI re-classified on each reply and chose follow-up over handoff
+4. The 3-email reply-thread budget exhausted without the AI deciding
+   to escalate
 
-- **Hand-offs triggered** (amber bars) — how often the AI decided "this
-  needs the founder personally"
-- **Subscribers auto-lost** (slate bars) — how often the AI silently
-  closed a case as unrecoverable
+So auto-lost is **end-of-conversation closure**, not pre-email
+silent give-up. The corresponding failure mode is "AI engaged in a
+reply thread but missed a signal that should have triggered a
+handoff" — narrower and less catastrophic than the old framing
+suggested, but still worth catching.
 
-**Why these two are paired:** the *worst* failure mode is **handoffs
-flatlining while auto-lost climbs** — the AI getting more aggressive
-about giving up and not escalating high-value cases. By pairing the two
-charts, this regression is visible at a glance.
+## The seven blocks
 
-**Other patterns to watch for:**
-- Sustained spike in handoffs → prompt regression escalating too eagerly
-  (founder fatigue incoming)
-- Flatline near zero on both → AI not classifying anything (signal
-  something broke upstream; check Spec 76 dead-letter drawer)
-- Auto-lost slowly climbing over weeks → prompt drift toward
-  pessimism
+### Block 1 — "Did the AI's calls hold up?" (calibration)
 
-### Block B — Recovery likelihood histogram
+The heart of the dashboard. Joins classifications to outcomes on a
+**settled cohort**: subscribers classified ≥30 and ≤90 days ago. ≥30
+days because handoffs that recovered average 14-21 days end to end;
+≤90 days because older data is "old prompt era" and dilutes the
+signal from recent changes. The cohort window is shown explicitly in
+the block header.
 
-The classifier outputs `high | medium | low` for every classified
-subscriber's `recoveryLikelihood` field. Histogram shows the 30-day
-distribution.
+Three sub-tables:
 
-**Healthy range:** approximately
-- ~10–20% high
-- ~30–40% medium
-- ~40–60% low
+**Recovery rate by predicted likelihood.** Should be monotonic:
+`high > medium > low`. The block auto-renders a ✓ / ⚠ verdict line.
 
-**Failure modes:**
-- **Majority-high** → model became overly optimistic. "Everyone's
-  recoverable!" — they're not. Wastes founder attention.
-- **Majority-low** → model gave up on everyone. Usually after a prompt
-  change made it pessimistic. Real recoverable customers get auto-lost.
+```
+                       n     Recovered  Auto-lost  Lost  Still open
+high likelihood        47    28%        8%         12%   52%
+medium likelihood     134    14%        22%        31%   33%
+low likelihood        287     4%        38%        41%   17%
+```
 
-### Block C — Tier distribution
+**Handoff vs. non-handoff conversion.** If handoffs don't beat the
+baseline by some margin, escalation isn't earning the founder's time.
 
-Stacked bar of Tier 1 / 2 / 3 / 4 classifications over the last 30 days.
+**Auto-lost reversal.** Any auto-lost case that later recovered =
+confirmed false negative. Cases are listed with links so you can read
+every one.
 
-| Tier | Meaning |
-|---|---|
-| 1 | Explicit stated reason in stripe_comment or reply thread — most actionable |
-| 2 | Stripe enum only (e.g. `too_expensive`), no free text |
-| 3 | Silent churn — billing signals only, no reason given |
-| 4 | Suppress — no email sent. Used only when subscriber email is null. |
+If everything looks right here, the AI is doing what it claims to
+be doing. If it's not monotonic, the likelihood label is noise.
 
-**Failure modes:**
-- **Tier-4 surge** = classifier started suppressing things it shouldn't.
-  This is the silent-failure mode after a prompt change. Easy to miss
-  because affected subscribers simply never get an email.
-- **Tier-1 climbing** = more actionable reasons being parsed. Good
-  direction, usually means a prompt improvement landed.
+### Block 2 — "What changed this week?" (drift detection)
 
-### Block D — Handoff audit (last 50 reasonings)
+Last 7 days vs prior 23 days (rolling baseline). Six metrics; deltas
+≥20% in the **bad direction** are flagged ⚠:
 
-The actual money block. Each card is a real subscriber the AI handed off
-to the founder, showing:
+| Metric                       | Flag direction        |
+|------------------------------|-----------------------|
+| Classifications / day        | not flagged (volume)  |
+| Tier-4 share                 | flagged ↑ (suppression bug) |
+| Handoff share                | flagged ↓ (AI dropping escalations) |
+| Auto-lost / day              | flagged ↑             |
+| recoveryLikelihood=low share | flagged ↑ (pessimism) |
+| Median confidence            | flagged ↓ (hedging — leading indicator) |
 
-- Subscriber name + plan + MRR
-- Their cancellation reason (in their own words, where available)
-- **The classifier's own justification for the handoff** (the
-  `handoffReasoning` field, written by the LLM at classification time)
-- Recovery likelihood badge
-- Link to the subscriber inspector
+A prompt regression shows up here in days, not weeks. Confidence drop
+is often the first thing to move — the model hedges before it
+outright misclassifies.
 
-**Weekly workflow:** spot-read 10 a week. If you find 3 you'd disagree
-with → the prompt needs work. The classifier writes its own reasoning
-when it decides to hand off; reading these is the best signal for
-"is the AI's judgment aligned with mine?"
+### Block 3 — Cancellation category mix
 
-### Block E — Auto-lost audit (last 50 silent closes)
+30-day distribution by `cancellationCategory`
+(`Competitor | Price | Quality | Unused | Feature | Other`) plus the
+7-day shift in percentage points.
 
-The most dangerous category — **false negatives**. These are cases the
-AI silently closed without ever escalating, ever sending another email,
-or ever giving the merchant a chance to recover the customer.
+Tier tells us how the AI wrote the email. Category tells us **what
+subscribers actually said**. A "Feature" or "Quality" spike is
+actionable — those are complaints you can fix. A "Competitor" spike
+tells you which competitor and how often.
 
-Each card shows:
-- Customer (the merchant) — not the subscriber, since auto-lost is a
-  property of "this subscriber was closed under merchant X's account"
-- Timestamp
-- The AI's reasoning excerpt for why it gave up (`reasoningExcerpt` in
-  properties)
-- Recovery likelihood badge
+Drill-in to a filtered case list is deferred — see "Future
+improvements" below.
 
-**Weekly workflow:** read these looking for *any* you'd have wanted
-escalated. If you find one → the prompt is too aggressive about closing
-out, and you've just found a real lost-revenue case the merchant didn't
-know about.
+### Block 4 — Highest-stakes auto-lost cases
+
+Top 15 `subscriber_auto_lost` cases ranked by **interest score**, not
+recency:
+
+```
+interest_score =
+   +3  MRR > $50
+   +2  reply_count >= 2
+   +2  billing_portal_clicked_at IS NOT NULL
+   +2  cancellation_category IN ('Feature', 'Quality')
+   +1  tenure_days > 90
+   -2  cancellation/comment matches narrow dead-text patterns
+       ('going out of business', 'deceased', 'switching jobs',
+        'company shut down', 'no longer in business', 'closing down')
+```
+
+Each card shows MRR, tenure, reply count, portal-click badge, the
+full AI reasoning, and an expandable conversation thread (lazy
+fetched). Reading the top 5 of these concentrates the same insight
+that reading 50 chronological cards used to give.
+
+If you find a case here you'd have wanted escalated, the prompt is
+too conservative on the second-reply decision.
+
+### Block 5 — Highest-stakes handoffs
+
+Same ranking. Adds a **resolution column** derived from
+`founder_handoff_resolved_at` and final status:
+
+| Badge                    | Meaning                                |
+|--------------------------|----------------------------------------|
+| ✓ recovered              | Resolved → subscriber came back        |
+| ✗ resolved · lost        | Resolved → didn't convert / unsubscribed |
+| ⏳ open                  | Handed off < 7 days ago, not resolved  |
+| ⚠ open ≥7d               | Stale — founder backlog OR AI escalated a low-value case |
+
+Aggregate footer summarises the last 30 days: total / resolved /
+recovered / open / stale. If most resolved handoffs are "lost" not
+"recovered," the AI is escalating cases that won't convert.
+
+### Block 6 — Where the AI hedged (low-confidence audit)
+
+Last 25 classifications where the classifier-reported `confidence` is
+below 0.4. These are the cases **the AI itself flagged it was
+hedging on** — they concentrate the prompt's weak spots better than
+reading random cases. If 80% of them land on the same edge case
+(e.g. ambiguous "wasn't a fit" replies), that's where prompt
+iteration should focus.
+
+### Block 7 — Re-engagement match rate
+
+Of subscribers in the last 90 days with `triggerNeedConfidence='high'`
+(Spec 65 — eligible for re-engagement matching):
+
+- Matched + emailed (✓)
+- Pending (still in window)
+- Expired without a match (×)
+
+A low match rate has two distinct causes worth distinguishing:
+- **AI's `triggerNeed` text is too vague** — the LLM matcher can't
+  decide whether a shipped improvement addresses it. Fix: tune the
+  classifier prompt for more specific `triggerNeed` extraction.
+- **Merchant isn't shipping improvements that address asks** — the
+  asks are clear, we just don't ship things that resolve them. Fix:
+  product roadmap conversation, not a prompt change.
 
 ## Suggested weekly cadence
 
-Friday afternoon, 10 minutes:
+Friday afternoon, ~15 minutes:
 
-1. Glance at Block A — are both bars in their expected range? Is
-   handoff/auto-lost moving in opposite directions in a worrying way?
-2. Glance at Block B — does the histogram look like the healthy range?
-3. Glance at Block C — any tier surging suspiciously?
-4. Spot-read 10 cards in Block D. Disagreements counted on fingers.
-5. Spot-read 10 cards in Block E. Anything that should have escalated?
+1. Glance at **Block 2 (drift)** — anything flagged ⚠? Confidence
+   drop is the leading indicator; investigate that first.
+2. Glance at **Block 1 (calibration)** — is the recovery rate
+   monotonic across high / medium / low likelihood? If not, the
+   labels are noise.
+3. Glance at **Block 3 (category mix)** — anything spiking? A Feature
+   or Quality surge is actionable.
+4. Spot-read the top 5 of **Block 4 (auto-lost)** — any you'd have
+   wanted escalated?
+5. Spot-read the top 5 of **Block 5 (handoffs)** — any stale opens?
+   Any resolved-and-lost that the AI shouldn't have escalated?
+6. Glance at **Block 6 (low-confidence)** — concentrate prompt-iteration
+   attention here.
+7. Glance at **Block 7 (match rate)** — if expired-without-match is
+   high, decide whether it's a prompt issue or a product issue.
 
 If anything looks off → the prompt is the suspect. Check what's been
 changing in `src/winback/lib/classifier.ts` and roll back / iterate.
@@ -151,20 +223,25 @@ This is the *supervisory* layer. Without it, prompt regressions would
 only get caught by merchants emailing in to complain — which is much
 too late.
 
-## Future improvements (when relevant)
+## Future improvements (out of scope today)
 
-Things the dashboard does NOT have today but might earn its keep later:
-
-- **Thresholded alerts** — currently you have to look. If handoffs drop
-  to zero, no one tells you. Could fire a `red_lights` entry on the
-  overview when one of these metrics crosses a sustained threshold.
-- **A/B comparison view** — compare last 30 days vs the previous 30,
-  side-by-side, so you can see "did my prompt change move things?"
-- **Per-tier MRR-weighted views** — Tier 1 cases at $200/mo matter more
-  than Tier 3 cases at $9/mo. Could weight the trends by MRR for a
-  sharper revenue-impact lens.
-- **Per-prompt-version cohort comparison** — once prompt versions are
-  tagged on classification events, slice the metrics by which prompt
-  produced them.
-
-None urgent. The dashboard works as-is for spot-reading.
+- **Block 3 drill-in** — click a category to see the cases. Requires
+  extending `/api/admin/subscribers/search` with a `?category=` filter
+  and matching subscribers-page UI.
+- **Prompt-version tagging** on classifications — would let Block 2's
+  "what changed" be precise: "this metric shifted on the day prompt
+  v7 shipped." Requires schema addition + persistence at classify
+  time.
+- **Thresholded alerts** — drift detections (Block 2 ⚠ flags) could
+  emit a `red_lights` event for the overview tile rather than waiting
+  for someone to look.
+- **Per-merchant slice** — current dashboard is platform-wide. A
+  per-merchant filter would help isolate regressions that affect a
+  single merchant.
+- **Block 7 drill-in** — list of expired-without-match cases so we
+  can decide whether to ship features that address them.
+- **MRR-weighted rates** — Tier 1 cases at $200/mo matter more than
+  Tier 3 cases at $9/mo. Weighting recovery rates by MRR gives a
+  sharper revenue view than count-weighted.
+- **Cohort window tuning** — fixed at 30-90d here; could become
+  admin-configurable.
