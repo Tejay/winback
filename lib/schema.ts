@@ -73,6 +73,10 @@ export const customers = pgTable('wb_customers', {
   // (perf fees disabled, platform sub uses a one-off Stripe Price at
   // this amount). Mirrors the pilot bypass pattern at the column level.
   customMonthlyCents:       integer('custom_monthly_cents'),
+  // Spec 78 — opt-in for the promo-aware win-back path. Off by default
+  // preserves the "we don't recover by discounting" positioning. Flipped
+  // on from /settings.
+  promotionsEnabled:        boolean('promotions_enabled').notNull().default(false),
   // Spec 41 — cumulative lifetime revenue saved across all this customer's
   // recoveries. Cached value: written daily by /api/cron/cumulative-revenue
   // and read directly by /api/stats. BIGINT because mrr × months at high
@@ -247,6 +251,9 @@ export const subscriberReplies = pgTable('wb_subscriber_replies', {
 // Spec 65 — Winback Reasons. Each row is a single shipped product
 // improvement the merchant wants to communicate to cancelled customers
 // who asked for something like it. Migration 039.
+// Spec 78 — also stores Stripe-synced promotion codes when kind='promotion'.
+// `promotionMetadata` holds the Stripe coupon+promotion-code snapshot
+// (shape: WbPromotionMetadata Zod schema in src/winback/lib/promotions.ts).
 export const improvements = pgTable('wb_improvements', {
   id:               uuid('id').primaryKey().defaultRandom(),
   customerId:       uuid('customer_id').notNull().references(() => customers.id, { onDelete: 'cascade' }),
@@ -262,6 +269,13 @@ export const improvements = pgTable('wb_improvements', {
   // when the merchant used "Add anyway" (pre-emptive ship with no signal yet).
   addressesPattern: text('addresses_pattern'),
   preempted:        boolean('preempted').notNull().default(false),
+  // Spec 78 — 'product' (default) for merchant-authored improvements,
+  // 'promotion' for Stripe-synced promotion codes. Discriminator drives
+  // matcher routing and UI section grouping.
+  kind:             text('kind').notNull().default('product'),
+  // Spec 78 — only populated when kind='promotion'. JSON snapshot of the
+  // Stripe coupon + promotion code at last sync. See WbPromotionMetadata.
+  promotionMetadata: jsonb('promotion_metadata').$type<Record<string, unknown>>(),
   createdAt:        timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   archivedAt:       timestamp('archived_at', { withTimezone: true }),
   updatedAt:        timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
@@ -374,4 +388,16 @@ export const recoveries = pgTable('wb_recoveries', {
   // path in chargePerformanceFee uses this to serialize concurrent
   // ensureActivation calls. Migration 037.
   perfFeeCreatingAt: timestamp('perf_fee_creating_at'),
+  // Spec 78 — Stripe promotion_code id attached to the reactivated
+  // subscription when the recovery was promo-driven. NULL for
+  // non-promo recoveries. Drives the dashboard promo-chip render and
+  // is read by activation flow to pass `discounts: [{ promotion_code }]`
+  // on subscription create.
+  appliedPromotionCodeId: text('applied_promotion_code_id'),
+  // Spec 78 — Connect-side Stripe invoice id whose amount_paid set the
+  // perf-fee basis. Also serves as the idempotency key for the
+  // invoice.payment_succeeded handler: if this is already set, the
+  // handler short-circuits and never double-bills. NULL until the first
+  // non-zero invoice settles.
+  perfFeeBasisInvoiceId: text('perf_fee_basis_invoice_id'),
 })

@@ -6,7 +6,6 @@ import {
   getCurrentDefaultPaymentMethodId,
 } from './platform-billing'
 import { ensurePlatformSubscription } from './subscription'
-import { chargePendingPerformanceFees } from './performance-fee'
 import { isCustomerOnPilot, getPilotUntil } from './pilot'
 import { logEvent } from './events'
 import { sendPlatformTrialCompleteEmail } from './billing-notifications'
@@ -142,38 +141,22 @@ export async function ensureActivation(wbCustomerId: string): Promise<Activation
     return { state: 'awaiting_card', activatedAt }
   }
 
-  // Order matters: when there is no subscription yet, charge pending perf
-  // fees FIRST (creates pending Stripe invoice items with no subscription
-  // field). Then ensurePlatformSubscription creates the subscription, and
-  // Stripe bundles the pending items onto the first invoice along with the
-  // prorated $99. Result: one first invoice = $99 prorated + Σ(win-back fees).
-  //
-  // When the subscription already exists, charging order doesn't matter —
-  // chargePerformanceFee attaches the item to the subscription and it
-  // lands on the next cycle's invoice.
-  const { chargedRecoveryIds } = await chargePendingPerformanceFees(wbCustomerId)
+  // Spec 78 — perf fees no longer fire at activation. The Connect-side
+  // `invoice.payment_succeeded` handler fires the fee when the recovered
+  // subscriber's first non-zero invoice settles on the merchant's Stripe
+  // account, billing 1× that invoice's amount_paid. This correctly handles
+  // free trials, first-month-free promos, and plan changes (the basis is
+  // what the merchant actually collected, not planMrrCents). Activation
+  // only ensures the platform subscription exists so the webhook handler
+  // has a subscription to attach the perf-fee invoice item to when the
+  // time comes.
   const { subscriptionId, created } = await ensurePlatformSubscription(wbCustomerId)
-
-  // Phase D — visibility: if a previously-activated customer just had queued
-  // fees drained, that means an earlier activation left the queue partially
-  // un-drained (transient Stripe error, late card capture, etc). The drain
-  // is the self-heal; the event makes it inspectable from /admin/events.
-  if (chargedRecoveryIds.length > 0 && cust.activatedAt) {
-    logEvent({
-      name: 'activation_self_heal',
-      customerId: wbCustomerId,
-      properties: {
-        drainedCount: chargedRecoveryIds.length,
-        recoveryIds: chargedRecoveryIds,
-      },
-    })
-  }
 
   return {
     state: 'active',
     subscriptionId,
     subscriptionCreated: created,
-    chargedRecoveryIds,
+    chargedRecoveryIds: [],
   }
 }
 

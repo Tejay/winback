@@ -306,8 +306,196 @@ Does the email accurately reference the improvement AND address the subscriber's
   }
 }
 
+// --------------------------------------------------------------------------
+// Spec 78 — Promotion-aware email generation
+// --------------------------------------------------------------------------
+/**
+ * Separate prompt from GENERATE_SYSTEM_PROMPT. The discount ban there is
+ * load-bearing for the listening-not-discounting positioning, so we keep
+ * it intact and lift it only here for the explicit promotion branch.
+ *
+ * The merchant has already opted in (customers.promotionsEnabled = true)
+ * and the matcher has confirmed Tier 1 + Price category, so there's no
+ * "should we offer a discount?" — only "what's the most respectful way
+ * to mention it once."
+ */
+const GENERATE_PROMOTION_SYSTEM_PROMPT = `You write a single short re-engagement email to a previously-cancelled subscriber whose stated reason for leaving was price.
+
+The merchant has authored a Stripe promotion they want offered to price-driven cancellations. Your job: name the discount once, plainly, with a soft close. Not a hard sell, not stacked offers, not urgency theatre.
+
+SHAPE (non-negotiable):
+  Line 1:  "Hi <firstName>,"
+  Line 2:  blank
+  Line 3:  EXACTLY 2 sentences. No more, no less.
+  Line 4:  blank
+  Line 5:  "— <founderFirstName>"
+
+LENGTH CAP: Body MUST be 250 characters or fewer including greeting, sentences,
+and sign-off. Newlines count. The reactivation link and unsubscribe footer are
+appended by our system — do NOT include them. Going over 250 chars is a hard failure.
+
+SENTENCE 1 — name the offer:
+- State the discount clearly using the exact terms (percent or amount, duration).
+- Reference that price was their stated reason — one phrase, not a paragraph.
+- Examples of good shape:
+  "Saw price was the holdup — I've put aside 25% off the next 3 months for you."
+  "You mentioned cost when you left — 50% off your first month is on me if you want another go."
+
+SENTENCE 2 — one soft close:
+- A single low-pressure pointer or question. Never both.
+- Good: "Worth another look?" / "Code's WINBACK25 if so." / "No pressure either way."
+- Never urgency ("today only", "expires soon" — even if it does).
+- Never stacked closes ("Want to try? Let me know if questions!").
+
+RULES:
+- Plain text only — no markdown, no HTML.
+- First-person singular ("I"), not "we" or "the team".
+- No exclamation marks. Ever.
+- Mention the promo code exactly once, when it adds clarity.
+- Do NOT include the unsubscribe / reactivation footer — appended automatically.
+- Sign with the founder's first name only.
+
+GOOD EXAMPLES (both under 250 chars):
+  "Hi Jamie,\n\nSaw price was the sticking point — I've put 25% off the next 3 months on the table with code WINBACK25. Worth another look?\n\n— Alex"
+
+  "Hi Sam,\n\nYou mentioned cost when you left — 50% off your first month back if you'd like to try again. Code's COMEBACK50, no pressure either way.\n\n— Priya"
+
+BAD EXAMPLES (do not write these):
+  Any body with 3 or more sentences. (Guaranteed to blow the 250-char cap.)
+  Urgency: "expires Friday!" — never.
+  Stacked closes: "Want to try? Let me know if questions!"
+  Hiding the discount: "I've got something that might help" — say what.
+
+Return ONLY valid JSON: {"subject": "...", "body": "..."}. No preamble, no markdown.`
+
+const GeneratedPromotionEmailSchema = GeneratedEmailSchema
+
+export interface PromotionForEmail {
+  code:             string
+  percentOff:       number | null
+  amountOffCents:   number | null
+  currency:         string | null
+  duration:         'once' | 'repeating' | 'forever'
+  durationInMonths: number | null
+}
+
+function formatPromoTerms(p: PromotionForEmail): string {
+  const discount = p.percentOff !== null
+    ? `${p.percentOff}% off`
+    : p.amountOffCents !== null && p.currency
+      ? `${(p.amountOffCents / 100).toFixed(2)} ${p.currency.toUpperCase()} off`
+      : 'a discount'
+  const duration = p.duration === 'forever'
+    ? 'forever'
+    : p.duration === 'once'
+      ? 'once'
+      : p.durationInMonths
+        ? `${p.durationInMonths} months`
+        : 'recurring'
+  return `${discount}, ${duration}`
+}
+
+export async function generatePromotionEmail(params: {
+  promotion:      PromotionForEmail
+  triggerNeed:    string | null
+  subscriberName: string | null
+  founderName:    string
+}): Promise<{ subject: string; body: string } | null> {
+  const { promotion, triggerNeed, subscriberName, founderName } = params
+  const firstName = subscriberName?.split(' ')[0] ?? 'there'
+
+  const userPrompt = `Subscriber first name: ${firstName}
+Founder first name: ${founderName}
+
+What this subscriber said when they cancelled${triggerNeed ? '' : ' (nothing — they only marked Price as their cancellation category, no free-text reason)'}:
+${triggerNeed ?? '(none)'}
+
+Promotion to offer:
+Code: ${promotion.code}
+Terms: ${formatPromoTerms(promotion)}
+
+Write a short, plain re-engagement email naming this discount once. Return JSON.`
+
+  try {
+    const response = await getClient().messages.create({
+      model:       'claude-haiku-4-5-20251001',
+      max_tokens:  600,
+      temperature: 0.3,
+      system:      GENERATE_PROMOTION_SYSTEM_PROMPT,
+      messages:    [{ role: 'user', content: userPrompt }],
+    })
+    let raw = response.content[0].type === 'text' ? response.content[0].text : ''
+    raw = raw.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim()
+    const parsed = JSON.parse(raw)
+    const result = GeneratedPromotionEmailSchema.safeParse(parsed)
+    return result.success ? result.data : null
+  } catch (err) {
+    console.error('[improvement-match] generatePromotionEmail failed:', err)
+    return null
+  }
+}
+
+const SANITY_PROMO_SYSTEM_PROMPT = `You're a quality gate for a promotion-bearing re-engagement email. You receive:
+- The cancelled subscriber's stated reason for leaving (might be empty)
+- The Stripe promotion code we're offering them (code + terms)
+- The drafted email
+
+Decide: does the drafted email mention the actual promotion code and its terms accurately, in a respectful single mention? Return JSON: {"pass": true|false, "reason": "<short>"}.
+
+Pass if: the email names the actual promo code (case-insensitive), states the discount correctly (percent or amount + duration), and doesn't violate the tone rules (no urgency theatre, no stacked closes, no exclamation marks, no hard sell).
+
+Fail if: the email cites a different code or wrong discount terms; the email never names the code at all; the email uses urgency language ("today only", "expires soon"); the email contains exclamation marks; the email tries to offer more than what the promo actually is.
+
+Be strict on factual mismatches and tone violations. Stylistic preferences are not failures.`
+
+export async function sanityCheckPromotionEmail(params: {
+  promotion: PromotionForEmail
+  triggerNeed: string | null
+  email: { subject: string; body: string }
+}): Promise<SanityResult> {
+  const userPrompt = `SUBSCRIBER'S REASON FOR LEAVING:
+${params.triggerNeed ?? '(none — they only marked Price as their cancellation category)'}
+
+PROMOTION OFFERED:
+Code: ${params.promotion.code}
+Terms: ${formatPromoTerms(params.promotion)}
+
+DRAFTED EMAIL:
+Subject: ${params.email.subject}
+---
+${params.email.body}
+---
+
+Does the email correctly mention this promotion's code + terms in a respectful single mention? Return JSON.`
+
+  try {
+    const response = await getClient().messages.create({
+      model:       'claude-haiku-4-5-20251001',
+      max_tokens:  200,
+      temperature: 0,
+      system:      SANITY_PROMO_SYSTEM_PROMPT,
+      messages:    [{ role: 'user', content: userPrompt }],
+    })
+    let raw = response.content[0].type === 'text' ? response.content[0].text : ''
+    raw = raw.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim()
+    const parsed = JSON.parse(raw)
+    const result = SanitySchema.safeParse(parsed)
+    if (!result.success) return { pass: false, reason: 'sanity_parse_failed' }
+    return result.data
+  } catch (err) {
+    console.error('[improvement-match] sanityCheckPromotionEmail failed:', err)
+    return { pass: false, reason: 'sanity_llm_error' }
+  }
+}
+
 // Re-exports for tests
-export { MATCH_SYSTEM_PROMPT, GENERATE_SYSTEM_PROMPT, SANITY_SYSTEM_PROMPT }
+export {
+  MATCH_SYSTEM_PROMPT,
+  GENERATE_SYSTEM_PROMPT,
+  SANITY_SYSTEM_PROMPT,
+  GENERATE_PROMOTION_SYSTEM_PROMPT,
+  SANITY_PROMO_SYSTEM_PROMPT,
+}
 
 // Type re-export to keep the module self-contained.
 export type { ClassificationResult, SubscriberSignals }

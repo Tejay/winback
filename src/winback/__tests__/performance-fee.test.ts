@@ -63,8 +63,13 @@ interface RecRow {
   planMrrCents: number
   recoveryType: string | null
   perfFeeStripeItemId: string | null
+  // Spec 78 — new columns surfaced by loadRecovery; tests can pre-set
+  // perfFeeAmountCents or perfFeeBasisInvoiceId to exercise specific
+  // refund / re-fire scenarios.
+  perfFeeAmountCents: number | null
   perfFeeChargedAt: Date | null
   perfFeeRefundedAt: Date | null
+  perfFeeBasisInvoiceId: string | null
 }
 
 interface CustRow {
@@ -145,8 +150,10 @@ const baseRecovery: RecRow = {
   planMrrCents: 2500,
   recoveryType: 'win_back',
   perfFeeStripeItemId: null,
+  perfFeeAmountCents: null,
   perfFeeChargedAt: null,
   perfFeeRefundedAt: null,
+  perfFeeBasisInvoiceId: null,
 }
 
 const baseCustomer: CustRow = {
@@ -496,4 +503,131 @@ describe('chargePendingPerformanceFees', () => {
   // Integration coverage for the loop body (single-pending case) lives in
   // activation.test.ts where the full webhook path is exercised — the unit
   // value of repeating it here against a brittle multi-call mock is low.
+})
+
+// --------------------------------------------------------------------------
+// Spec 78 — deferred firing model
+// --------------------------------------------------------------------------
+describe('chargePerformanceFee — Spec 78 deferred firing', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    setupUpdateChain()
+  })
+
+  it('uses opts.amountCents instead of planMrrCents when provided', async () => {
+    setupReads({ recovery: baseRecovery, customer: baseCustomer })
+    mockStripe.invoiceItems.create.mockResolvedValue({ id: 'ii_new' })
+
+    const result = await chargePerformanceFee('rec_1', {
+      amountCents: 12000,                        // ≠ planMrrCents (2500)
+      basisInvoiceId: 'in_test_basis_001',
+    })
+
+    expect(result.amountCents).toBe(12000)
+    expect(mockStripe.invoiceItems.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        amount: 12000,                            // not 2500
+        metadata: expect.objectContaining({
+          winback_basis_invoice_id: 'in_test_basis_001',
+        }),
+      }),
+      // basis-invoice id added to Stripe Idempotency-Key
+      expect.objectContaining({
+        idempotencyKey: 'wb-perf-rec_1-in_test_basis_001',
+      }),
+    )
+  })
+
+  it('falls back to planMrrCents when opts is omitted (legacy path)', async () => {
+    setupReads({ recovery: baseRecovery, customer: baseCustomer })
+    mockStripe.invoiceItems.create.mockResolvedValue({ id: 'ii_new' })
+
+    const result = await chargePerformanceFee('rec_1')
+
+    expect(result.amountCents).toBe(2500)
+    expect(mockStripe.invoiceItems.create).toHaveBeenCalledWith(
+      expect.objectContaining({ amount: 2500 }),
+      expect.objectContaining({ idempotencyKey: 'wb-perf-rec_1' }),
+    )
+  })
+
+  it('returns alreadyCharged with the persisted amount (perfFeeAmountCents) on retry', async () => {
+    setupReads({
+      recovery: {
+        ...baseRecovery,
+        perfFeeStripeItemId: 'ii_existing',
+        perfFeeAmountCents: 8800,            // basis invoice was $88
+      },
+      customer: baseCustomer,
+    })
+
+    const result = await chargePerformanceFee('rec_1', { amountCents: 9999 })
+
+    // Persisted amount wins — we don't re-bill at a different price even
+    // if the caller asks for one.
+    expect(result.amountCents).toBe(8800)
+    expect(result.alreadyCharged).toBe(true)
+    expect(mockStripe.invoiceItems.create).not.toHaveBeenCalled()
+  })
+})
+
+describe('refundPerformanceFee — Spec 78 refund amount', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    setupUpdateChain()
+  })
+
+  it('credit-notes perfFeeAmountCents not planMrrCents', async () => {
+    setupReads({
+      recovery: {
+        ...baseRecovery,
+        perfFeeStripeItemId: 'ii_existing',
+        perfFeeAmountCents: 5000,            // we charged $50
+        perfFeeChargedAt: new Date(),
+      },
+      customer: baseCustomer,
+    })
+    mockStripe.invoiceItems.retrieve.mockResolvedValue({
+      id: 'ii_existing',
+      invoice: 'in_finalized',
+    })
+    mockStripe.invoices.retrieve.mockResolvedValue({
+      id: 'in_finalized',
+      status: 'paid',
+      lines: { data: [{ id: 'il_1', invoice_item: 'ii_existing' }] },
+    })
+
+    await refundPerformanceFee('rec_1')
+
+    expect(mockStripe.creditNotes.create).toHaveBeenCalledWith(
+      expect.objectContaining({ refund_amount: 5000 }),   // not 2500
+    )
+  })
+
+  it('falls back to planMrrCents when perfFeeAmountCents is null (pre-spec-78 row)', async () => {
+    setupReads({
+      recovery: {
+        ...baseRecovery,
+        perfFeeStripeItemId: 'ii_legacy',
+        perfFeeAmountCents: null,            // legacy row predates spec 78
+        perfFeeChargedAt: new Date(),
+      },
+      customer: baseCustomer,
+    })
+    mockStripe.invoiceItems.retrieve.mockResolvedValue({
+      id: 'ii_legacy',
+      invoice: 'in_finalized',
+    })
+    mockStripe.invoices.retrieve.mockResolvedValue({
+      id: 'in_finalized',
+      status: 'paid',
+      lines: { data: [{ id: 'il_1', invoice_item: 'ii_legacy' }] },
+    })
+
+    await refundPerformanceFee('rec_1')
+
+    expect(mockStripe.creditNotes.create).toHaveBeenCalledWith(
+      expect.objectContaining({ refund_amount: 2500 }),
+    )
+  })
 })

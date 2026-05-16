@@ -16,9 +16,17 @@ import {
   deriveTriggerNeedConfidence,
   findBestMatch,
   generateImprovementEmail,
+  generatePromotionEmail,
   sanityCheckEmail,
+  sanityCheckPromotionEmail,
   type ImprovementForMatcher,
 } from './improvement-match'
+import {
+  findBestPromotionForSubscriber,
+  parsePromotionRows,
+  summarizePromotion,
+  type PromotionRow,
+} from './promotion-match'
 import { logEvent } from './events'
 import type { ClassificationResult } from './types'
 
@@ -85,6 +93,158 @@ async function emitSkipped(
 export interface ProcessOptions {
   /** Spec 70 — admin "Send now" sets true so the 60-day cooldown is ignored. */
   bypassCooldown?: boolean
+}
+
+/**
+ * Spec 78 — promotion fallback path.
+ *
+ * Called from each fall-through point in processSubscriberForReengagement
+ * (low confidence, no improvements available, no LLM match). Returns
+ * 'emailed' if a promo email was sent, null if the subscriber/merchant
+ * isn't eligible for a promo (so the caller falls back to the original
+ * skip-reason emit).
+ *
+ * Gates here are mostly redundant with findBestPromotionForSubscriber's
+ * own eligibility checks, but we check customer.promotionsEnabled +
+ * cancellationCategory='Price' + tier=1 first to avoid the DB query
+ * + Stripe round-trip for the common case of an ineligible subscriber.
+ */
+type CustomerRow = typeof customers.$inferSelect
+async function tryPromotionPath(
+  sub: SubRow,
+  customer: CustomerRow,
+): Promise<PerSubscriberOutcome | null> {
+  if (!customer.promotionsEnabled) return null
+  if (sub.tier !== 1) return null
+  if (sub.cancellationCategory !== 'Price') return null
+
+  // Load active kind='promotion' rows for this customer
+  const rawRows = await db
+    .select({
+      id:                improvements.id,
+      promotionMetadata: improvements.promotionMetadata,
+      createdAt:         improvements.createdAt,
+    })
+    .from(improvements)
+    .where(and(
+      eq(improvements.customerId, customer.id),
+      eq(improvements.kind, 'promotion'),
+      eq(improvements.status, 'published'),
+    ))
+
+  // Cast row.createdAt to Date (drizzle returns Date for withTimezone:true)
+  const promos: PromotionRow[] = parsePromotionRows(
+    rawRows.map((r) => ({
+      id: r.id,
+      promotionMetadata: r.promotionMetadata,
+      createdAt: r.createdAt instanceof Date ? r.createdAt : new Date(r.createdAt as unknown as string),
+    })),
+  )
+
+  const best = findBestPromotionForSubscriber(
+    { tier: sub.tier, cancellationCategory: sub.cancellationCategory, mrrCents: sub.mrrCents, stripePriceId: sub.stripePriceId },
+    promos,
+    customer.promotionsEnabled,
+  )
+  if (!best) return null
+
+  // Already matched on this improvement? (re-using improvementMatches
+  // table as the "this subscriber already heard about this promo" dedup
+  // ledger — same primary key shape works.)
+  const [prev] = await db
+    .select({ subscriberId: improvementMatches.subscriberId })
+    .from(improvementMatches)
+    .where(and(
+      eq(improvementMatches.improvementId, best.id),
+      eq(improvementMatches.subscriberId, sub.id),
+    ))
+    .limit(1)
+  if (prev) return null
+
+  const fromName = customer.founderName ?? 'The team'
+  const draft = await generatePromotionEmail({
+    promotion:      best.promotionMetadata,
+    triggerNeed:    sub.triggerNeed,
+    subscriberName: sub.name,
+    founderName:    fromName,
+  })
+  if (!draft) return { kind: 'error', errorMessage: 'promotion email generation returned null' }
+
+  const sanity = await sanityCheckPromotionEmail({
+    promotion:   best.promotionMetadata,
+    triggerNeed: sub.triggerNeed,
+    email:       draft,
+  })
+  if (!sanity.pass) {
+    await logEvent({
+      name: 'promotion_email_sanity_failed',
+      customerId: customer.id,
+      properties: {
+        subscriberId:     sub.id,
+        improvementId:    best.id,
+        promotionCode:    best.promotionMetadata.code,
+        draftedSubject:   draft.subject,
+        draftedBody:      draft.body.slice(0, 500),
+        sanityReason:     sanity.reason,
+      },
+    })
+    await emitSkipped(sub.id, sub.customerId, 'sanity_failed', {
+      improvementId: best.id,
+      promotionCode: best.promotionMetadata.code,
+      sanityReason:  sanity.reason,
+    })
+    // Record attempt so we don't re-burn LLM cost on the same row.
+    await db
+      .insert(improvementMatches)
+      .values({ improvementId: best.id, subscriberId: sub.id })
+      .onConflictDoNothing()
+    return { kind: 'skipped', reason: 'sanity_failed' }
+  }
+
+  if (!sub.email) return { kind: 'error', errorMessage: 'subscriber has no email' }
+  const { messageId } = await sendEmail({
+    to:           sub.email,
+    subject:      draft.subject,
+    body:         draft.body,
+    fromName,
+    subscriberId: sub.id,
+  })
+
+  if (messageId) {
+    await db.insert(emailsSent).values({
+      subscriberId:   sub.id,
+      gmailMessageId: messageId,
+      type:           'reengagement',
+      subject:        draft.subject,
+      improvementId:  best.id,
+    })
+  }
+
+  await db.insert(improvementMatches).values({
+    improvementId: best.id,
+    subscriberId:  sub.id,
+    emailedAt:     new Date(),
+  }).onConflictDoNothing()
+
+  await db
+    .update(churnedSubscribers)
+    .set({ lastReengagedAt: new Date(), status: 'contacted', updatedAt: new Date() })
+    .where(eq(churnedSubscribers.id, sub.id))
+
+  await logEvent({
+    name: 'reengagement_email_sent',
+    customerId: customer.id,
+    properties: {
+      subscriberId:   sub.id,
+      improvementId:  best.id,
+      kind:           'promotion',
+      promotionCode:  best.promotionMetadata.code,
+      promotionTerms: summarizePromotion(best),
+      subject:        draft.subject,
+    },
+  })
+
+  return { kind: 'emailed', improvementId: best.id }
 }
 
 /**
@@ -159,6 +319,12 @@ export async function processSubscriberForReengagement(
     }
 
     if (triggerNeedConfidence !== 'high' || !triggerNeed) {
+      // Spec 78 — even for low-confidence triggerNeed, a Price-category
+      // Tier-1 subscriber whose merchant has opted into promotions is
+      // still eligible for a promo email. Try that path before declaring
+      // a skip.
+      const promoOutcome = await tryPromotionPath(sub, customer)
+      if (promoOutcome) return promoOutcome
       await emitSkipped(sub.id, sub.customerId, 'low_confidence', {
         triggerNeedConfidence,
         hasTriggerNeed: !!triggerNeed,
@@ -166,16 +332,24 @@ export async function processSubscriberForReengagement(
       return { kind: 'skipped', reason: 'low_confidence' }
     }
 
-    // 5. Active improvements minus already-matched
+    // 5. Active improvements minus already-matched. Filter to kind='product'
+    // — promotion-kind rows live in the same table but never go through the
+    // LLM matcher (their selection is deterministic, handled in step 6b).
     const activeImps = await db
       .select()
       .from(improvements)
       .where(and(
         eq(improvements.customerId, customer.id),
         eq(improvements.status, 'published'),
+        eq(improvements.kind, 'product'),
       ))
 
     if (activeImps.length === 0) {
+      // Spec 78 — no shipped improvements to match. If this is a Price
+      // cancel with promotions enabled, fall through to the promo path
+      // before skipping.
+      const promoOutcome = await tryPromotionPath(sub, customer)
+      if (promoOutcome) return promoOutcome
       await emitSkipped(sub.id, sub.customerId, 'no_improvements', { activeCount: 0 })
       return { kind: 'skipped', reason: 'no_improvements' }
     }
@@ -198,6 +372,10 @@ export async function processSubscriberForReengagement(
       }))
 
     if (candidates.length === 0) {
+      // Spec 78 — exhausted product-improvement matches. Fall through to
+      // promo path if eligible.
+      const promoOutcome = await tryPromotionPath(sub, customer)
+      if (promoOutcome) return promoOutcome
       await emitSkipped(sub.id, sub.customerId, 'no_improvements', {
         activeCount: activeImps.length,
         alreadyMatchedCount: alreadyMatchedIds.size,
@@ -208,6 +386,10 @@ export async function processSubscriberForReengagement(
     // 6. Best match
     const best = await findBestMatch(triggerNeed, candidates)
     if (!best) {
+      // Spec 78 — LLM found no product-improvement that matches. Fall
+      // through to promo path if eligible.
+      const promoOutcome = await tryPromotionPath(sub, customer)
+      if (promoOutcome) return promoOutcome
       await emitSkipped(sub.id, sub.customerId, 'no_match', {
         triggerNeed,
         candidatesCount: candidates.length,
