@@ -335,14 +335,14 @@ export default function PricingPage() {
             <div className="px-6 py-5">
               <dt className="text-slate-900 font-medium">How is the performance fee charged?</dt>
               <dd className="mt-1.5 text-sm text-slate-600 leading-relaxed">
-                One invoice per win-back, equal to{' '}
+                One invoice per cancellation win-back, equal to{' '}
                 <strong>1 month&rsquo;s subscription fee</strong> for that
                 subscriber. Charged once &mdash; never recurring. If they
                 re-cancel within 14 days, we refund the fee in full.
               </dd>
             </div>
             <div className="px-6 py-5">
-              <dt className="text-slate-900 font-medium">What counts as a win-back?</dt>
+              <dt className="text-slate-900 font-medium">What counts as a cancellation win-back?</dt>
               <dd className="mt-1.5 text-sm text-slate-600 leading-relaxed">
                 <p>A cancelled subscriber comes back after we engaged with them. Specifically, one of:</p>
                 <ul className="mt-2 space-y-1.5 list-disc pl-5">

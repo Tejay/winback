@@ -102,7 +102,7 @@ export function PricingFormula() {
             href="/pricing"
             className="inline-flex items-center gap-1.5 rounded-full border border-slate-300 bg-white px-5 py-2.5 text-sm font-medium text-slate-700 hover:border-blue-500 hover:text-blue-700 transition-colors shadow-sm"
           >
-            See full pricing &amp; FAQ
+            See full pricing &amp; Questions
             <span aria-hidden>&rarr;</span>
           </Link>
         </div>
