@@ -1,69 +1,66 @@
 import Link from 'next/link'
 import { Check } from 'lucide-react'
 import { StickyNav } from '@/components/landing/sticky-nav'
-import { PricingFormula } from '@/components/landing/pricing-formula'
 import { Footer } from '@/components/landing/footer'
 
 export const metadata = { title: 'Pricing — Winback' }
 
 /**
- * Dedicated /pricing page — extends the home-page 3-card summary
- * (rendered via <PricingFormula />) with the depth a pricing-curious
- * buyer needs before they hit Connect Stripe:
+ * Dedicated /pricing page.
  *
+ * Earlier iteration showed the home-page 3-card summary AND a separate
+ * 3-card detail section below it, joined by a "same rails as above"
+ * bridge paragraph. That bridge was a tell that the two card grids
+ * should just be one: each card now carries its own summary header
+ * (eyebrow + price + 1-sentence framing) AND the full detail
+ * (labelled checklist + footnote) in a single visual unit.
+ *
+ * Structure:
  *   1. <StickyNav />
- *   2. <PricingFormula />               — 3 colored-rail summary cards
- *                                         (slate / blue / emerald) + trust
- *                                         strip + annual-contract escape
- *                                         hatch. Single source of truth.
- *   3. "What each fee covers" section   — 3 colored-rail DETAIL cards
- *                                         matching the summary rails 1:1.
- *                                         Each card lists what the buyer
- *                                         gets for that fee. This is the
- *                                         depth that used to live on the
- *                                         old single-plan PricingFormula.
- *   4. Worked example                   — concrete $99 + $60 = $159 sample
- *                                         month at $20/mo plans, with the
- *                                         12× revenue-won-back ROI tail.
- *   5. How billing works FAQ            — kept from previous /pricing page
- *                                         (when does $99 start, what counts
- *                                         as a win-back, etc.).
- *   6. Footer CTA + <Footer />          — close.
+ *   2. Pricing header (same as home: "$99/mo flat. Pay extra only when
+ *      we win back a customer." + subhead)
+ *   3. THREE colored-rail combined cards (slate / blue / emerald):
+ *        • Card top  — eyebrow, price, summary line (matches home)
+ *        • Card body — labelled checklist of what runs / what's included
+ *        • Card foot — italic footnote
+ *   4. Trust strip (4 procurement checkboxes)
+ *   5. Worked example block — $99 + $0 + $60 = $159, 12× ROI tail
+ *   6. "How billing works" FAQ
+ *   7. Fixed annual-contract escape hatch
+ *   8. Guarantee-angle footer CTA + Footer
  *
- * Design language matches the colored-rail system used on /payment-recovery,
- * /win-back, the home two-pillar teaser, and the home pricing summary.
+ * The home page's <PricingFormula /> still renders the slim 3-card
+ * summary; this page renders its own deeper version of the same 3
+ * cards. They stay in visual sync because they share the rail colours,
+ * gradient values, border, shadow, and eyebrow / price typography.
  */
 export default function PricingPage() {
   return (
     <div className="min-h-screen">
       <StickyNav />
 
-      {/* The 3-card summary the home page also shows. Single source of
-          truth for the headline numbers + colored-rail visual anchor. */}
-      <PricingFormula />
-
-      {/* ============================================================== */}
-      {/*  WHAT EACH FEE COVERS — three colored-rail detail cards,       */}
-      {/*  one per summary rail above. Each card explains exactly what   */}
-      {/*  that fee gets the buyer, in plain English.                    */}
-      {/* ============================================================== */}
-      <section className="bg-[#f5f5f5] py-20 sm:py-24 border-t border-slate-100">
+      <section id="pricing" className="bg-white py-20 sm:py-24 border-t border-slate-100">
         <div className="max-w-6xl mx-auto px-6">
-          <div className="text-center max-w-3xl mx-auto mb-12">
+          {/* Header — same headline as the home summary so the page reads
+              continuously when arriving via the home "See full pricing"
+              link, but with a /pricing-specific subhead that signals
+              "this is the detail view." */}
+          <div className="text-center max-w-3xl mx-auto">
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">
-              What each fee covers
+              Pricing
             </p>
-            <h2 className="mt-3 text-3xl sm:text-4xl font-bold tracking-tight text-slate-900">
-              Three fees, in plain English.
-            </h2>
+            <h1 className="mt-3 text-3xl sm:text-4xl font-bold tracking-tight text-slate-900">
+              $99/mo flat. Pay extra only when we win back a customer.
+            </h1>
             <p className="mt-4 text-sm sm:text-base text-slate-600">
-              Same colored rails as the summary above. Read top-to-bottom for
-              the full breakdown of what you get and when each fee triggers.
+              Three fees, in plain English &mdash; what you pay, what runs, and exactly when each fee triggers.
             </p>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-            {/* SLATE — Platform fee: the flat baseline */}
+          {/* Three combined cards — summary header + full detail inside
+              each card. No bridge text needed; the cards ARE the bridge. */}
+          <div className="mt-12 grid grid-cols-1 lg:grid-cols-3 gap-4">
+            {/* SLATE — Platform fee */}
             <div
               className="rounded-2xl border border-slate-100 shadow-sm p-6 border-l-4 border-l-slate-400 flex flex-col"
               style={{ backgroundImage: 'linear-gradient(to right, #f8fafc 0%, #ffffff 30%)' }}
@@ -72,48 +69,50 @@ export default function PricingPage() {
                 Platform fee
               </p>
               <div className="mt-3 flex items-baseline gap-1.5">
-                <span className="text-3xl font-bold text-slate-900 leading-none tabular-nums">$99</span>
+                <span className="text-4xl font-bold text-slate-900 leading-none tabular-nums">$99</span>
                 <span className="text-sm text-slate-500">/ month, flat</span>
               </div>
               <p className="mt-3 text-sm text-slate-600 leading-relaxed">
-                What you pay just to have both flows running on your Stripe.
+                What you pay to have both flows running on your Stripe.
               </p>
 
-              <p className="mt-5 text-[10px] font-semibold uppercase tracking-widest text-slate-500">
-                Included in the $99
-              </p>
-              <ul className="mt-3 space-y-2.5 text-sm text-slate-700">
-                <li className="flex items-start gap-2.5">
-                  <Check className="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" strokeWidth={2.2} />
-                  <span>Both flows running from one Stripe connection</span>
-                </li>
-                <li className="flex items-start gap-2.5">
-                  <Check className="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" strokeWidth={2.2} />
-                  <span>Live dashboard: pipeline, recovered-vs-lost, MRR impact</span>
-                </li>
-                <li className="flex items-start gap-2.5">
-                  <Check className="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" strokeWidth={2.2} />
-                  <span>Per-subscriber drawer with AI reasoning + handoff routing</span>
-                </li>
-                <li className="flex items-start gap-2.5">
-                  <Check className="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" strokeWidth={2.2} />
-                  <span>Promotion-code engine with Winback-verified gates</span>
-                </li>
-                <li className="flex items-start gap-2.5">
-                  <Check className="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" strokeWidth={2.2} />
-                  <span>Cancel anytime, one click — no setup or onboarding fee</span>
-                </li>
-              </ul>
+              <div className="mt-5 pt-5 border-t border-slate-100">
+                <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+                  Included in the $99
+                </p>
+                <ul className="mt-3 space-y-2.5 text-sm text-slate-700">
+                  <li className="flex items-start gap-2.5">
+                    <Check className="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" strokeWidth={2.2} />
+                    <span>Both flows running from one Stripe connection</span>
+                  </li>
+                  <li className="flex items-start gap-2.5">
+                    <Check className="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" strokeWidth={2.2} />
+                    <span>Live dashboard: pipeline, recovered-vs-lost, MRR impact</span>
+                  </li>
+                  <li className="flex items-start gap-2.5">
+                    <Check className="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" strokeWidth={2.2} />
+                    <span>Per-subscriber drawer with AI reasoning + handoff routing</span>
+                  </li>
+                  <li className="flex items-start gap-2.5">
+                    <Check className="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" strokeWidth={2.2} />
+                    <span>Promotion-code engine with Winback-verified gates</span>
+                  </li>
+                  <li className="flex items-start gap-2.5">
+                    <Check className="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" strokeWidth={2.2} />
+                    <span>Cancel anytime, one click &mdash; no setup or onboarding fee</span>
+                  </li>
+                </ul>
+              </div>
 
               <div className="mt-auto pt-5">
                 <p className="text-xs text-slate-500 italic">
-                  Free until we deliver your first recovery or win-back — we
-                  don&rsquo;t bill the $99 the day you sign up.
+                  Free until we deliver your first recovery or win-back &mdash;
+                  we don&rsquo;t bill the $99 the day you sign up.
                 </p>
               </div>
             </div>
 
-            {/* BLUE — Payment recovery: bundled into the platform fee */}
+            {/* BLUE — Payment recovery */}
             <div
               className="rounded-2xl border border-slate-100 shadow-sm p-6 border-l-4 border-l-blue-600 flex flex-col"
               style={{ backgroundImage: 'linear-gradient(to right, #eff6ff 0%, #ffffff 30%)' }}
@@ -122,7 +121,7 @@ export default function PricingPage() {
                 Payment recovery
               </p>
               <div className="mt-3 flex items-baseline gap-1.5">
-                <span className="text-3xl font-bold text-slate-900 leading-none">Free</span>
+                <span className="text-4xl font-bold text-slate-900 leading-none">Free</span>
                 <span className="text-sm text-slate-500">included in the $99</span>
               </div>
               <p className="mt-3 text-sm text-slate-600 leading-relaxed">
@@ -131,41 +130,43 @@ export default function PricingPage() {
                 bundled in.
               </p>
 
-              <p className="mt-5 text-[10px] font-semibold uppercase tracking-widest text-blue-700">
-                What runs on every failed payment
-              </p>
-              <ul className="mt-3 space-y-2.5 text-sm text-slate-700">
-                <li className="flex items-start gap-2.5">
-                  <Check className="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" strokeWidth={2.2} />
-                  <span>Three-touch email sequence timed to lead Stripe&rsquo;s retries</span>
-                </li>
-                <li className="flex items-start gap-2.5">
-                  <Check className="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" strokeWidth={2.2} />
-                  <span>Decline-code-aware copy (expired vs insufficient vs hard decline)</span>
-                </li>
-                <li className="flex items-start gap-2.5">
-                  <Check className="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" strokeWidth={2.2} />
-                  <span>One-tap update flow: Apple Pay · Google Pay · Stripe Link · card</span>
-                </li>
-                <li className="flex items-start gap-2.5">
-                  <Check className="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" strokeWidth={2.2} />
-                  <span>Hosted update page on your branded subdomain</span>
-                </li>
-                <li className="flex items-start gap-2.5">
-                  <Check className="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" strokeWidth={2.2} />
-                  <span>Auto-stop when Stripe finally collects — no double-charging</span>
-                </li>
-              </ul>
+              <div className="mt-5 pt-5 border-t border-blue-100/60">
+                <p className="text-[10px] font-semibold uppercase tracking-widest text-blue-700">
+                  What runs on every failed payment
+                </p>
+                <ul className="mt-3 space-y-2.5 text-sm text-slate-700">
+                  <li className="flex items-start gap-2.5">
+                    <Check className="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" strokeWidth={2.2} />
+                    <span>Three-touch email sequence timed to lead Stripe&rsquo;s retries</span>
+                  </li>
+                  <li className="flex items-start gap-2.5">
+                    <Check className="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" strokeWidth={2.2} />
+                    <span>Decline-code-aware copy (expired vs insufficient vs hard decline)</span>
+                  </li>
+                  <li className="flex items-start gap-2.5">
+                    <Check className="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" strokeWidth={2.2} />
+                    <span>One-tap update flow: Apple Pay &middot; Google Pay &middot; Stripe Link &middot; card</span>
+                  </li>
+                  <li className="flex items-start gap-2.5">
+                    <Check className="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" strokeWidth={2.2} />
+                    <span>Hosted update page on your branded subdomain</span>
+                  </li>
+                  <li className="flex items-start gap-2.5">
+                    <Check className="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" strokeWidth={2.2} />
+                    <span>Auto-stop when Stripe finally collects &mdash; no double-charging</span>
+                  </li>
+                </ul>
+              </div>
 
               <div className="mt-auto pt-5">
                 <p className="text-xs text-slate-500 italic">
-                  Past 500/month? We&rsquo;ll talk — most of our customers
-                  never come close.
+                  Past 500/month? We&rsquo;ll talk &mdash; most of our
+                  customers never come close.
                 </p>
               </div>
             </div>
 
-            {/* EMERALD — Win-back fee: pay-on-success */}
+            {/* EMERALD — Win-back fee */}
             <div
               className="rounded-2xl border border-slate-100 shadow-sm p-6 border-l-4 border-l-emerald-600 flex flex-col"
               style={{ backgroundImage: 'linear-gradient(to right, #ecfdf5 0%, #ffffff 30%)' }}
@@ -174,44 +175,71 @@ export default function PricingPage() {
                 Win-back fee
               </p>
               <div className="mt-3 flex items-baseline gap-1.5">
-                <span className="text-3xl font-bold text-slate-900 leading-none">1&times; Monthly fee</span>
+                <span className="text-4xl font-bold text-slate-900 leading-none">1&times; Monthly fee</span>
               </div>
               <p className="mt-3 text-sm text-slate-600 leading-relaxed">
-                One month of the won-back customer&rsquo;s own subscription fee.
-                Charged once, never recurring.
+                One month of the won-back customer&rsquo;s own subscription
+                fee. Charged once, never recurring.
               </p>
 
-              <p className="mt-5 text-[10px] font-semibold uppercase tracking-widest text-emerald-700">
-                When the fee triggers
-              </p>
-              <ul className="mt-3 space-y-2.5 text-sm text-slate-700">
-                <li className="flex items-start gap-2.5">
-                  <Check className="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" strokeWidth={2.2} />
-                  <span>A cancelled subscriber resubscribes via our flow</span>
-                </li>
-                <li className="flex items-start gap-2.5">
-                  <Check className="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" strokeWidth={2.2} />
-                  <span>AI-drafted email matched to the cancellation reason cluster</span>
-                </li>
-                <li className="flex items-start gap-2.5">
-                  <Check className="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" strokeWidth={2.2} />
-                  <span>Refundable in full if they re-cancel within 14 days</span>
-                </li>
-                <li className="flex items-start gap-2.5">
-                  <Check className="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" strokeWidth={2.2} />
-                  <span>$0 in months where we deliver no win-backs</span>
-                </li>
-                <li className="flex items-start gap-2.5">
-                  <Check className="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" strokeWidth={2.2} />
-                  <span>Payment recoveries never trigger this fee &mdash; ever</span>
-                </li>
-              </ul>
+              <div className="mt-5 pt-5 border-t border-emerald-100/60">
+                <p className="text-[10px] font-semibold uppercase tracking-widest text-emerald-700">
+                  When the fee triggers
+                </p>
+                <ul className="mt-3 space-y-2.5 text-sm text-slate-700">
+                  <li className="flex items-start gap-2.5">
+                    <Check className="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" strokeWidth={2.2} />
+                    <span>A cancelled subscriber resubscribes via our flow</span>
+                  </li>
+                  <li className="flex items-start gap-2.5">
+                    <Check className="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" strokeWidth={2.2} />
+                    <span>AI-drafted email matched to the cancellation reason cluster</span>
+                  </li>
+                  <li className="flex items-start gap-2.5">
+                    <Check className="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" strokeWidth={2.2} />
+                    <span>Refundable in full if they re-cancel within 14 days</span>
+                  </li>
+                  <li className="flex items-start gap-2.5">
+                    <Check className="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" strokeWidth={2.2} />
+                    <span>$0 in months where we deliver no win-backs</span>
+                  </li>
+                  <li className="flex items-start gap-2.5">
+                    <Check className="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" strokeWidth={2.2} />
+                    <span>Payment recoveries never trigger this fee &mdash; ever</span>
+                  </li>
+                </ul>
+              </div>
 
               <div className="mt-auto pt-5">
                 <p className="text-xs text-slate-500 italic">
-                  Our incentive is your incentive: we only earn when you keep
-                  a customer that would otherwise be gone.
+                  Our incentive is your incentive: we only earn when you
+                  keep a customer that would otherwise be gone.
                 </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Trust strip — procurement checkboxes (cancel anytime, no
+              setup, refund window). Carried over from the old
+              PricingFormula since /pricing still needs the buyer-
+              reassurance row right under the cards. */}
+          <div className="mt-12 max-w-3xl mx-auto">
+            <div className="rounded-2xl border border-slate-200 bg-white px-6 py-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="flex items-center gap-2 text-sm text-slate-700">
+                <Check className="w-4 h-4 text-emerald-500 flex-shrink-0" strokeWidth={2.4} />
+                <span>Free until first recovery or win-back</span>
+              </div>
+              <div className="flex items-center gap-2 text-sm text-slate-700">
+                <Check className="w-4 h-4 text-emerald-500 flex-shrink-0" strokeWidth={2.4} />
+                <span>14-day refund if they re-cancel</span>
+              </div>
+              <div className="flex items-center gap-2 text-sm text-slate-700">
+                <Check className="w-4 h-4 text-emerald-500 flex-shrink-0" strokeWidth={2.4} />
+                <span>Cancel anytime</span>
+              </div>
+              <div className="flex items-center gap-2 text-sm text-slate-700">
+                <Check className="w-4 h-4 text-emerald-500 flex-shrink-0" strokeWidth={2.4} />
+                <span>No setup fees</span>
               </div>
             </div>
           </div>
@@ -220,10 +248,9 @@ export default function PricingPage() {
 
       {/* ============================================================== */}
       {/*  WORKED EXAMPLE — concrete numbers so the formula isn't        */}
-      {/*  abstract. Carried over from the previous single-card pricing  */}
-      {/*  block; redesigned to fit the new clean white-card style.      */}
+      {/*  abstract.                                                     */}
       {/* ============================================================== */}
-      <section className="bg-white py-20 sm:py-24 border-t border-slate-100">
+      <section className="bg-[#f5f5f5] py-20 sm:py-24 border-t border-slate-100">
         <div className="max-w-3xl mx-auto px-6">
           <div className="text-center mb-10">
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">
@@ -233,8 +260,8 @@ export default function PricingPage() {
               What a typical month looks like.
             </h2>
             <p className="mt-3 text-sm text-slate-600 max-w-xl mx-auto">
-              A SaaS at <span className="text-slate-900 font-semibold">$20/mo plans</span>: 8 failed payments
-              recovered (bundled into the platform fee), plus 3 cancelled customers won back.
+              A SaaS at <span className="text-slate-900 font-semibold">$20/mo plans</span>: 8 failed
+              payments recovered (bundled into the platform fee), plus 3 cancelled customers won back.
             </p>
           </div>
 
@@ -248,12 +275,12 @@ export default function PricingPage() {
               <div>
                 <p className="text-[11px] text-blue-700 uppercase tracking-widest">Recoveries</p>
                 <p className="mt-1 text-2xl font-semibold text-slate-900 tabular-nums">$0</p>
-                <p className="mt-1 text-[11px] text-slate-500">8 × free</p>
+                <p className="mt-1 text-[11px] text-slate-500">8 &times; free</p>
               </div>
               <div>
                 <p className="text-[11px] text-emerald-700 uppercase tracking-widest">Win-backs</p>
                 <p className="mt-1 text-2xl font-semibold text-slate-900 tabular-nums">$60</p>
-                <p className="mt-1 text-[11px] text-slate-500">3 × $20</p>
+                <p className="mt-1 text-[11px] text-slate-500">3 &times; $20</p>
               </div>
             </div>
 
@@ -279,10 +306,8 @@ export default function PricingPage() {
 
       {/* ============================================================== */}
       {/*  HOW BILLING WORKS FAQ — kept from the previous /pricing.       */}
-      {/*  Answers the four most-asked billing questions inline so a     */}
-      {/*  buyer doesn't have to email sales for the basics.             */}
       {/* ============================================================== */}
-      <section className="bg-[#f5f5f5] py-20 sm:py-24 border-t border-slate-100">
+      <section className="bg-white py-20 sm:py-24 border-t border-slate-100">
         <div className="max-w-2xl mx-auto px-6">
           <div className="text-center mb-10">
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">
@@ -339,10 +364,29 @@ export default function PricingPage() {
               </dd>
             </div>
           </dl>
+
+          {/* Fixed annual contract escape hatch — moved here so the
+              pricing section ends with the answers, not with sales copy. */}
+          <div className="mt-12 max-w-xl mx-auto pt-10 border-t border-slate-200 text-center">
+            <h3 className="text-sm font-semibold text-slate-900">
+              Need a fixed annual contract?
+            </h3>
+            <p className="mt-3 text-sm text-slate-500 leading-relaxed">
+              For teams that need predictable budgeting with SSO and a
+              signed SLA &mdash; we offer fixed annual contracts as an
+              alternative to the performance model.
+            </p>
+            <a
+              href="mailto:sales@winbackflow.co"
+              className="mt-4 inline-block text-sm font-medium text-blue-600 hover:text-blue-700"
+            >
+              sales@winbackflow.co &rarr;
+            </a>
+          </div>
         </div>
       </section>
 
-      {/* Footer CTA — guarantee angle, mirroring the home page close. */}
+      {/* Footer CTA — guarantee angle, mirrors the home page close. */}
       <section className="bg-[#eef2fb] py-20 sm:py-24">
         <div className="max-w-5xl mx-auto px-6 text-center">
           <p className="text-xs font-semibold tracking-widest uppercase text-violet-600">
