@@ -65,7 +65,7 @@ function PreviewWrapper({ accent, title, href, children }: PreviewWrapperProps) 
  */
 export function WinBackPreviewStrip() {
   return (
-    <PreviewWrapper accent="blue" title="Win-backs" href="/demo/win-back">
+    <PreviewWrapper accent="blue" title="Cancellation winbacks" href="/demo/win-back">
       <div className="bg-white rounded-2xl p-3 sm:p-4">
         <PipelineStrip pipeline={WINBACK_PIPELINE} />
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">

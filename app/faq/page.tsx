@@ -3,9 +3,9 @@ import { StickyNav } from '@/components/landing/sticky-nav'
 import { Footer } from '@/components/landing/footer'
 
 export const metadata = {
-  title: 'FAQ — Winback',
+  title: 'Questions — Winback',
   description:
-    'Stripe access, payment recovery + win-back emails, pricing, and GDPR — answered.',
+    'Stripe access, payment recovery + cancellation winback emails, pricing, and GDPR — answered.',
 }
 
 interface QA {
@@ -22,10 +22,10 @@ const SECTIONS: Section[] = [
     heading: 'Dashboard',
     subsections: [
       {
-        heading: 'Win-backs',
+        heading: 'Cancellation winbacks',
         items: [
           {
-            q: 'How is "Recovery rate (30d)" calculated on the Win-backs tab?',
+            q: 'How is "Recovery rate (30d)" calculated on the Cancellation winbacks tab?',
             a: (
               <p>
                 The share of recent voluntary cancellations that have been
@@ -39,7 +39,7 @@ const SECTIONS: Section[] = [
             ),
           },
           {
-            q: 'How is "Recovered · lifetime" calculated on the Win-backs tab?',
+            q: 'How is "Recovered · lifetime" calculated on the Cancellation winbacks tab?',
             a: (
               <p>
                 A count of every customer we&rsquo;ve brought back from a
@@ -50,7 +50,7 @@ const SECTIONS: Section[] = [
             ),
           },
           {
-            q: 'How is "Revenue saved · lifetime" calculated on the Win-backs tab?',
+            q: 'How is "Revenue saved · lifetime" calculated on the Cancellation winbacks tab?',
             a: (
               <>
                 <p>
@@ -70,14 +70,14 @@ const SECTIONS: Section[] = [
                 </p>
                 <p className="mt-3">
                   The &ldquo;$X/mo currently active&rdquo; sub-line is the
-                  run-rate: the sum of MRR for recovered win-back
-                  subscribers still subscribed today.
+                  run-rate: the sum of MRR for recovered cancellation
+                  winback subscribers still subscribed today.
                 </p>
               </>
             ),
           },
           {
-            q: 'How is "In progress" calculated on the Win-backs tab?',
+            q: 'How is "In progress" calculated on the Cancellation winbacks tab?',
             a: (
               <p>
                 The count of cancelled customers we&rsquo;re actively
@@ -88,7 +88,7 @@ const SECTIONS: Section[] = [
             ),
           },
           {
-            q: 'What is the "Top reasons" strip above the Win-backs table?',
+            q: 'What is the "Top reasons" strip above the Cancellation winbacks table?',
             a: (
               <p>
                 The four most common cancellation categories from the last
@@ -131,7 +131,7 @@ const SECTIONS: Section[] = [
             q: 'How is "Revenue saved · lifetime" calculated on the Payment recoveries tab?',
             a: (
               <p>
-                The same calculation and same number as on the Win-backs tab
+                The same calculation and same number as on the Cancellation winbacks tab
                 &mdash; we surface saved revenue as a single ROI figure
                 across both recovery types rather than splitting it. The
                 &ldquo;$X/mo currently active&rdquo; sub-line on this tab
@@ -158,7 +158,7 @@ const SECTIONS: Section[] = [
                 The four most common bank-decline reasons from the last 30
                 days (<code>insufficient_funds</code>, <code>expired_card</code>,
                 <code>do_not_honor</code>, etc.) &mdash; same shape and same
-                3-row floor as the Win-backs &ldquo;Top reasons&rdquo; strip.
+                3-row floor as the Cancellation winbacks &ldquo;Top reasons&rdquo; strip.
               </p>
             ),
           },
@@ -180,7 +180,7 @@ const SECTIONS: Section[] = [
               cancellation events &mdash; that&rsquo;s how we detect churn and
               attribute recoveries. We use <em>write</em> access for one
               purpose only: renewing or reactivating a subscription on your
-              behalf when a customer accepts a win-back offer, so they can
+              behalf when a customer accepts a cancellation winback offer, so they can
               restart in a single click without re-entering card details. We
               never create new subscriptions out of nowhere, never refund,
               never change prices. You can disconnect us any time from your
@@ -200,7 +200,7 @@ const SECTIONS: Section[] = [
             No. We never create charges, never issue refunds, never change
             prices or plan configurations. The only &ldquo;write&rdquo; action
             we take is renewing a cancelled subscription when a customer
-            clicks your win-back offer &mdash; and that only restores what
+            clicks your cancellation winback offer &mdash; and that only restores what
             they previously had.
           </p>
         ),
@@ -210,7 +210,7 @@ const SECTIONS: Section[] = [
         a: (
           <p>
             We stop receiving cancellation events immediately and stop sending
-            win-back emails. Nothing on your Stripe side changes &mdash; your
+            cancellation winback emails. Nothing on your Stripe side changes &mdash; your
             subscriptions, customers, and prices are untouched.
           </p>
         ),
@@ -249,25 +249,68 @@ const SECTIONS: Section[] = [
         q: 'Who does the email come from?',
         a: (
           <p>
-            It&rsquo;s sent with your name on the &ldquo;From&rdquo; line
-            (e.g., <em>Alex Smith &lt;reply+&hellip;@winbackflow.co&gt;</em>)
-            from our sending domain. When a subscriber replies, we
-            capture it, re-read the conversation with the same AI, and
-            surfaces the reply plus the updated classification in your
-            dashboard &mdash; so new context (they changed their mind,
-            clarified a reason, pushed back) shapes whatever happens next.
+            It&rsquo;s sent with your name on the From line (e.g.,{' '}
+            <em>Alex Smith</em>) from our sending domain. When a
+            subscriber replies, the reply <strong>routes back to your
+            dashboard</strong> automatically &mdash; we capture it,
+            re-read the conversation with the same AI, and surface the
+            reply plus the updated classification so new context (they
+            changed their mind, clarified a reason, pushed back) shapes
+            whatever happens next.
           </p>
         ),
       },
       {
         q: 'Will my customers feel spammed?',
         a: (
-          <p>
-            One email per cancellation. Every email carries a visible
-            unsubscribe link plus the <code>List-Unsubscribe</code> header so
-            Gmail and Outlook show a one-click unsubscribe button. No drip
-            sequences, no follow-ups we didn&rsquo;t tell you about.
-          </p>
+          <>
+            <p>
+              Cadence depends on the flow:
+            </p>
+            <ul className="mt-3 space-y-2 list-disc pl-5">
+              <li>
+                <strong>Cancellation winback</strong>: one email immediately after a
+                voluntary cancellation. We send a single follow-up later
+                <em> only</em> if you ship something matching their stated
+                reason (see &ldquo;If I ship something a cancelled customer
+                asked for&hellip;&rdquo; below). Otherwise nothing else.
+              </li>
+              <li>
+                <strong>Payment recovery</strong>: up to three emails per
+                failed payment, timed to lead Stripe&rsquo;s automatic
+                retries (immediate, ~24h before retry #2, ~24h before the
+                final retry). Stops the moment Stripe collects or the
+                subscription is fully cancelled.
+              </li>
+            </ul>
+            <p className="mt-3">
+              Every email carries a visible unsubscribe link plus the{' '}
+              <code>List-Unsubscribe</code> header so Gmail and Outlook show
+              a one-click unsubscribe button. No drip sequences, no
+              follow-ups we didn&rsquo;t tell you about.
+            </p>
+          </>
+        ),
+      },
+      {
+        q: 'If I ship something a cancelled customer asked for, do they hear about it?',
+        a: (
+          <>
+            <p>
+              Yes. When you publish an improvement in your dashboard
+              (something you&rsquo;ve shipped or fixed), Winback re-reads
+              every cancellation reason from the last 12 months and
+              identifies the subscribers who cited what you just delivered.
+              They get one targeted email that names exactly what they
+              asked for and why it&rsquo;s worth another look.
+            </p>
+            <p className="mt-3">
+              Runs as a daily cron at 09:00 UTC. There&rsquo;s no extra fee
+              for the email itself &mdash; the standard cancellation
+              winback performance fee only kicks in if they actually come
+              back via the email.
+            </p>
+          </>
         ),
       },
       {
@@ -292,11 +335,94 @@ const SECTIONS: Section[] = [
       {
         q: 'Can I review emails before they go out?',
         a: (
-          <p>
-            You review and approve the template and tone during onboarding.
-            After that, emails send automatically within about a minute of the
-            cancellation &mdash; the speed is what makes win-back work.
-          </p>
+          <>
+            <p>
+              You review and approve the template and tone during onboarding.
+              After that, the two flows behave differently because they
+              <em> are</em> different:
+            </p>
+            <ul className="mt-3 space-y-2 list-disc pl-5">
+              <li>
+                <strong>Cancellation winback emails are AI-drafted.</strong> The model
+                reads the cancellation reason and writes a targeted reply
+                in your approved voice. Sent within about a minute of the
+                cancellation &mdash; speed is what makes cancellation
+                winbacks work.
+              </li>
+              <li>
+                <strong>Payment-recovery emails are rule-based</strong>, not
+                AI-written. A short utilitarian sequence keyed to the
+                Stripe decline code (expired card vs insufficient funds vs
+                hard decline). The customer wanted to stay; the card just
+                broke. No AI needed.
+              </li>
+            </ul>
+            <p className="mt-3">
+              You can preview either template in Settings any time and
+              pause sending if you want to handle a specific subscriber
+              yourself.
+            </p>
+          </>
+        ),
+      },
+      {
+        q: 'Can I attach a discount code to cancellation winback emails?',
+        a: (
+          <>
+            <p>
+              Yes. From Settings &rarr; Reasons you can select a single
+              Stripe promotion code at a time to offer with
+              cancellation winback emails (or skip &mdash; many merchants find a
+              personal-sounding email outperforms a discount). Switching
+              the active code is one click.
+            </p>
+            <p className="mt-3">
+              Before showing the code to a subscriber, Winback verifies
+              four gates against Stripe in real time:
+            </p>
+            <ul className="mt-3 space-y-1.5 list-disc pl-5">
+              <li>The promotion code is <strong>active</strong> in Stripe.</li>
+              <li>It hasn&rsquo;t passed its <strong>redemption deadline</strong>.</li>
+              <li>It hasn&rsquo;t hit its <strong>max-redemptions cap</strong>.</li>
+              <li>It <strong>applies to the price</strong> the subscriber was on.</li>
+            </ul>
+            <p className="mt-3">
+              If any gate fails, the email goes out without the offer
+              rather than leading the customer to a broken checkout. You
+              choose the code; Winback handles the verification.
+            </p>
+            <p className="mt-3">
+              <strong>One thing you have to set up on the Stripe side:</strong>{' '}
+              make sure your cancelled customers are <em>eligible</em> to
+              redeem the code. We can verify the four gates above, but we
+              can&rsquo;t override Stripe&rsquo;s customer-eligibility
+              rules at checkout. Specifically:
+            </p>
+            <ul className="mt-3 space-y-1.5 list-disc pl-5">
+              <li>
+                Don&rsquo;t tick <strong>&ldquo;First-time transaction
+                only&rdquo;</strong> on the coupon &mdash; your cancelled
+                customers have already paid you before, so Stripe would
+                reject them at checkout.
+              </li>
+              <li>
+                If you&rsquo;ve restricted the code to a specific{' '}
+                <strong>customer list</strong>, make sure the cancelled
+                cohort you&rsquo;re targeting is in it.
+              </li>
+              <li>
+                Any other Stripe-side eligibility rules (currency, region,
+                product/price restrictions) apply at checkout too &mdash;
+                we can&rsquo;t see or override them.
+              </li>
+            </ul>
+            <p className="mt-3">
+              If you skip these, the customer clicks through to a Stripe
+              checkout that says &ldquo;This code is not valid&rdquo;
+              &mdash; not Winback&rsquo;s rejection, Stripe&rsquo;s. Worth
+              a 30-second sanity check when you create the code.
+            </p>
+          </>
         ),
       },
       {
@@ -304,7 +430,7 @@ const SECTIONS: Section[] = [
         a: (
           <p>
             Yes. You can pause sending from Settings at any time. While
-            paused, no win-back emails go out. Cancellations continue to be
+            paused, no cancellation winback emails go out. Cancellations continue to be
             recorded on your dashboard so nothing is lost &mdash; useful for
             migrations, incidents, or holidays.
           </p>
@@ -315,18 +441,37 @@ const SECTIONS: Section[] = [
         a: (
           <>
             <p>
-              Yes. When a subscriber&rsquo;s card fails, we email them a
-              one-click link to update their payment method &mdash; before
-              Stripe&rsquo;s retries run out and the subscription is cancelled
-              for real. This is involuntary churn, and it&rsquo;s roughly half
-              the lost revenue most subscription businesses leave on the table.
+              Yes &mdash; this is the payment-recovery flow, and it&rsquo;s
+              roughly half the lost revenue most subscription businesses
+              leave on the table. When a subscriber&rsquo;s card fails, we
+              send a <strong>three-touch email sequence</strong> timed to
+              lead Stripe&rsquo;s automatic retries:
+            </p>
+            <ul className="mt-3 space-y-2 list-disc pl-5">
+              <li>
+                <strong>Touch 1</strong> &mdash; immediate, soft heads-up
+                with a link to update the card.
+              </li>
+              <li>
+                <strong>Touch 2</strong> &mdash; about 24 hours before
+                Stripe&rsquo;s retry #2, copy keyed to the specific
+                decline code (expired vs insufficient vs hard decline).
+              </li>
+              <li>
+                <strong>Touch 3</strong> &mdash; about 24 hours before
+                Stripe&rsquo;s final retry, last-chance copy.
+              </li>
+            </ul>
+            <p className="mt-3">
+              Each email links to a one-click update flow so the customer
+              can fix their card without re-typing details. The sequence
+              auto-stops the moment Stripe collects (no double-charging)
+              or the subscription is fully cancelled.
             </p>
             <p className="mt-3">
-              These emails aren&rsquo;t AI-written because they don&rsquo;t
-              need to be: the customer wanted to stay, the card just broke.
-              One short, utilitarian message with a tracked update-payment
-              link. Everything shows up in the same dashboard as voluntary
-              cancellations, tagged so you can tell them apart.
+              These emails are rule-based decline-aware copy &mdash; not
+              AI-written. Everything shows up in the same dashboard as
+              voluntary cancellations, tagged so you can tell them apart.
             </p>
           </>
         ),
@@ -348,9 +493,10 @@ const SECTIONS: Section[] = [
                   includes up to <strong>500 payment recoveries per month</strong>
                   {' '}&mdash; the emails we send when a subscriber&rsquo;s payment
                   fails so they can update their card. And a one-time{' '}
-                  <strong>performance fee equal to one month of the
-                  subscriber&rsquo;s MRR</strong> when we win back a cancelled
-                  subscriber. Charged once per win-back, never recurring.
+                  <strong>performance fee equal to 1&times; the won-back
+                  subscriber&rsquo;s own monthly fee</strong> when we win back a
+                  cancelled customer. Charged once per cancellation
+                  winback, never recurring.
                 </p>
                 <p className="mt-3">
                   <Link href="/pricing" className="text-blue-600 hover:underline">
@@ -365,7 +511,8 @@ const SECTIONS: Section[] = [
             a: (
               <p>
                 No card at signup. We ask for a payment method after we deliver
-                your first payment recovery or win-back, whichever comes first.
+                your first payment recovery or cancellation winback,
+                whichever comes first.
                 The $99 platform fee starts on that same invoice. If we deliver
                 nothing, you pay nothing.
               </p>
@@ -374,10 +521,10 @@ const SECTIONS: Section[] = [
         ],
       },
       {
-        heading: 'Win-backs',
+        heading: 'Cancellation winbacks',
         items: [
           {
-            q: 'What counts as a win-back?',
+            q: 'What counts as a cancellation winback?',
             a: (
               <>
                 <p>
@@ -452,7 +599,8 @@ const SECTIONS: Section[] = [
             q: 'What if a won-back subscriber cancels again?',
             a: (
               <p>
-                If they re-cancel within 14 days of the win-back, we refund the
+                If they re-cancel within 14 days of the cancellation
+                winback, we refund the
                 entire performance fee. After 14 days, the fee stands &mdash;
                 they had a real period of paid revenue.
               </p>
@@ -566,7 +714,7 @@ export default function FAQPage() {
     <main className="py-12 px-6">
       <div className="max-w-3xl mx-auto bg-white rounded-2xl shadow-sm border border-slate-100 p-8">
         <div className="text-xs font-semibold uppercase tracking-widest text-blue-600 mb-3">
-          FAQ
+          Questions
         </div>
         <h1 className="text-4xl font-bold text-slate-900 mb-2">Questions, answered.</h1>
         <p className="text-sm text-slate-500 mb-10">

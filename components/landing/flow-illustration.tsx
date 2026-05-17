@@ -1,11 +1,19 @@
 import { Brain, XCircle, TrendingUp } from 'lucide-react'
 
 /**
- * Hero flow metaphor: cancellation → AI → recovery. Three nodes connected
- * by dashed SVG arrows that animate once on mount (CSS-only, no JS state).
+ * Cancellation-winback hero flow metaphor: cancellation → AI → recovery.
+ * Three nodes connected by dashed SVG arrows that animate once on mount
+ * (CSS-only, no JS state).
  *
  * The middle (AI) node pulses via Tailwind's `animate-pulse` on a glow ring
  * so the user's eye lands on the differentiator. Everything else is static.
+ *
+ * Palette: emerald for the AI/recovery side because emerald is the brand
+ * colour for cancellation winbacks across the site (/win-back, the pricing
+ * card, the two-pillar teaser). The original component used violet here,
+ * which was the only purple on the site and broke the colour system; the
+ * swap brings this in line with /payment-recovery's blue-themed equivalent
+ * (PaymentFlowIllustration) so both product pages feel like one design.
  */
 export function FlowIllustration() {
   return (
@@ -38,14 +46,14 @@ export function FlowIllustration() {
         {/* Arrow 1 */}
         <Arrow />
 
-        {/* AI node */}
+        {/* AI node — emerald to match the cancellation-winback brand colour */}
         <div className="flex-1 relative">
-          <div className="absolute inset-0 rounded-xl bg-violet-200/60 blur-xl animate-pulse" aria-hidden />
-          <div className="relative bg-white rounded-xl border border-violet-200 shadow-sm px-3 py-3 text-center">
-            <div className="mx-auto w-8 h-8 rounded-lg bg-violet-50 flex items-center justify-center">
-              <Brain className="w-4 h-4 text-violet-600" aria-hidden />
+          <div className="absolute inset-0 rounded-xl bg-emerald-200/60 blur-xl animate-pulse" aria-hidden />
+          <div className="relative bg-white rounded-xl border border-emerald-200 shadow-sm px-3 py-3 text-center">
+            <div className="mx-auto w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center">
+              <Brain className="w-4 h-4 text-emerald-600" aria-hidden />
             </div>
-            <div className="mt-2 text-[11px] font-semibold uppercase tracking-widest text-violet-600">
+            <div className="mt-2 text-[11px] font-semibold uppercase tracking-widest text-emerald-600">
               AI tuned
             </div>
             <div className="text-xs font-medium text-slate-700 mt-0.5">

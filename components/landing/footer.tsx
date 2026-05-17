@@ -19,7 +19,7 @@ export function Footer() {
         </div>
         <nav className="flex flex-wrap items-center gap-x-5 gap-y-2">
           <Link href="/pricing" className="hover:text-slate-900">Pricing</Link>
-          <Link href="/faq" className="hover:text-slate-900">FAQ</Link>
+          <Link href="/faq" className="hover:text-slate-900">Questions</Link>
           <Link href="/contact" className="hover:text-slate-900">Contact</Link>
           <Link href="/refunds" className="hover:text-slate-900">Refunds</Link>
           <Link href="/aup" className="hover:text-slate-900">Acceptable Use</Link>

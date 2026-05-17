@@ -26,16 +26,20 @@ export function TwoPillarTeaser() {
   return (
     <section className="bg-[#f5f5f5] py-20 sm:py-24 border-t border-slate-100">
       <div className="max-w-6xl mx-auto px-6">
-        {/* Section header */}
+        {/* Section header — carries the differentiator copy that used to
+            live in the standalone BundleCallout section. Merged here so
+            the headline (positioning) and the cards (proof) finally pull
+            in the same direction: each card SHOWS what the headline
+            promises (WHAT WE READ → WHAT THEY SEE per flow). */}
         <div className="text-center max-w-3xl mx-auto mb-12">
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">
-            The two flows
+            What makes it different
           </p>
           <h2 className="mt-3 text-3xl sm:text-4xl font-bold tracking-tight text-slate-900">
-            Both flows, side by side.
+            Read the actual reason. Respond specifically.
           </h2>
           <p className="mt-4 text-sm sm:text-base text-slate-600">
-            You get both running from one Stripe connection — each with its own dashboard, its own emails, its own recovery surface. Tap a card for the full story.
+            Failed payments get decline-aware copy. Cancellations get an AI-written response. Either way &mdash; every email is targeted, never templated.
           </p>
         </div>
 
@@ -104,7 +108,7 @@ export function TwoPillarTeaser() {
             </div>
           </Link>
 
-          {/* RIGHT — Win-back (emerald rail) */}
+          {/* RIGHT — Cancellation winbacks (emerald rail) */}
           <Link
             href="/win-back"
             className="group rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition p-6 border-l-4 border-l-emerald-600 flex flex-col"
@@ -113,7 +117,7 @@ export function TwoPillarTeaser() {
             <div className="flex items-center gap-2">
               <span className="text-lg" aria-hidden>✉️</span>
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700">
-                Win-back
+                Cancellation winbacks
               </p>
             </div>
             <h3 className="mt-3 text-2xl font-bold tracking-tight text-slate-900">
@@ -149,7 +153,7 @@ export function TwoPillarTeaser() {
             </div>
 
             <div className="mt-auto pt-5 inline-flex items-center gap-1.5 text-sm font-medium text-emerald-700 group-hover:gap-2.5 transition-all">
-              See how win-back works →
+              See how cancellation winbacks work →
             </div>
           </Link>
         </div>
