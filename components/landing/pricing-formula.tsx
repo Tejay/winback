@@ -94,8 +94,8 @@ export function PricingFormula() {
 
         <p className="mt-8 text-center text-xs text-slate-500">
           14-day money-back.{' '}
-          <Link href="/register" className="text-blue-600 hover:underline">
-            Start free &rarr;
+          <Link href="/pricing" className="text-blue-600 hover:underline">
+            See full pricing &rarr;
           </Link>
         </p>
 
