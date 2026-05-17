@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Top nav redesign — mockup</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; }
+  .annotation { background: #fef3c7; border: 1px dashed #f59e0b; border-radius: 8px; padding: 10px 14px; font-size: 12px; color: #92400e; line-height: 1.5; }
+  .label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.18em; color: #2563eb; }
+  .section-title { font-size: 14px; font-weight: 600; color: #0f172a; }
+  .strike { color: #94a3b8; text-decoration: line-through; }
+  .add  { color: #047857; font-weight: 600; }
+  .keep { color: #475569; }
+</style>
+</head>
+<body class="bg-slate-100 py-10">
+
+<div class="max-w-6xl mx-auto px-6 space-y-10">
+
+  <!-- ====================================================== -->
+  <!--  Page intro                                            -->
+  <!-- ====================================================== -->
+  <header>
+    <p class="label">Mockup · top nav redesign</p>
+    <h1 class="mt-2 text-2xl font-bold text-slate-900">Three options, pick one.</h1>
+    <p class="mt-2 text-sm text-slate-600 max-w-2xl leading-relaxed">
+      Current nav has two issues: <strong>Home</strong> duplicates the logo, and the CTA <strong>"Start recovering →"</strong> hides that it's actually a sign-up entry point. Returning users only see <strong>"Log in"</strong> — no clear new-user path next to it.
+    </p>
+  </header>
+
+  <!-- ====================================================== -->
+  <!--  Current nav (for reference)                           -->
+  <!-- ====================================================== -->
+  <section class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+    <div class="px-6 py-3 border-b border-slate-100 flex items-center justify-between">
+      <p class="section-title">Current — live on winbackflow.co</p>
+      <span class="text-xs text-slate-400">For reference</span>
+    </div>
+
+    <!-- Live nav exactly as it is now -->
+    <nav class="bg-white">
+      <div class="max-w-5xl mx-auto px-6 h-14 flex items-center justify-between">
+        <div class="flex items-center gap-1.5">
+          <svg viewBox="0 0 24 24" fill="none" class="w-7 h-7" stroke="#22c55e" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="1 4 1 10 7 10" />
+            <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
+          </svg>
+          <span class="font-semibold text-slate-900 text-lg">win<span class="text-green-500">back</span></span>
+        </div>
+        <div class="flex items-center gap-6 text-sm text-slate-600">
+          <a>Home</a>
+          <a>Payment recovery</a>
+          <a>Winback</a>
+          <a>Pricing</a>
+          <a>FAQ</a>
+          <a>Log in</a>
+          <a class="px-4 py-1.5 text-sm font-medium bg-[#0f172a] text-white rounded-full">Start recovering →</a>
+        </div>
+      </div>
+    </nav>
+
+    <div class="px-6 py-4 bg-slate-50">
+      <p class="text-xs text-slate-600 leading-relaxed">
+        <span class="strike">Home</span> · Payment recovery · Winback · Pricing · <span class="strike">FAQ</span> · Log in · <span class="strike">Start recovering →</span>
+      </p>
+    </div>
+  </section>
+
+  <!-- ====================================================== -->
+  <!--  OPTION A — Standard SaaS pattern                      -->
+  <!-- ====================================================== -->
+  <section class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden ring-2 ring-blue-500">
+    <div class="px-6 py-3 border-b border-slate-100 flex items-center justify-between">
+      <p class="section-title">Option A — Standard SaaS · <span class="text-blue-600">recommended</span></p>
+      <span class="text-xs text-slate-400">Closest to Stripe, Linear, Vercel</span>
+    </div>
+
+    <nav class="bg-white">
+      <div class="max-w-5xl mx-auto px-6 h-14 flex items-center justify-between">
+        <div class="flex items-center gap-1.5">
+          <svg viewBox="0 0 24 24" fill="none" class="w-7 h-7" stroke="#22c55e" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="1 4 1 10 7 10" />
+            <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
+          </svg>
+          <span class="font-semibold text-slate-900 text-lg">win<span class="text-green-500">back</span></span>
+        </div>
+        <div class="flex items-center gap-6 text-sm text-slate-600">
+          <a>Payment recovery</a>
+          <a>Winback</a>
+          <a>Pricing</a>
+          <a>Questions</a>
+          <span class="w-px h-5 bg-slate-200"></span>
+          <a class="text-slate-600">Log in</a>
+          <a class="px-4 py-1.5 text-sm font-medium bg-[#0f172a] text-white rounded-full">Sign up →</a>
+        </div>
+      </div>
+    </nav>
+
+    <div class="px-6 py-4 bg-slate-50 space-y-2">
+      <p class="text-xs text-slate-600 leading-relaxed">
+        Payment recovery · Winback · Pricing · <span class="add">Questions</span> &nbsp;|&nbsp; <span class="keep">Log in</span> · <span class="add">Sign up →</span>
+      </p>
+      <p class="text-[11px] text-slate-500">
+        • <strong>Home</strong> dropped — the logo IS the home link.<br>
+        • <strong>FAQ → Questions</strong> per your direction.<br>
+        • <strong>Auth zone separated</strong> with a vertical divider so "Log in" and "Sign up" read as a pair, distinct from product links.<br>
+        • <strong>"Start recovering →" → "Sign up →"</strong> — clearer call. Same destination (/register).
+      </p>
+    </div>
+  </section>
+
+  <!-- ====================================================== -->
+  <!--  OPTION B — Grouped products + light auth              -->
+  <!-- ====================================================== -->
+  <section class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+    <div class="px-6 py-3 border-b border-slate-100 flex items-center justify-between">
+      <p class="section-title">Option B — Product-first, lighter auth</p>
+      <span class="text-xs text-slate-400">Both flows up front</span>
+    </div>
+
+    <nav class="bg-white">
+      <div class="max-w-5xl mx-auto px-6 h-14 flex items-center justify-between">
+        <div class="flex items-center gap-1.5">
+          <svg viewBox="0 0 24 24" fill="none" class="w-7 h-7" stroke="#22c55e" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="1 4 1 10 7 10" />
+            <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
+          </svg>
+          <span class="font-semibold text-slate-900 text-lg">win<span class="text-green-500">back</span></span>
+        </div>
+        <div class="flex items-center gap-5 text-sm">
+          <!-- Product cluster -->
+          <div class="flex items-center gap-3 px-3 py-1 rounded-full bg-slate-50 text-slate-700">
+            <a class="hover:text-slate-900">Payment recovery</a>
+            <span class="text-slate-300">·</span>
+            <a class="hover:text-slate-900">Winback</a>
+          </div>
+          <!-- Info -->
+          <a class="text-slate-600">Pricing</a>
+          <a class="text-slate-600">Questions</a>
+          <!-- Auth -->
+          <a class="text-slate-600">Log in</a>
+          <a class="px-4 py-1.5 text-sm font-medium bg-[#0f172a] text-white rounded-full">Sign up →</a>
+        </div>
+      </div>
+    </nav>
+
+    <div class="px-6 py-4 bg-slate-50 space-y-2">
+      <p class="text-xs text-slate-600 leading-relaxed">
+        [<span class="text-slate-700">Payment recovery · Winback</span>] &nbsp;Pricing · Questions &nbsp;Log in · Sign up →
+      </p>
+      <p class="text-[11px] text-slate-500">
+        • The two product pages live in a soft slate pill so visitors see "two flows" at a glance.<br>
+        • Slightly more visual weight on the products, less on the auth.<br>
+        • Risk: the pill adds a custom element that doesn't appear elsewhere in the design system.
+      </p>
+    </div>
+  </section>
+
+  <!-- ====================================================== -->
+  <!--  OPTION C — Minimal / mega-menu-ready                  -->
+  <!-- ====================================================== -->
+  <section class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+    <div class="px-6 py-3 border-b border-slate-100 flex items-center justify-between">
+      <p class="section-title">Option C — Minimal, room to grow</p>
+      <span class="text-xs text-slate-400">Hide products under a single "Product" link</span>
+    </div>
+
+    <nav class="bg-white">
+      <div class="max-w-5xl mx-auto px-6 h-14 flex items-center justify-between">
+        <div class="flex items-center gap-1.5">
+          <svg viewBox="0 0 24 24" fill="none" class="w-7 h-7" stroke="#22c55e" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="1 4 1 10 7 10" />
+            <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
+          </svg>
+          <span class="font-semibold text-slate-900 text-lg">win<span class="text-green-500">back</span></span>
+        </div>
+        <div class="flex items-center gap-6 text-sm text-slate-600">
+          <a class="inline-flex items-center gap-1">Product
+            <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+          </a>
+          <a>Pricing</a>
+          <a>Questions</a>
+          <span class="w-px h-5 bg-slate-200"></span>
+          <a>Log in</a>
+          <a class="px-4 py-1.5 text-sm font-medium bg-[#0f172a] text-white rounded-full">Sign up →</a>
+        </div>
+      </div>
+    </nav>
+
+    <div class="px-6 py-4 bg-slate-50 space-y-2">
+      <p class="text-xs text-slate-600 leading-relaxed">
+        Product ▾ &nbsp;Pricing · Questions &nbsp;|&nbsp; Log in · Sign up →
+      </p>
+      <p class="text-[11px] text-slate-500">
+        • Cleanest possible nav. Easier to extend (Resources, Docs, Customers, etc. can join later).<br>
+        • Adds one click to reach Payment recovery / Winback pages.<br>
+        • Needs a dropdown component we don't have yet — more build than A or B.
+      </p>
+    </div>
+  </section>
+
+  <!-- ====================================================== -->
+  <!--  Side-by-side in context (Option A vs Current)         -->
+  <!-- ====================================================== -->
+  <section class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+    <div class="px-6 py-3 border-b border-slate-100">
+      <p class="section-title">Option A in context — over the actual Hero</p>
+    </div>
+
+    <!-- Recommended nav -->
+    <nav class="bg-white border-b border-slate-100">
+      <div class="max-w-5xl mx-auto px-6 h-14 flex items-center justify-between">
+        <div class="flex items-center gap-1.5">
+          <svg viewBox="0 0 24 24" fill="none" class="w-7 h-7" stroke="#22c55e" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="1 4 1 10 7 10" />
+            <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
+          </svg>
+          <span class="font-semibold text-slate-900 text-lg">win<span class="text-green-500">back</span></span>
+        </div>
+        <div class="flex items-center gap-6 text-sm text-slate-600">
+          <a>Payment recovery</a>
+          <a>Winback</a>
+          <a>Pricing</a>
+          <a>Questions</a>
+          <span class="w-px h-5 bg-slate-200"></span>
+          <a class="text-slate-600">Log in</a>
+          <a class="px-4 py-1.5 text-sm font-medium bg-[#0f172a] text-white rounded-full">Sign up →</a>
+        </div>
+      </div>
+    </nav>
+
+    <!-- Hero stub -->
+    <div class="bg-[#eef2fb] py-16">
+      <div class="max-w-5xl mx-auto px-6 flex flex-col items-center">
+        <p class="text-xs font-semibold tracking-widest uppercase text-blue-600">
+          For subscription businesses losing customers every month
+        </p>
+        <h1 class="mt-6 text-center tracking-tight leading-[1.05] max-w-4xl">
+          <span class="block text-3xl sm:text-5xl font-bold text-slate-900">Recover customers.</span>
+          <span class="block text-3xl sm:text-5xl font-bold text-green-500">Automatically.</span>
+        </h1>
+        <a class="mt-8 bg-[#0f172a] text-white rounded-full px-7 py-3 text-base font-medium">Start free — no card →</a>
+      </div>
+    </div>
+  </section>
+
+  <div class="annotation">
+    <strong>My recommendation: Option A.</strong> It's the cleanest, requires the least new code (no dropdown, no custom pill), and follows the SaaS pattern visitors already know (Stripe / Linear / Vercel all use this exact layout). If you want to try B or C, say so — otherwise I'll wire A into <code>components/landing/sticky-nav.tsx</code>.
+  </div>
+
+</div>
+
+</body>
+</html>
