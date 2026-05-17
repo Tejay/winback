@@ -15,10 +15,12 @@ import { Footer } from '@/components/landing/footer'
  * Structure:
  *   <StickyNav />                — site nav with feature links
  *   <Hero>                       — "Recover customers. Automatically."
- *   <BundleCallout />            — "Two flows. One platform." callout
- *   <TwoPillarTeaser />          — clickable cards → /payment-recovery + /win-back
- *   <PricingFormula />           — reframed "$99 + 1× MRR" formula + worked example
- *   <FooterCTA>                  — final connect-Stripe nudge
+ *   <TrustStrip>                 — Stripe Connect · no card · money-back
+ *   <BundleCallout />            — differentiator: "Read the actual reason..."
+ *   <TwoPillarTeaser />          — colored-rail cards → /payment-recovery + /win-back
+ *   <LandingDashboardPreview />  — dashboard screenshot
+ *   <PricingFormula />           — 3 cards: Platform / Recovery free / Win-back fee
+ *   <FooterCTA>                  — guarantee-angle close (pay nothing until we deliver)
  *   <Footer />                   — site footer
  *
  * The previous home page (~541 lines) had the win-back deep dive inline.
@@ -52,19 +54,33 @@ export default function LandingPage() {
             &mdash; always-on payment recovery for failed cards, AI-drafted win-back emails for cancelled customers. Two kinds of lost revenue, one Stripe connection.
           </p>
 
-          <div className="flex flex-col items-center gap-2 mt-8">
+          <div className="flex flex-col items-center mt-8">
             <Link
               href="/register"
               className="bg-[#0f172a] text-white rounded-full px-7 py-3 text-base font-medium hover:bg-[#1e293b]"
             >
               Start free — no card →
             </Link>
-            <p className="text-sm text-slate-500">
-              Connect Stripe · No card at signup.
-            </p>
           </div>
 
           <FlowIllustration />
+        </div>
+      </section>
+
+      {/* Trust strip — thin band between hero and bundle callout. The
+          claim that used to live below the Hero CTA ("Connect Stripe ·
+          No card at signup") is folded in here so the same procurement
+          checkboxes (Stripe Connect, no card, money-back) show in one
+          consistent line. */}
+      <section className="bg-white border-b border-slate-100 py-4">
+        <div className="max-w-5xl mx-auto px-6 flex items-center justify-center gap-2 text-xs text-slate-500 flex-wrap">
+          <span>
+            Built on <strong className="text-slate-700">Stripe Connect Standard</strong>
+          </span>
+          <span className="text-slate-300">·</span>
+          <span>No card required</span>
+          <span className="text-slate-300">·</span>
+          <span>14-day money-back</span>
         </div>
       </section>
 
@@ -73,28 +89,30 @@ export default function LandingPage() {
       <LandingDashboardPreview />
       <PricingFormula />
 
-      {/* Footer CTA — kept as a final nudge */}
+      {/* Footer CTA — guarantee angle, not a duplicate of the Hero CTA.
+          The Hero asks for the click on the promise of recovery; this
+          section closes by removing risk (no charge until we deliver,
+          14-day money-back, one-click cancel). */}
       <section className="bg-[#eef2fb] py-20 sm:py-24">
         <div className="max-w-5xl mx-auto px-6 text-center">
-          <div className="text-xs font-semibold tracking-widest uppercase text-violet-600">
-            Powered by AI tuned for retention
-          </div>
-          <h2 className="text-3xl sm:text-4xl font-bold text-slate-900 mt-3">
-            Connect Stripe. Stop the leak.
+          <p className="text-xs font-semibold tracking-widest uppercase text-violet-600">
+            No risk, no commitment
+          </p>
+          <h2 className="mt-3 text-3xl sm:text-4xl font-bold text-slate-900">
+            Pay nothing until we save you something.
           </h2>
+          <p className="mt-4 text-sm text-slate-600 max-w-xl mx-auto">
+            14-day money-back guarantee. You pay $0 until we deliver a recovery or win-back. Cancel anytime in one click.
+          </p>
 
-          <div className="mt-8">
+          <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
             <Link
               href="/register"
               className="bg-[#0f172a] text-white rounded-full px-6 py-2.5 text-sm font-medium hover:bg-[#1e293b]"
             >
-              Start recovering today →
+              Try free for 14 days →
             </Link>
           </div>
-
-          <p className="mt-6 text-sm text-slate-500">
-            Free until we deliver your first save or win-back.
-          </p>
         </div>
       </section>
 
