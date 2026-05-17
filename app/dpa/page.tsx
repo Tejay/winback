@@ -14,16 +14,23 @@ export default function DpaPage() {
           Legal
         </div>
         <h1 className="text-4xl font-bold text-slate-900 mb-2 not-prose">Data Processing Agreement.</h1>
-        <p className="text-sm text-slate-500 mb-8 not-prose">Version 2026-04-14 · Effective 14 April 2026</p>
+        <p className="text-sm text-slate-500 mb-8 not-prose">Version 2026-05-17 · Effective 17 May 2026</p>
 
         <p>
-          This Data Processing Agreement (&ldquo;DPA&rdquo;) forms part of the
-          <a href="/terms"> Terms of Service</a> between Axiomis OÜ trading as Winback (&ldquo;Processor&rdquo;)
-          and the Winback customer (&ldquo;Controller&rdquo;). It reflects the
-          parties&rsquo; agreement on the processing of personal data of the
-          Controller&rsquo;s churned subscribers (&ldquo;Data Subjects&rdquo;) in
-          accordance with Article 28 of Regulation (EU) 2016/679 (the EU General
-          Data Protection Regulation, &ldquo;GDPR&rdquo;).
+          This Data Processing Agreement (&ldquo;DPA&rdquo;) forms part
+          of the <a href="/terms">Terms of Service</a> between{' '}
+          <strong>Axiomis OÜ trading as Winback</strong>, a company
+          registered in Estonia under commercial registry number{' '}
+          <strong>17493372</strong>, with registered office at{' '}
+          <strong>Sepapaja tn 6, 15551 Tallinn, Estonia</strong>
+          {' '}(&ldquo;Processor&rdquo;), and the Winback customer
+          (&ldquo;Controller&rdquo;). It reflects the parties&rsquo;
+          agreement on the processing of personal data of the
+          Controller&rsquo;s subscribers (&ldquo;Data Subjects&rdquo;)
+          &mdash; covering both failed-payment subscribers and
+          deliberately-cancelled subscribers &mdash; in accordance with
+          Article 28 of Regulation (EU) 2016/679 (the EU General Data
+          Protection Regulation, &ldquo;GDPR&rdquo;).
         </p>
 
         <h2>1. Subject matter &amp; duration</h2>
@@ -33,15 +40,47 @@ export default function DpaPage() {
         </p>
 
         <h2>2. Nature &amp; purpose of processing</h2>
-        <p>
-          Classifying cancellation reasons, generating and sending re-engagement emails,
-          recording replies and opt-outs, and reporting on recoveries.
-        </p>
+        <ul>
+          <li>
+            Sending decline-code-aware payment-recovery emails to
+            subscribers whose card payments have failed, with a
+            one-tap link to update the payment method.
+          </li>
+          <li>
+            Classifying cancellation reasons and clustering recurring
+            themes across recent cancellations.
+          </li>
+          <li>
+            Generating and sending personalised cancellation-winback
+            emails on behalf of the Controller.
+          </li>
+          <li>
+            Matching shipped product improvements (provided by the
+            Controller) against past cancellation reasons and sending
+            one targeted re-engagement email to matched subscribers.
+          </li>
+          <li>
+            Recording inbound replies and one-click opt-outs, and
+            reporting recoveries on the Controller&rsquo;s dashboard.
+          </li>
+        </ul>
 
         <h2>3. Categories of data subjects and personal data</h2>
         <ul>
-          <li>Data subjects: the Controller&rsquo;s churned paying subscribers.</li>
-          <li>Categories: email address, first name (optional), Stripe customer ID, subscription metadata, cancellation reason, reply content.</li>
+          <li>
+            Data subjects: the Controller&rsquo;s paying subscribers
+            whose subscriptions have either failed a payment or been
+            voluntarily cancelled.
+          </li>
+          <li>
+            Categories: email address, first name (optional), Stripe
+            customer ID, subscription metadata (plan, MRR, tenure,
+            status); for failed payments, the Stripe decline code and
+            retry-attempt timestamps; for deliberate cancellations,
+            the cancellation reason code and any free-text comment;
+            and reply content if the subscriber responds to one of our
+            emails.
+          </li>
           <li>No special category data is intentionally processed.</li>
         </ul>
 
@@ -97,7 +136,11 @@ export default function DpaPage() {
           <li>Role-based access control; production access restricted to founders.</li>
           <li>Hosted on audited providers (Vercel, Neon) with their own SOC 2 attestations.</li>
           <li>Secure software development: code review, automated tests, dependency scanning.</li>
-          <li>Backups retained for 7 days and deleted thereafter.</li>
+          <li>
+            Database backups managed by our managed-Postgres provider
+            (Neon) per their standard backup-retention policy for our
+            tier; older backups are rotated out automatically.
+          </li>
         </ul>
 
         <h2>9. Liability</h2>

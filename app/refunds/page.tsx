@@ -16,7 +16,7 @@ export default function RefundsPage() {
           Refunds &amp; cancellations.
         </h1>
         <p className="text-sm text-slate-500 mb-8 not-prose">
-          Version 2026-04-26 · Effective 26 April 2026
+          Version 2026-05-17 · Effective 17 May 2026
         </p>
 
         <h2>1. When you are charged</h2>

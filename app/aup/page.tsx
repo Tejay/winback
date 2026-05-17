@@ -16,7 +16,7 @@ export default function AupPage() {
           Acceptable Use Policy.
         </h1>
         <p className="text-sm text-slate-500 mb-8 not-prose">
-          Version 2026-04-15 · Effective 15 April 2026
+          Version 2026-05-17 · Effective 17 May 2026
         </p>
 
         <p>
