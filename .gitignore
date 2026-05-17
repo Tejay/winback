@@ -41,3 +41,16 @@ yarn-error.log*
 next-env.d.ts
 .env*.local
 dev.log
+
+# local one-off / personal testing scripts (anything checked-in lives
+# in scripts/ already; these are sandbox helpers that piled up across
+# sessions and shouldn't ship with the repo)
+/scripts/check-checkout-session.ts
+/scripts/funnel-live-test-spec72.ts
+/scripts/poll-checkout.ts
+/scripts/print-localhost-chooser-link.ts
+/scripts/reset-checkout-for-retry.ts
+/scripts/seed-pagination-test.ts
+
+# WIP mockups that haven't been committed as a spec reference yet
+/marketing/win-back-storyline-mockup.html

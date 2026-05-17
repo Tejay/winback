@@ -273,6 +273,22 @@ The flow for any feature, bugfix, or non-trivial change:
    ```
    Verify with `git branch -a | grep <branch-name>` — should return nothing.
 
+7. **One open PR at a time.** Never open a second PR while another is
+   still open. Wait for the open PR to merge (and `main` to update)
+   before branching the next change. Why:
+   - Stacked PRs require rebasing after the base merges (we hit this
+     when PR #138 was stacked on the unmerged #137; the squash-merge
+     of #137 forced a `git rebase --onto main` and a force-push).
+   - A child PR whose base branch is deleted on merge **auto-closes
+     and cannot be reopened** — you'd have to create a new PR with a
+     fresh number (#138 became #139 this way).
+   - Linear merge order keeps the audit trail readable and makes
+     reverts surgical.
+
+   If you genuinely need two changes in flight (e.g. a hot fix during
+   a long-running PR), say so explicitly and get a "yes, stack it"
+   from the human first.
+
 Exceptions — changes that may go direct to `main` without a branch:
 - Docs-only edits (README, CLAUDE.md, TASKS.md, specs/*.md)
 - Comment-only tweaks with no behaviour change
