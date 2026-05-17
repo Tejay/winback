@@ -22,7 +22,7 @@ export function LandingDashboardPreview() {
       <div className="max-w-5xl mx-auto">
         <div className="text-center mb-10">
           <div className="text-xs font-semibold tracking-widest uppercase text-blue-600">
-            Built for triage, not just metrics
+            Your dashboards
           </div>
           <h2 className="mt-3 text-3xl sm:text-4xl font-bold text-slate-900 tracking-tight">
             See where every dollar is &mdash; recovered, in flight, or lost.

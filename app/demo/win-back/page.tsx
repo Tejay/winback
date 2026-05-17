@@ -4,7 +4,7 @@ import { Footer } from '@/components/landing/footer'
 import { WinBackDemoDashboard } from '@/components/demo/demo-dashboard'
 
 export const metadata = {
-  title: 'Win-back dashboard demo — Winback',
+  title: 'Cancellation winbacks dashboard demo — Winback',
   description:
     'See exactly what a Winback dashboard looks like with realistic data — KPIs, the loss-framing pipeline, and the per-subscriber drawer with AI reasoning.',
 }
@@ -18,7 +18,7 @@ export default function WinBackDemoPage() {
       <section className="bg-[#eef2fb] py-14 sm:py-16">
         <div className="max-w-5xl mx-auto px-6">
           <div className="text-xs font-semibold tracking-widest uppercase text-blue-600">
-            Win-backs · Dashboard preview
+            Cancellation winbacks · Dashboard preview
           </div>
           <h1 className="mt-3 text-3xl sm:text-5xl font-bold text-slate-900 tracking-tight leading-[1.1] max-w-3xl">
             Every cancellation. Every chance to win them back.
@@ -82,7 +82,7 @@ export default function WinBackDemoPage() {
           </h2>
           <p className="mt-3 text-slate-300">
             Connect Stripe in two minutes. No card at signup. You pay nothing
-            until we deliver your first recovery or win-back.
+            until we deliver your first recovery or cancellation winback.
           </p>
           <div className="mt-7 flex flex-col sm:flex-row items-center justify-center gap-3">
             <Link

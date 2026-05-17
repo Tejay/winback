@@ -12,7 +12,7 @@ export function Hero() {
       <div className="max-w-5xl mx-auto px-6 flex flex-col items-center">
         <div className="max-w-3xl text-center">
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">
-            Win-back
+            Cancellation winbacks
           </p>
           <h1 className="mt-4 text-4xl sm:text-5xl font-bold tracking-tight text-slate-900">
             Bring back the customers who chose to leave.

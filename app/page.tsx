@@ -1,7 +1,5 @@
 import Link from 'next/link'
 import { StickyNav } from '@/components/landing/sticky-nav'
-import { FlowIllustration } from '@/components/landing/flow-illustration'
-import { BundleCallout } from '@/components/landing/bundle-callout'
 import { TwoPillarTeaser } from '@/components/landing/two-pillar-teaser'
 import { LandingDashboardPreview } from '@/components/landing/landing-dashboard-preview'
 import { PricingFormula } from '@/components/landing/pricing-formula'
@@ -16,8 +14,11 @@ import { Footer } from '@/components/landing/footer'
  *   <StickyNav />                — site nav with feature links
  *   <Hero>                       — "Recover customers. Automatically."
  *   <TrustStrip>                 — Stripe Connect · no card · $0 until delivery
- *   <BundleCallout />            — differentiator: "Read the actual reason..."
- *   <TwoPillarTeaser />          — colored-rail cards → /payment-recovery + /win-back
+ *   <TwoPillarTeaser />          — differentiator header ("Read the actual
+ *                                  reason. Respond specifically.") + colored-
+ *                                  rail cards → /payment-recovery + /win-back.
+ *                                  Carries the differentiator copy that used
+ *                                  to live in a standalone BundleCallout.
  *   <LandingDashboardPreview />  — dashboard screenshot
  *   <PricingFormula />           — 3 cards: Platform / Recovery free / Win-back fee
  *   <FooterCTA>                  — guarantee-angle close (pay nothing until we deliver)
@@ -51,7 +52,7 @@ export default function LandingPage() {
           <p className="mt-6 text-base sm:text-lg text-slate-600 max-w-2xl text-center leading-relaxed">
             Payment failures and deliberate cancellations are the two ways subscription customers slip away. Winback is{' '}
             <span className="text-slate-900 font-medium">one platform that catches both</span>{' '}
-            &mdash; always-on payment recovery for failed cards, AI-drafted win-back emails for cancelled customers. Two kinds of lost revenue, one Stripe connection.
+            &mdash; always-on payment recovery for failed cards, AI-drafted cancellation winback emails. Two kinds of lost revenue, one Stripe connection.
           </p>
 
           <div className="flex flex-col items-center mt-8">
@@ -63,7 +64,12 @@ export default function LandingPage() {
             </Link>
           </div>
 
-          <FlowIllustration />
+          {/* FlowIllustration removed from home: the two-pillar teaser
+              below already shows both flows (Payment recovery + Cancellation
+              winbacks) in full with proof boxes, so the hero illustration
+              was redundant AND told only half the story. The illustration
+              lives on /win-back hero where it's the right surface for that
+              single-flow story. */}
         </div>
       </section>
 
@@ -89,7 +95,6 @@ export default function LandingPage() {
         </div>
       </section>
 
-      <BundleCallout />
       <TwoPillarTeaser />
       <LandingDashboardPreview />
       <PricingFormula />
@@ -113,9 +118,10 @@ export default function LandingPage() {
             Pay nothing until we save you something.
           </h2>
           <p className="mt-4 text-sm text-slate-600 max-w-xl mx-auto">
-            You pay $0 until we deliver a payment recovery or win-back.
-            Win-back fees are refunded if the customer re-cancels within
-            14 days. Cancel anytime in one click.
+            You pay $0 until we deliver a payment recovery or
+            cancellation winback. Cancellation winback fees are refunded
+            if the customer re-cancels within 14 days. Cancel anytime in
+            one click.
           </p>
 
           <div className="mt-8 flex flex-wrap items-center justify-center gap-3">

@@ -83,7 +83,7 @@ export default function PaymentRecoveryDemoPage() {
           </h2>
           <p className="mt-3 text-slate-300">
             Connect Stripe in two minutes. No card at signup. You pay nothing
-            until we deliver your first recovery or win-back.
+            until we deliver your first recovery or cancellation winback.
           </p>
           <div className="mt-7 flex flex-col sm:flex-row items-center justify-center gap-3">
             <Link
@@ -96,7 +96,7 @@ export default function PaymentRecoveryDemoPage() {
               href="/demo/win-back"
               className="text-slate-300 hover:text-white text-sm font-medium px-4 py-3"
             >
-              Explore the win-back dashboard →
+              Explore the cancellation winbacks dashboard →
             </Link>
           </div>
         </div>

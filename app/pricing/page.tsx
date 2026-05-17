@@ -106,7 +106,7 @@ export default function PricingPage() {
 
               <div className="mt-auto pt-5">
                 <p className="text-xs text-slate-500 italic">
-                  Free until we deliver your first recovery or win-back &mdash;
+                  Free until we deliver your first recovery or cancellation winback &mdash;
                   we don&rsquo;t bill the $99 the day you sign up.
                 </p>
               </div>
@@ -172,7 +172,7 @@ export default function PricingPage() {
               style={{ backgroundImage: 'linear-gradient(to right, #ecfdf5 0%, #ffffff 30%)' }}
             >
               <p className="text-[10px] font-semibold uppercase tracking-widest text-emerald-700">
-                Win-back fee
+                Cancellation winback fee
               </p>
               <div className="mt-3 flex items-baseline gap-1.5">
                 <span className="text-4xl font-bold text-slate-900 leading-none">1&times; Monthly fee</span>
@@ -201,7 +201,7 @@ export default function PricingPage() {
                   </li>
                   <li className="flex items-start gap-2.5">
                     <Check className="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" strokeWidth={2.2} />
-                    <span>$0 in months where we deliver no win-backs</span>
+                    <span>$0 in months where we deliver no cancellation winbacks</span>
                   </li>
                   <li className="flex items-start gap-2.5">
                     <Check className="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" strokeWidth={2.2} />
@@ -227,7 +227,7 @@ export default function PricingPage() {
             <div className="rounded-2xl border border-slate-200 bg-white px-6 py-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <div className="flex items-center gap-2 text-sm text-slate-700">
                 <Check className="w-4 h-4 text-emerald-500 flex-shrink-0" strokeWidth={2.4} />
-                <span>Free until first recovery or win-back</span>
+                <span>Free until first recovery or cancellation winback</span>
               </div>
               <div className="flex items-center gap-2 text-sm text-slate-700">
                 <Check className="w-4 h-4 text-emerald-500 flex-shrink-0" strokeWidth={2.4} />
@@ -267,7 +267,7 @@ export default function PricingPage() {
                 </p>
               </div>
               <p className="text-[11px] text-slate-500 text-right">
-                8 recoveries<br />+ 3 win-backs
+                8 recoveries<br />+ 3 cancellation winbacks
               </p>
             </div>
 
@@ -282,7 +282,7 @@ export default function PricingPage() {
                 <p className="mt-0.5 text-lg font-semibold text-slate-900 tabular-nums">$0</p>
               </div>
               <div>
-                <p className="text-[10px] text-emerald-700 uppercase tracking-widest">Win-backs</p>
+                <p className="text-[10px] text-emerald-700 uppercase tracking-widest">Cancellation winbacks</p>
                 <p className="mt-0.5 text-lg font-semibold text-slate-900 tabular-nums">$60</p>
               </div>
             </div>
@@ -326,7 +326,7 @@ export default function PricingPage() {
             <div className="px-6 py-5">
               <dt className="text-slate-900 font-medium">When does the $99 start?</dt>
               <dd className="mt-1.5 text-sm text-slate-600 leading-relaxed">
-                After we deliver your first payment recovery or win-back,
+                After we deliver your first payment recovery or cancellation winback,
                 whichever comes first. We don&rsquo;t bill the platform fee
                 at signup &mdash; it kicks in once we&rsquo;ve actually saved
                 you a dollar.
@@ -335,14 +335,14 @@ export default function PricingPage() {
             <div className="px-6 py-5">
               <dt className="text-slate-900 font-medium">How is the performance fee charged?</dt>
               <dd className="mt-1.5 text-sm text-slate-600 leading-relaxed">
-                One invoice per cancellation win-back, equal to{' '}
+                One invoice per cancellation winback, equal to{' '}
                 <strong>1 month&rsquo;s subscription fee</strong> for that
                 subscriber. Charged once &mdash; never recurring. If they
                 re-cancel within 14 days, we refund the fee in full.
               </dd>
             </div>
             <div className="px-6 py-5">
-              <dt className="text-slate-900 font-medium">What counts as a cancellation win-back?</dt>
+              <dt className="text-slate-900 font-medium">What counts as a cancellation winback?</dt>
               <dd className="mt-1.5 text-sm text-slate-600 leading-relaxed">
                 <p>A cancelled subscriber comes back after we engaged with them. Specifically, one of:</p>
                 <ul className="mt-2 space-y-1.5 list-disc pl-5">
@@ -352,7 +352,7 @@ export default function PricingPage() {
                   <li>They came back within 30 days of you pausing our AI for them.</li>
                 </ul>
                 <p className="mt-2">
-                  Payment recoveries aren&rsquo;t win-backs &mdash; those are
+                  Payment recoveries aren&rsquo;t cancellation winbacks &mdash; those are
                   covered by the $99/mo platform fee (up to 500/month).
                 </p>
               </dd>
@@ -392,7 +392,7 @@ export default function PricingPage() {
 
       {/* Footer CTA — guarantee angle, mirrors the home page close.
           Copy precision: no general money-back, no 14-day free trial.
-          You pay $0 until we deliver a save; win-back fees are
+          You pay $0 until we deliver a save; cancellation winback fees are
           refunded only if the won-back customer re-cancels within
           14 days. CTA text matches the Hero ("Start free — no card")
           rather than the misleading "Try free for 14 days". */}
@@ -405,9 +405,10 @@ export default function PricingPage() {
             Pay nothing until we save you something.
           </h2>
           <p className="mt-4 text-sm text-slate-600 max-w-xl mx-auto">
-            You pay $0 until we deliver a payment recovery or win-back.
-            Win-back fees are refunded if the customer re-cancels within
-            14 days. Cancel anytime in one click.
+            You pay $0 until we deliver a payment recovery or
+            cancellation winback. Cancellation winback fees are refunded
+            if the customer re-cancels within 14 days. Cancel anytime in
+            one click.
           </p>
           <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
             <Link

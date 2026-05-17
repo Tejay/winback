@@ -5,7 +5,7 @@ import { Footer } from '@/components/landing/footer'
 export const metadata = {
   title: 'Questions — Winback',
   description:
-    'Stripe access, payment recovery + win-back emails, pricing, and GDPR — answered.',
+    'Stripe access, payment recovery + cancellation winback emails, pricing, and GDPR — answered.',
 }
 
 interface QA {
@@ -22,10 +22,10 @@ const SECTIONS: Section[] = [
     heading: 'Dashboard',
     subsections: [
       {
-        heading: 'Win-backs',
+        heading: 'Cancellation winbacks',
         items: [
           {
-            q: 'How is "Recovery rate (30d)" calculated on the Win-backs tab?',
+            q: 'How is "Recovery rate (30d)" calculated on the Cancellation winbacks tab?',
             a: (
               <p>
                 The share of recent voluntary cancellations that have been
@@ -39,7 +39,7 @@ const SECTIONS: Section[] = [
             ),
           },
           {
-            q: 'How is "Recovered · lifetime" calculated on the Win-backs tab?',
+            q: 'How is "Recovered · lifetime" calculated on the Cancellation winbacks tab?',
             a: (
               <p>
                 A count of every customer we&rsquo;ve brought back from a
@@ -50,7 +50,7 @@ const SECTIONS: Section[] = [
             ),
           },
           {
-            q: 'How is "Revenue saved · lifetime" calculated on the Win-backs tab?',
+            q: 'How is "Revenue saved · lifetime" calculated on the Cancellation winbacks tab?',
             a: (
               <>
                 <p>
@@ -70,14 +70,14 @@ const SECTIONS: Section[] = [
                 </p>
                 <p className="mt-3">
                   The &ldquo;$X/mo currently active&rdquo; sub-line is the
-                  run-rate: the sum of MRR for recovered win-back
-                  subscribers still subscribed today.
+                  run-rate: the sum of MRR for recovered cancellation
+                  winback subscribers still subscribed today.
                 </p>
               </>
             ),
           },
           {
-            q: 'How is "In progress" calculated on the Win-backs tab?',
+            q: 'How is "In progress" calculated on the Cancellation winbacks tab?',
             a: (
               <p>
                 The count of cancelled customers we&rsquo;re actively
@@ -88,7 +88,7 @@ const SECTIONS: Section[] = [
             ),
           },
           {
-            q: 'What is the "Top reasons" strip above the Win-backs table?',
+            q: 'What is the "Top reasons" strip above the Cancellation winbacks table?',
             a: (
               <p>
                 The four most common cancellation categories from the last
@@ -131,7 +131,7 @@ const SECTIONS: Section[] = [
             q: 'How is "Revenue saved · lifetime" calculated on the Payment recoveries tab?',
             a: (
               <p>
-                The same calculation and same number as on the Win-backs tab
+                The same calculation and same number as on the Cancellation winbacks tab
                 &mdash; we surface saved revenue as a single ROI figure
                 across both recovery types rather than splitting it. The
                 &ldquo;$X/mo currently active&rdquo; sub-line on this tab
@@ -158,7 +158,7 @@ const SECTIONS: Section[] = [
                 The four most common bank-decline reasons from the last 30
                 days (<code>insufficient_funds</code>, <code>expired_card</code>,
                 <code>do_not_honor</code>, etc.) &mdash; same shape and same
-                3-row floor as the Win-backs &ldquo;Top reasons&rdquo; strip.
+                3-row floor as the Cancellation winbacks &ldquo;Top reasons&rdquo; strip.
               </p>
             ),
           },
@@ -180,7 +180,7 @@ const SECTIONS: Section[] = [
               cancellation events &mdash; that&rsquo;s how we detect churn and
               attribute recoveries. We use <em>write</em> access for one
               purpose only: renewing or reactivating a subscription on your
-              behalf when a customer accepts a win-back offer, so they can
+              behalf when a customer accepts a cancellation winback offer, so they can
               restart in a single click without re-entering card details. We
               never create new subscriptions out of nowhere, never refund,
               never change prices. You can disconnect us any time from your
@@ -200,7 +200,7 @@ const SECTIONS: Section[] = [
             No. We never create charges, never issue refunds, never change
             prices or plan configurations. The only &ldquo;write&rdquo; action
             we take is renewing a cancelled subscription when a customer
-            clicks your win-back offer &mdash; and that only restores what
+            clicks your cancellation winback offer &mdash; and that only restores what
             they previously had.
           </p>
         ),
@@ -210,7 +210,7 @@ const SECTIONS: Section[] = [
         a: (
           <p>
             We stop receiving cancellation events immediately and stop sending
-            win-back emails. Nothing on your Stripe side changes &mdash; your
+            cancellation winback emails. Nothing on your Stripe side changes &mdash; your
             subscriptions, customers, and prices are untouched.
           </p>
         ),
@@ -269,7 +269,7 @@ const SECTIONS: Section[] = [
             </p>
             <ul className="mt-3 space-y-2 list-disc pl-5">
               <li>
-                <strong>Win-back</strong>: one email immediately after a
+                <strong>Cancellation winback</strong>: one email immediately after a
                 voluntary cancellation. We send a single follow-up later
                 <em> only</em> if you ship something matching their stated
                 reason (see &ldquo;If I ship something a cancelled customer
@@ -307,7 +307,7 @@ const SECTIONS: Section[] = [
             <p className="mt-3">
               Runs as a daily cron at 09:00 UTC. There&rsquo;s no extra fee
               for the email itself &mdash; the standard cancellation
-              win-back performance fee only kicks in if they actually come
+              winback performance fee only kicks in if they actually come
               back via the email.
             </p>
           </>
@@ -343,10 +343,11 @@ const SECTIONS: Section[] = [
             </p>
             <ul className="mt-3 space-y-2 list-disc pl-5">
               <li>
-                <strong>Win-back emails are AI-drafted.</strong> The model
+                <strong>Cancellation winback emails are AI-drafted.</strong> The model
                 reads the cancellation reason and writes a targeted reply
                 in your approved voice. Sent within about a minute of the
-                cancellation &mdash; speed is what makes win-back work.
+                cancellation &mdash; speed is what makes cancellation
+                winbacks work.
               </li>
               <li>
                 <strong>Payment-recovery emails are rule-based</strong>, not
@@ -365,13 +366,13 @@ const SECTIONS: Section[] = [
         ),
       },
       {
-        q: 'Can I attach a discount code to win-back emails?',
+        q: 'Can I attach a discount code to cancellation winback emails?',
         a: (
           <>
             <p>
               Yes. From Settings &rarr; Reasons you can select a single
-              Stripe promotion code at a time to offer with win-back
-              emails (or skip &mdash; many merchants find a
+              Stripe promotion code at a time to offer with
+              cancellation winback emails (or skip &mdash; many merchants find a
               personal-sounding email outperforms a discount). Switching
               the active code is one click.
             </p>
@@ -429,7 +430,7 @@ const SECTIONS: Section[] = [
         a: (
           <p>
             Yes. You can pause sending from Settings at any time. While
-            paused, no win-back emails go out. Cancellations continue to be
+            paused, no cancellation winback emails go out. Cancellations continue to be
             recorded on your dashboard so nothing is lost &mdash; useful for
             migrations, incidents, or holidays.
           </p>
@@ -495,7 +496,7 @@ const SECTIONS: Section[] = [
                   <strong>performance fee equal to 1&times; the won-back
                   subscriber&rsquo;s own monthly fee</strong> when we win back a
                   cancelled customer. Charged once per cancellation
-                  win-back, never recurring.
+                  winback, never recurring.
                 </p>
                 <p className="mt-3">
                   <Link href="/pricing" className="text-blue-600 hover:underline">
@@ -510,7 +511,8 @@ const SECTIONS: Section[] = [
             a: (
               <p>
                 No card at signup. We ask for a payment method after we deliver
-                your first payment recovery or win-back, whichever comes first.
+                your first payment recovery or cancellation winback,
+                whichever comes first.
                 The $99 platform fee starts on that same invoice. If we deliver
                 nothing, you pay nothing.
               </p>
@@ -519,10 +521,10 @@ const SECTIONS: Section[] = [
         ],
       },
       {
-        heading: 'Win-backs',
+        heading: 'Cancellation winbacks',
         items: [
           {
-            q: 'What counts as a cancellation win-back?',
+            q: 'What counts as a cancellation winback?',
             a: (
               <>
                 <p>
@@ -597,7 +599,8 @@ const SECTIONS: Section[] = [
             q: 'What if a won-back subscriber cancels again?',
             a: (
               <p>
-                If they re-cancel within 14 days of the win-back, we refund the
+                If they re-cancel within 14 days of the cancellation
+                winback, we refund the
                 entire performance fee. After 14 days, the fee stands &mdash;
                 they had a real period of paid revenue.
               </p>

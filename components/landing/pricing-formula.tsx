@@ -79,7 +79,7 @@ export function PricingFormula() {
             style={{ backgroundImage: 'linear-gradient(to right, #ecfdf5 0%, #ffffff 30%)' }}
           >
             <p className="text-[10px] font-semibold uppercase tracking-widest text-emerald-700">
-              Win-back fee
+              Cancellation winback fee
             </p>
             <div className="mt-3 flex items-baseline gap-1.5">
               <span className="text-4xl font-bold text-slate-900 leading-none">1&times; Monthly fee</span>
@@ -119,7 +119,7 @@ export function PricingFormula() {
             </div>
             <div className="flex items-center gap-2 text-sm text-slate-700">
               <Check className="w-4 h-4 text-emerald-500 flex-shrink-0" strokeWidth={2.4} />
-              <span>Win-back fee refunded if they re-cancel in 14 days</span>
+              <span>Cancellation winback fee refunded if they re-cancel in 14 days</span>
             </div>
             <div className="flex items-center gap-2 text-sm text-slate-700">
               <Check className="w-4 h-4 text-emerald-500 flex-shrink-0" strokeWidth={2.4} />
