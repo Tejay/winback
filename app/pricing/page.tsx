@@ -390,7 +390,12 @@ export default function PricingPage() {
         </div>
       </section>
 
-      {/* Footer CTA — guarantee angle, mirrors the home page close. */}
+      {/* Footer CTA — guarantee angle, mirrors the home page close.
+          Copy precision: no general money-back, no 14-day free trial.
+          You pay $0 until we deliver a save; win-back fees are
+          refunded only if the won-back customer re-cancels within
+          14 days. CTA text matches the Hero ("Start free — no card")
+          rather than the misleading "Try free for 14 days". */}
       <section className="bg-[#eef2fb] py-20 sm:py-24">
         <div className="max-w-5xl mx-auto px-6 text-center">
           <p className="text-xs font-semibold tracking-widest uppercase text-violet-600">
@@ -400,15 +405,16 @@ export default function PricingPage() {
             Pay nothing until we save you something.
           </h2>
           <p className="mt-4 text-sm text-slate-600 max-w-xl mx-auto">
-            14-day money-back guarantee. You pay $0 until we deliver a
-            recovery or win-back. Cancel anytime in one click.
+            You pay $0 until we deliver a payment recovery or win-back.
+            Win-back fees are refunded if the customer re-cancels within
+            14 days. Cancel anytime in one click.
           </p>
           <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
             <Link
               href="/register"
               className="bg-[#0f172a] text-white rounded-full px-6 py-2.5 text-sm font-medium hover:bg-[#1e293b]"
             >
-              Try free for 14 days &rarr;
+              Start free &mdash; no card &rarr;
             </Link>
           </div>
         </div>

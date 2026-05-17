@@ -92,24 +92,34 @@ export function PricingFormula() {
           </div>
         </div>
 
-        <p className="mt-8 text-center text-xs text-slate-500">
-          14-day money-back.{' '}
-          <Link href="/pricing" className="text-blue-600 hover:underline">
-            See full pricing &rarr;
+        {/* See full pricing — promoted from a tiny text sublink to a
+            button-style anchor so it's actually visible. User feedback:
+            the previous "14-day money-back. See full pricing →" sublink
+            was too easy to miss (and the "14-day money-back" half was
+            misleading — there is no general money-back guarantee). */}
+        <div className="mt-10 flex justify-center">
+          <Link
+            href="/pricing"
+            className="inline-flex items-center gap-1.5 rounded-full border border-slate-300 bg-white px-5 py-2.5 text-sm font-medium text-slate-700 hover:border-blue-500 hover:text-blue-700 transition-colors shadow-sm"
+          >
+            See full pricing &amp; FAQ
+            <span aria-hidden>&rarr;</span>
           </Link>
-        </p>
+        </div>
 
-        {/* Trust strip — retained for buyers scanning for procurement
-            checkboxes (cancel anytime, no setup, refund window). */}
+        {/* Trust strip — procurement checkboxes (cancel anytime, no
+            setup, refund window). Refund row says exactly what's
+            refundable: the win-back fee, only if the won-back customer
+            re-cancels within 14 days. NOT a general money-back. */}
         <div className="mt-12 max-w-3xl mx-auto">
           <div className="rounded-2xl border border-slate-200 bg-white px-6 py-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="flex items-center gap-2 text-sm text-slate-700">
               <Check className="w-4 h-4 text-emerald-500 flex-shrink-0" strokeWidth={2.4} />
-              <span>Free until first recovery or win-back</span>
+              <span>$0 until first save</span>
             </div>
             <div className="flex items-center gap-2 text-sm text-slate-700">
               <Check className="w-4 h-4 text-emerald-500 flex-shrink-0" strokeWidth={2.4} />
-              <span>14-day refund if they re-cancel</span>
+              <span>Win-back fee refunded if they re-cancel in 14 days</span>
             </div>
             <div className="flex items-center gap-2 text-sm text-slate-700">
               <Check className="w-4 h-4 text-emerald-500 flex-shrink-0" strokeWidth={2.4} />
