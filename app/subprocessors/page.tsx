@@ -15,7 +15,7 @@ export default function SubprocessorsPage() {
         </div>
         <h1 className="text-4xl font-bold text-slate-900 mb-2">Subprocessors.</h1>
         <p className="text-sm text-slate-500 mb-8">
-          Last updated: 14 April 2026. These are the third parties we rely on to
+          Last updated: 17 May 2026. These are the third parties we rely on to
           deliver the Winback service. When this list changes we notify customers
           at least 30 days in advance.
         </p>

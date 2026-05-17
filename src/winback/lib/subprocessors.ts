@@ -32,8 +32,8 @@ export const SUBPROCESSORS: Subprocessor[] = [
   },
   {
     name: 'Anthropic PBC',
-    purpose: 'LLM classification of cancellation reasons',
-    dataProcessed: 'Subscriber signals sent to Claude for classification (zero-retention mode enabled)',
+    purpose: 'LLM classification of cancellation reasons, cancellation-theme clustering, and cancellation-winback email drafting',
+    dataProcessed: 'Subscriber signals sent to Claude for classification, clustering, and email drafting (zero-retention mode enabled)',
     location: 'United States',
     transferMechanism: 'EU Standard Contractual Clauses',
     url: 'https://www.anthropic.com/legal/privacy',
@@ -48,8 +48,8 @@ export const SUBPROCESSORS: Subprocessor[] = [
   },
   {
     name: 'Stripe Inc.',
-    purpose: 'OAuth connection to customer Stripe account; webhook delivery',
-    dataProcessed: 'Stripe customer IDs, subscription metadata (read-only)',
+    purpose: 'Stripe Connect Standard OAuth connection to customer Stripe account, webhook delivery for cancellation + payment-failure events, and billing of Winback platform + performance fees on Winback\'s own Stripe account',
+    dataProcessed: 'Stripe customer IDs, subscription metadata, decline codes and retry timestamps (read-only on customer accounts); Winback customer billing data (read-write on Winback\'s own Stripe account)',
     location: 'United States / Ireland',
     transferMechanism: 'EU Standard Contractual Clauses',
     url: 'https://stripe.com/privacy',

@@ -14,14 +14,19 @@ export default function TermsPage() {
           Legal
         </div>
         <h1 className="text-4xl font-bold text-slate-900 mb-2 not-prose">Terms of Service.</h1>
-        <p className="text-sm text-slate-500 mb-8 not-prose">Version 2026-04-14 · Effective 14 April 2026</p>
+        <p className="text-sm text-slate-500 mb-8 not-prose">Version 2026-05-17 · Effective 17 May 2026</p>
 
         <h2>1. Agreement</h2>
         <p>
-          These Terms govern your use of Winback (the &ldquo;Service&rdquo;), operated
-          by Axiomis OÜ trading as Winback (&ldquo;we&rdquo;). By creating an account you agree to these
-          Terms, our <a href="/privacy">Privacy Policy</a>, and our{' '}
-          <a href="/dpa">Data Processing Agreement</a>.
+          These Terms govern your use of Winback (the
+          &ldquo;Service&rdquo;), operated by{' '}
+          <strong>Axiomis OÜ trading as Winback</strong>
+          {' '}(&ldquo;we&rdquo;), a company registered in Estonia
+          under <strong>commercial registry number 17493372</strong>,
+          with registered office at <strong>Sepapaja tn 6, 15551
+          Tallinn, Estonia</strong>. By creating an account you agree
+          to these Terms, our <a href="/privacy">Privacy Policy</a>,
+          and our <a href="/dpa">Data Processing Agreement</a>.
         </p>
 
         <h2>2. The Service</h2>
