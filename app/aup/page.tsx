@@ -88,12 +88,14 @@ export default function AupPage() {
           </li>
         </ul>
 
-        <h2>Spam-complaint thresholds</h2>
+        <h2>Spam-complaint monitoring</h2>
         <p>
-          We monitor complaint rate on our sending domain. If complaints from a
-          single Winback customer exceed <strong>0.3% of messages sent</strong>{' '}
-          over a rolling 7-day window, we automatically pause sending for that
-          customer and email the founder. Repeat breaches end in termination.
+          We monitor complaint rate on our sending domain continuously. If a
+          single Winback customer&rsquo;s complaint rate reaches a level that
+          puts deliverability at risk, we pause sending for that customer and
+          email the founder. Repeat issues end in termination. Industry
+          benchmarks (Gmail, Microsoft, Apple) put the safe ceiling at roughly
+          0.1% &mdash; we aim to act before any account approaches that.
         </p>
 
         <h2>Reporting abuse</h2>

@@ -658,9 +658,10 @@ const SECTIONS: Section[] = [
             <Link href="/aup" className="text-blue-600 hover:underline">
               Acceptable Use Policy
             </Link>
-            . Breach is grounds for immediate suspension. We monitor spam
-            complaints on our sending domain automatically and pause any
-            account over a 0.3% complaint rate. Report abuse to{' '}
+            . Breach is grounds for immediate suspension. We monitor
+            complaint rate on our sending domain continuously and pause
+            any account where deliverability becomes a problem. Report
+            abuse to{' '}
             <a href="mailto:abuse@winbackflow.co" className="text-blue-600 hover:underline">
               abuse@winbackflow.co
             </a>
