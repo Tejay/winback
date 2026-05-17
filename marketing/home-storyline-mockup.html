@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>/ — home, Layer 2 mockup</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; }
+  .label-blue { color: #2563eb; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.18em; }
+  .annotation { background: #fef3c7; border: 1px dashed #f59e0b; border-radius: 8px; padding: 10px 12px; font-size: 11px; color: #92400e; line-height: 1.4; }
+</style>
+</head>
+<body class="bg-white">
+
+<!-- Stand-in nav -->
+<nav class="border-b border-slate-200 bg-white">
+  <div class="max-w-5xl mx-auto px-6 flex items-center justify-between h-14">
+    <div class="flex items-center gap-2">
+      <div class="w-7 h-7 rounded-xl bg-blue-500 flex items-center justify-center text-white font-semibold">w</div>
+      <span class="font-semibold text-slate-900">winback</span>
+    </div>
+    <div class="flex items-center gap-6 text-sm font-medium text-slate-600">
+      <a>Home</a>
+      <a>Payment recovery</a>
+      <a>Win-back</a>
+      <a>Pricing</a>
+      <a>FAQ</a>
+    </div>
+    <a class="px-4 py-1.5 text-sm font-medium bg-[#0f172a] text-white rounded-full">Start recovering →</a>
+  </div>
+</nav>
+
+<!-- ============================================================ -->
+<!--  HERO — blue ground                                          -->
+<!-- ============================================================ -->
+<section class="bg-[#eef2fb] py-20 sm:py-24">
+  <div class="max-w-5xl mx-auto px-6 flex flex-col items-center">
+    <p class="text-xs font-semibold tracking-widest uppercase text-blue-600">
+      For subscription businesses losing customers every month
+    </p>
+    <h1 class="mt-6 text-center tracking-tight leading-[1.05] max-w-4xl">
+      <span class="block text-4xl sm:text-6xl font-bold text-slate-900">Recover customers.</span>
+      <span class="block text-4xl sm:text-6xl font-bold text-green-500">Automatically.</span>
+    </h1>
+    <p class="mt-6 text-base sm:text-lg text-slate-600 max-w-2xl text-center leading-relaxed">
+      Payment failures and deliberate cancellations are the two ways subscription customers slip away. Winback is
+      <span class="text-slate-900 font-medium">one platform that catches both</span>
+      — always-on payment recovery for failed cards, AI-drafted win-back emails for cancelled customers.
+    </p>
+    <a class="mt-8 bg-[#0f172a] text-white rounded-full px-7 py-3 text-base font-medium">Start free — no card →</a>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!--  TRUST STRIP — thin band between hero and bundle             -->
+<!-- ============================================================ -->
+<section class="bg-white border-b border-slate-100 py-4">
+  <div class="max-w-5xl mx-auto px-6 flex items-center justify-center gap-2 text-xs text-slate-500 flex-wrap">
+    <span>Built on <strong class="text-slate-700">Stripe Connect Standard</strong></span>
+    <span class="text-slate-300">·</span>
+    <span>No card required</span>
+    <span class="text-slate-300">·</span>
+    <span>14-day money-back</span>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!--  BUNDLE CALLOUT — white ground · now differentiator-led      -->
+<!-- ============================================================ -->
+<section class="bg-white py-16">
+  <div class="max-w-3xl mx-auto px-6 text-center">
+    <p class="label-blue">What makes it different</p>
+    <h2 class="mt-3 text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">
+      Read the actual reason. Respond specifically.
+    </h2>
+    <p class="mt-3 text-sm sm:text-base text-slate-600">
+      Failed payments get decline-aware copy. Cancellations get an AI-written response. Either way — every email is targeted, never templated.
+    </p>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!--  TWO PILLARS — grey ground, colored-rail cards w/ proof      -->
+<!--  Wider container (max-w-6xl) + side-by-side zones inside     -->
+<!--  the proof box for a more compact card profile.              -->
+<!-- ============================================================ -->
+<section class="bg-[#f5f5f5] py-20 sm:py-24 border-t border-slate-100">
+  <div class="max-w-6xl mx-auto px-6">
+    <div class="text-center max-w-3xl mx-auto mb-12">
+      <p class="label-blue">The two flows</p>
+      <h2 class="mt-3 text-3xl sm:text-4xl font-bold tracking-tight text-slate-900">
+        Both flows, side by side.
+      </h2>
+      <p class="mt-4 text-sm sm:text-base text-slate-600">
+        You get both running from one Stripe connection — each with its own dashboard, its own emails, its own recovery surface. Tap a card for the full story.
+      </p>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <!-- LEFT — Payment recovery, blue rail -->
+      <a
+        class="group rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition p-6 border-l-4 border-l-blue-600 flex flex-col"
+        style="background: linear-gradient(to right, #eff6ff 0%, #ffffff 30%);"
+      >
+        <div class="flex items-center gap-2">
+          <span class="text-lg">💳</span>
+          <p class="label-blue text-blue-700">Payment recovery</p>
+        </div>
+        <h3 class="mt-3 text-2xl font-bold tracking-tight text-slate-900">When cards fail.</h3>
+        <p class="mt-2.5 text-sm text-slate-600 leading-relaxed">
+          Three perfectly-timed emails that lead Stripe&rsquo;s retries. Decline-aware copy. One-tap update with the wallet they already have.
+        </p>
+
+        <!-- Proof: side-by-side zones (WHAT WE READ | WHAT THEY SEE) -->
+        <div class="mt-5 rounded-xl bg-white/60 border border-blue-100/60 overflow-hidden grid grid-cols-2 divide-x divide-slate-100">
+          <!-- Zone 1: WHAT WE READ -->
+          <div class="p-4">
+            <p class="text-[10px] font-semibold uppercase tracking-widest text-slate-500 mb-2">What we read</p>
+            <div class="rounded-lg bg-white border border-slate-100 p-3 text-xs">
+              <p class="text-[10px] font-semibold uppercase tracking-widest text-blue-600 mb-0.5">Why this happened</p>
+              <p class="text-slate-900 leading-snug">Your card expired since the last successful charge.</p>
+            </div>
+          </div>
+          <!-- Zone 2: WHAT THEY SEE -->
+          <div class="p-4">
+            <p class="text-[10px] font-semibold uppercase tracking-widest text-slate-500 mb-2">What they see</p>
+            <div class="grid grid-cols-3 gap-1.5">
+              <!-- Apple Pay -->
+              <button type="button" class="py-2 bg-black text-white rounded-md text-xs font-semibold flex items-center justify-center gap-0.5">
+                <svg class="w-3 h-3" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+                  <path d="M17.05 11.97c-.027-2.82 2.302-4.17 2.408-4.236-1.317-1.92-3.357-2.183-4.078-2.21-1.733-.18-3.387 1.02-4.27 1.02-.886 0-2.241-.998-3.687-.97-1.897.027-3.659 1.105-4.633 2.793-1.978 3.422-.504 8.473 1.41 11.244.937 1.358 2.05 2.879 3.51 2.825 1.416-.057 1.95-.91 3.66-.91 1.71 0 2.19.91 3.687.879 1.524-.027 2.488-1.385 3.42-2.747 1.077-1.575 1.519-3.103 1.546-3.18-.034-.014-2.964-1.135-2.973-4.508zm-2.78-8.282c.78-.949 1.31-2.265 1.166-3.581-1.128.046-2.504.752-3.314 1.7-.724.834-1.366 2.18-1.196 3.474 1.262.097 2.553-.642 3.344-1.593z"/>
+                </svg>
+                <span>Pay</span>
+              </button>
+              <!-- Google Pay -->
+              <button type="button" class="py-2 bg-black text-white rounded-md text-xs font-semibold flex items-center justify-center gap-1">
+                <svg class="w-3 h-3" viewBox="0 0 24 24" aria-hidden>
+                  <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                  <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                  <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+                  <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+                </svg>
+                <span>Pay</span>
+              </button>
+              <!-- Link -->
+              <button type="button" class="py-2 bg-emerald-500 text-white rounded-md text-xs font-semibold flex items-center justify-center">
+                <span class="bg-black text-emerald-400 px-1 py-0.5 rounded font-bold tracking-tight text-[10px]">link</span>
+              </button>
+            </div>
+            <p class="text-xs text-slate-500 mt-2 leading-snug">One tap, no card to retype.</p>
+          </div>
+        </div>
+
+        <div class="mt-auto pt-5 inline-flex items-center gap-1.5 text-sm font-medium text-blue-600 group-hover:gap-2.5 transition-all">
+          See how payment recovery works →
+        </div>
+      </a>
+
+      <!-- RIGHT — Win-back, emerald rail -->
+      <a
+        class="group rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition p-6 border-l-4 border-l-emerald-600 flex flex-col"
+        style="background: linear-gradient(to right, #ecfdf5 0%, #ffffff 30%);"
+      >
+        <div class="flex items-center gap-2">
+          <span class="text-lg">✉️</span>
+          <p class="label-blue text-emerald-700">Win-back</p>
+        </div>
+        <h3 class="mt-3 text-2xl font-bold tracking-tight text-slate-900">When customers cancel.</h3>
+        <p class="mt-2.5 text-sm text-slate-600 leading-relaxed">
+          AI clusters cancellation reasons weekly. You provide the reasons; we email the exact customers who cited each one.
+        </p>
+
+        <!-- Proof: side-by-side zones (WHAT WE READ | WHAT THEY SEE) -->
+        <div class="mt-5 rounded-xl bg-white/60 border border-emerald-100/60 overflow-hidden grid grid-cols-2 divide-x divide-slate-100">
+          <!-- Zone 1: WHAT WE READ -->
+          <div class="p-4">
+            <p class="text-[10px] font-semibold uppercase tracking-widest text-slate-500 mb-2">What we read</p>
+            <div class="rounded-lg bg-white border border-slate-100 p-3 text-xs">
+              <p class="text-[10px] font-semibold uppercase tracking-widest text-emerald-700 mb-0.5">A theme we clustered</p>
+              <p class="text-slate-900 leading-snug">5 customers asked for native Slack integration:</p>
+              <p class="text-slate-900 leading-snug italic mt-1">&ldquo;Ping me when there&rsquo;s a proper Slack app.&rdquo;</p>
+            </div>
+          </div>
+          <!-- Zone 2: WHAT THEY SEE -->
+          <div class="p-4">
+            <p class="text-[10px] font-semibold uppercase tracking-widest text-slate-500 mb-2">What they see</p>
+            <div class="rounded-lg bg-white border border-slate-100 p-3 text-xs leading-snug">
+              <p class="text-slate-900">Hi Sarah,</p>
+              <p class="text-slate-900 mt-1">You asked for Slack — it&rsquo;s live. Worth another look?</p>
+              <p class="text-slate-900 mt-1">— Alex</p>
+              <button type="button" class="mt-2 inline-flex items-center px-3 py-1.5 bg-[#0f172a] text-white rounded-full text-[11px] font-medium">
+                Resubscribe
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="mt-auto pt-5 inline-flex items-center gap-1.5 text-sm font-medium text-emerald-700 group-hover:gap-2.5 transition-all">
+          See how win-back works →
+        </div>
+      </a>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!--  PRICING — white ground · three cards, one per fee line       -->
+<!--  so the structure is impossible to misread.                   -->
+<!-- ============================================================ -->
+<section class="bg-white py-20 sm:py-24 border-t border-slate-100">
+  <div class="max-w-5xl mx-auto px-6">
+    <div class="text-center max-w-3xl mx-auto">
+      <p class="label-blue">Pricing</p>
+      <h2 class="mt-3 text-3xl sm:text-4xl font-bold tracking-tight text-slate-900">
+        $99/mo flat. Pay extra only when we win back a customer.
+      </h2>
+      <p class="mt-4 text-sm sm:text-base text-slate-600">
+        Payment recoveries are bundled into the platform fee. The performance fee only kicks in when we save you a cancelled customer.
+      </p>
+    </div>
+
+    <!-- Three pricing cards, one per fee line. Same colored-rail
+         language as the two pillars above so the page reads as one
+         design system. -->
+    <div class="mt-12 grid grid-cols-1 lg:grid-cols-3 gap-4">
+
+      <!-- Card 1 — Platform fee (slate, the flat baseline) -->
+      <div
+        class="rounded-2xl border border-slate-100 shadow-sm p-6 border-l-4 border-l-slate-400"
+        style="background: linear-gradient(to right, #f8fafc 0%, #ffffff 30%);"
+      >
+        <p class="text-[10px] font-semibold uppercase tracking-widest text-slate-500">Platform fee</p>
+        <div class="mt-3 flex items-baseline gap-1.5">
+          <span class="text-4xl font-bold text-slate-900 leading-none">$99</span>
+          <span class="text-sm text-slate-500">/ month</span>
+        </div>
+        <p class="mt-3 text-sm text-slate-600 leading-relaxed">Flat. Both flows running. Cancel anytime.</p>
+      </div>
+
+      <!-- Card 2 — Payment recovery (blue, included free) -->
+      <div
+        class="rounded-2xl border border-slate-100 shadow-sm p-6 border-l-4 border-l-blue-600"
+        style="background: linear-gradient(to right, #eff6ff 0%, #ffffff 30%);"
+      >
+        <p class="text-[10px] font-semibold uppercase tracking-widest text-blue-700">Payment recovery</p>
+        <div class="mt-3 flex items-baseline gap-1.5">
+          <span class="text-4xl font-bold text-slate-900 leading-none">Free</span>
+          <span class="text-sm text-slate-500">included</span>
+        </div>
+        <p class="mt-3 text-sm text-slate-600 leading-relaxed">Up to <strong class="text-slate-800">500 recoveries / mo</strong> bundled into the platform fee.</p>
+      </div>
+
+      <!-- Card 3 — Win-back performance fee (emerald, pay-on-success) -->
+      <div
+        class="rounded-2xl border border-slate-100 shadow-sm p-6 border-l-4 border-l-emerald-600"
+        style="background: linear-gradient(to right, #ecfdf5 0%, #ffffff 30%);"
+      >
+        <p class="text-[10px] font-semibold uppercase tracking-widest text-emerald-700">Win-back fee</p>
+        <div class="mt-3 flex items-baseline gap-1.5">
+          <span class="text-4xl font-bold text-slate-900 leading-none">1× Monthly fee</span>
+        </div>
+        <p class="mt-3 text-sm text-slate-600 leading-relaxed">Per cancelled customer we bring back. <strong class="text-slate-800">$0</strong> if we don&rsquo;t deliver any.</p>
+      </div>
+    </div>
+
+    <p class="mt-8 text-center text-xs text-slate-500">
+      14-day money-back. <a class="text-blue-600 hover:underline cursor-pointer">See full pricing →</a>
+    </p>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!--  FOOTER CTA — blue ground · guarantee angle, not duplicate    -->
+<!-- ============================================================ -->
+<section class="bg-[#eef2fb] py-20 sm:py-24">
+  <div class="max-w-5xl mx-auto px-6 text-center">
+    <p class="text-xs font-semibold tracking-widest uppercase text-violet-600">No risk, no commitment</p>
+    <h2 class="mt-3 text-3xl sm:text-4xl font-bold text-slate-900">Pay nothing until we save you something.</h2>
+    <p class="mt-4 text-sm text-slate-600 max-w-xl mx-auto">
+      14-day money-back guarantee. You pay $0 until we deliver a recovery or win-back. Cancel anytime in one click.
+    </p>
+    <div class="mt-8 flex flex-wrap items-center justify-center gap-3">
+      <a class="bg-[#0f172a] text-white rounded-full px-6 py-2.5 text-sm font-medium">Try free for 14 days →</a>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!--  Footer                                                      -->
+<!-- ============================================================ -->
+<footer class="bg-slate-50 border-t border-slate-200 py-10">
+  <div class="max-w-5xl mx-auto px-6 text-center text-xs text-slate-500">
+    © Winback · <a class="underline">Privacy</a> · <a class="underline">Terms</a>
+  </div>
+</footer>
+
+<!-- ============================================================ -->
+<!--  Design notes                                                -->
+<!-- ============================================================ -->
+<section class="max-w-5xl mx-auto px-6 py-10 grid grid-cols-2 gap-3">
+  <div class="annotation"><strong>Trust strip immediately below the hero.</strong> One slim line: Built on Stripe Connect Standard · No card required · 14-day money-back. Carries weight without taking real estate.</div>
+  <div class="annotation"><strong>Differentiator named honestly.</strong> "Read the actual reason. Respond specifically." — true for both flows: payment recovery reads the Stripe decline code, win-back reads the cancellation reason. No overclaiming AI on the payment-recovery side (which is rule-based).</div>
+  <div class="annotation"><strong>Pillars reframed from "pick one" to "side by side".</strong> "Both flows, side by side" + "you get both running from one Stripe connection" — accurate to the bundle, doesn&rsquo;t force a defensive choice.</div>
+  <div class="annotation"><strong>Footer CTA is a guarantee, not a duplicate.</strong> "Pay nothing until we save you something" with the 14-day money-back. Hero says "what is this"; footer says "why not try it" — different angles, no repetition.</div>
+  <div class="annotation"><strong>One primary CTA per scroll.</strong> Hero = "Start free — no card", Footer = "Try free for 14 days". Pillar cards have only their "See how X works →" secondary link.</div>
+  <div class="annotation"><strong>Same visual language as the deep pages.</strong> Colored left rails, soft gradient tints, label-blue eyebrows, blue → white → grey → white → blue background rhythm.</div>
+</section>
+
+</body>
+</html>
