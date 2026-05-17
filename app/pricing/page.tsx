@@ -248,58 +248,62 @@ export default function PricingPage() {
 
       {/* ============================================================== */}
       {/*  WORKED EXAMPLE — concrete numbers so the formula isn't        */}
-      {/*  abstract.                                                     */}
+      {/*  abstract. Compact single-card layout: header lives INSIDE     */}
+      {/*  the card, stat row + total + ROI tail stack tightly with      */}
+      {/*  thinner dividers and smaller numbers. Roughly half the        */}
+      {/*  vertical real estate of the previous version.                 */}
       {/* ============================================================== */}
-      <section className="bg-[#f5f5f5] py-20 sm:py-24 border-t border-slate-100">
-        <div className="max-w-3xl mx-auto px-6">
-          <div className="text-center mb-10">
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">
-              Worked example
-            </p>
-            <h2 className="mt-3 text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">
-              What a typical month looks like.
-            </h2>
-            <p className="mt-3 text-sm text-slate-600 max-w-xl mx-auto">
-              A SaaS at <span className="text-slate-900 font-semibold">$20/mo plans</span>: 8 failed
-              payments recovered (bundled into the platform fee), plus 3 cancelled customers won back.
-            </p>
-          </div>
-
-          <div className="bg-white border border-slate-200 rounded-2xl px-6 sm:px-8 py-8 shadow-sm">
-            <div className="grid grid-cols-3 gap-3 text-center">
+      <section className="bg-[#f5f5f5] py-12 sm:py-14 border-t border-slate-100">
+        <div className="max-w-2xl mx-auto px-6">
+          <div className="bg-white border border-slate-200 rounded-2xl px-5 sm:px-6 py-5 shadow-sm">
+            {/* Inline header — eyebrow + headline + one-liner setup */}
+            <div className="flex items-baseline justify-between gap-3 mb-4">
               <div>
-                <p className="text-[11px] text-slate-500 uppercase tracking-widest">Platform</p>
-                <p className="mt-1 text-2xl font-semibold text-slate-900 tabular-nums">$99</p>
-                <p className="mt-1 text-[11px] text-slate-500">flat</p>
+                <p className="text-[10px] font-semibold uppercase tracking-widest text-blue-600">
+                  Worked example
+                </p>
+                <p className="mt-0.5 text-sm font-semibold text-slate-900">
+                  A typical month at $20/mo plans
+                </p>
               </div>
-              <div>
-                <p className="text-[11px] text-blue-700 uppercase tracking-widest">Recoveries</p>
-                <p className="mt-1 text-2xl font-semibold text-slate-900 tabular-nums">$0</p>
-                <p className="mt-1 text-[11px] text-slate-500">8 &times; free</p>
-              </div>
-              <div>
-                <p className="text-[11px] text-emerald-700 uppercase tracking-widest">Win-backs</p>
-                <p className="mt-1 text-2xl font-semibold text-slate-900 tabular-nums">$60</p>
-                <p className="mt-1 text-[11px] text-slate-500">3 &times; $20</p>
-              </div>
-            </div>
-
-            <div className="mt-6 pt-5 border-t border-slate-100 flex items-baseline justify-between">
-              <p className="text-sm text-slate-600">Total bill this month</p>
-              <p className="text-3xl font-bold text-slate-900 tabular-nums">$159</p>
-            </div>
-
-            <div className="mt-5 pt-5 border-t border-slate-100 flex flex-wrap items-baseline justify-between gap-3">
-              <p className="text-sm text-slate-700">
-                If those 3 stay 12 months:{' '}
-                <span className="font-semibold text-slate-900">$720 in revenue won back</span>
+              <p className="text-[11px] text-slate-500 text-right">
+                8 recoveries<br />+ 3 win-backs
               </p>
-              <p className="text-2xl font-bold text-blue-700 tabular-nums">12&times;</p>
+            </div>
+
+            {/* Stat row */}
+            <div className="grid grid-cols-3 gap-3 text-center pt-4 border-t border-slate-100">
+              <div>
+                <p className="text-[10px] text-slate-500 uppercase tracking-widest">Platform</p>
+                <p className="mt-0.5 text-lg font-semibold text-slate-900 tabular-nums">$99</p>
+              </div>
+              <div>
+                <p className="text-[10px] text-blue-700 uppercase tracking-widest">Recoveries</p>
+                <p className="mt-0.5 text-lg font-semibold text-slate-900 tabular-nums">$0</p>
+              </div>
+              <div>
+                <p className="text-[10px] text-emerald-700 uppercase tracking-widest">Win-backs</p>
+                <p className="mt-0.5 text-lg font-semibold text-slate-900 tabular-nums">$60</p>
+              </div>
+            </div>
+
+            {/* Bill + ROI on a single row */}
+            <div className="mt-4 pt-4 border-t border-slate-100 flex items-baseline justify-between gap-3">
+              <p className="text-sm text-slate-600">
+                Total this month
+              </p>
+              <p className="text-xl font-bold text-slate-900 tabular-nums">$159</p>
+            </div>
+            <div className="mt-2 flex items-baseline justify-between gap-3">
+              <p className="text-xs text-slate-500">
+                If those 3 stay 12 months: <span className="text-slate-700 font-medium">$720 won back</span>
+              </p>
+              <p className="text-base font-bold text-blue-700 tabular-nums">12&times;</p>
             </div>
           </div>
 
-          <p className="mt-4 text-xs text-slate-400 italic text-center">
-            Examples are illustrative; your bill depends on your customers and their subscription fees.
+          <p className="mt-3 text-[11px] text-slate-400 italic text-center">
+            Illustrative; your bill depends on your customers&rsquo; subscription fees.
           </p>
         </div>
       </section>
