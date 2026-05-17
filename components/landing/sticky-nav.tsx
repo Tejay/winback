@@ -42,11 +42,14 @@ export function StickyNav() {
           >
             Payment recovery
           </Link>
+          {/* Nav label is "Winback" (no hyphen) to match the wordmark
+              and read cleaner alongside "Pricing" / "FAQ". Route stays
+              /win-back since the URL is canonical. */}
           <Link
             href="/win-back"
             className="hidden sm:inline text-slate-600 text-sm hover:text-slate-900"
           >
-            Win-back
+            Winback
           </Link>
           <Link
             href="/pricing"

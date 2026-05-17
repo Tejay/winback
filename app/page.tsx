@@ -15,7 +15,7 @@ import { Footer } from '@/components/landing/footer'
  * Structure:
  *   <StickyNav />                — site nav with feature links
  *   <Hero>                       — "Recover customers. Automatically."
- *   <TrustStrip>                 — Stripe Connect · no card · money-back
+ *   <TrustStrip>                 — Stripe Connect · no card · $0 until delivery
  *   <BundleCallout />            — differentiator: "Read the actual reason..."
  *   <TwoPillarTeaser />          — colored-rail cards → /payment-recovery + /win-back
  *   <LandingDashboardPreview />  — dashboard screenshot
@@ -69,9 +69,14 @@ export default function LandingPage() {
 
       {/* Trust strip — thin band between hero and bundle callout. The
           claim that used to live below the Hero CTA ("Connect Stripe ·
-          No card at signup") is folded in here so the same procurement
-          checkboxes (Stripe Connect, no card, money-back) show in one
-          consistent line. */}
+          No card at signup") is folded in here.
+
+          Copy precision: we do NOT have a general 14-day money-back
+          guarantee or a 14-day free trial. The only refund is on the
+          win-back fee, and only if the won-back customer re-cancels
+          within 14 days. So the third item promises what's actually
+          true at the platform level: you pay $0 until we deliver
+          something. */}
       <section className="bg-white border-b border-slate-100 py-4">
         <div className="max-w-5xl mx-auto px-6 flex items-center justify-center gap-2 text-xs text-slate-500 flex-wrap">
           <span>
@@ -80,7 +85,7 @@ export default function LandingPage() {
           <span className="text-slate-300">·</span>
           <span>No card required</span>
           <span className="text-slate-300">·</span>
-          <span>14-day money-back</span>
+          <span>$0 until we deliver a save</span>
         </div>
       </section>
 
@@ -91,8 +96,14 @@ export default function LandingPage() {
 
       {/* Footer CTA — guarantee angle, not a duplicate of the Hero CTA.
           The Hero asks for the click on the promise of recovery; this
-          section closes by removing risk (no charge until we deliver,
-          14-day money-back, one-click cancel). */}
+          section closes by removing risk.
+
+          Copy precision: we do NOT have a general 14-day money-back
+          guarantee or a 14-day free trial. The only refund is on the
+          win-back fee, and only if the won-back customer re-cancels
+          within 14 days. CTA text reflects that — "Start free" (true:
+          billing starts on first delivered save) not "Try free for
+          14 days" (false: implies time-limited trial). */}
       <section className="bg-[#eef2fb] py-20 sm:py-24">
         <div className="max-w-5xl mx-auto px-6 text-center">
           <p className="text-xs font-semibold tracking-widest uppercase text-violet-600">
@@ -102,7 +113,9 @@ export default function LandingPage() {
             Pay nothing until we save you something.
           </h2>
           <p className="mt-4 text-sm text-slate-600 max-w-xl mx-auto">
-            14-day money-back guarantee. You pay $0 until we deliver a recovery or win-back. Cancel anytime in one click.
+            You pay $0 until we deliver a payment recovery or win-back.
+            Win-back fees are refunded if the customer re-cancels within
+            14 days. Cancel anytime in one click.
           </p>
 
           <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
@@ -110,7 +123,7 @@ export default function LandingPage() {
               href="/register"
               className="bg-[#0f172a] text-white rounded-full px-6 py-2.5 text-sm font-medium hover:bg-[#1e293b]"
             >
-              Try free for 14 days →
+              Start free — no card →
             </Link>
           </div>
         </div>
