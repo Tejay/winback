@@ -54,7 +54,7 @@ export function StripeConnectCard() {
         aria-disabled={pending}
         className="bg-[#0f172a] text-white rounded-full px-7 py-3 text-base font-medium hover:bg-[#1e293b] shadow-sm hover:shadow-md transition-shadow whitespace-nowrap aria-disabled:opacity-60 aria-disabled:cursor-wait focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
       >
-        {pending ? 'Connecting…' : 'Connect Stripe →'}
+        {pending ? 'Taking you to Stripe…' : 'Connect Stripe →'}
       </a>
     </div>
   )

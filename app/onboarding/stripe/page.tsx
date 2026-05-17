@@ -85,12 +85,35 @@ export default async function OnboardingStripePage({
 
       <div className="max-w-2xl mx-auto px-4 pb-12">
         <div className="mt-6 bg-white rounded-2xl border border-slate-100 shadow-sm p-8">
+          {/* Eyebrow — matches the site's text-xs uppercase tracking-widest
+              pattern used on every other page. Tells the user where they
+              are in the flow. */}
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600 mb-3">
+            Final step
+          </p>
+
+          {/* Headline carries the value (recovery) instead of restating the
+              action (which is already on the CTA button below). */}
           <h1 className="text-3xl font-bold text-slate-900 mb-2">
-            Connect Stripe.
+            One last step before your first recovery.
           </h1>
-          <p className="text-sm text-slate-500 mb-6 leading-relaxed">
-            Winback reads your cancellations and failed payments, and restarts
-            subscriptions your customers click to restart.
+
+          {/* Subhead tightened — was "Winback reads your cancellations and
+              failed payments, and restarts subscriptions your customers
+              click to restart" which had pre-emptively defensive phrasing
+              ("subscriptions your customers click to restart"). The new
+              version splits the same idea into two clean halves. */}
+          <p className="text-sm text-slate-500 mb-2 leading-relaxed">
+            Winback reads your Stripe to spot cancellations and failed
+            payments. We only write back when a customer clicks to
+            restart.
+          </p>
+
+          {/* Time-to-value line — sets expectation for what's coming on
+              the next click so the user isn't bracing for a 10-min form. */}
+          <p className="text-xs text-slate-400 mb-6 leading-relaxed">
+            Takes about 30 seconds &mdash; Stripe shows you the exact
+            permissions, you approve, and you&rsquo;re back here.
           </p>
 
           {errorType && (
@@ -105,8 +128,42 @@ export default async function OnboardingStripePage({
 
           <StripeConnectCard />
 
-          <div className="mt-3 flex justify-end">
+          {/* Powered-by-Stripe lockup centred directly under the CTA so it
+              functions as a trust signal at the moment of decision (was
+              previously right-aligned + smaller). */}
+          <div className="mt-3 flex justify-center">
             <PoweredByStripe />
+          </div>
+
+          {/* Above-the-fold trust strip — hoists the most objection-killing
+              copy out of the collapsed `<details>` so a scanner sees it
+              without clicking. The full bulleted lists still live in the
+              first disclosure below for the buyer who wants the detail. */}
+          <div className="mt-6 rounded-xl border border-slate-200 bg-slate-50/60 px-5 py-4">
+            <ul className="space-y-2.5 text-sm">
+              <li className="flex items-start gap-2.5 text-slate-700">
+                <Check className="w-4 h-4 text-emerald-600 flex-shrink-0 mt-0.5" aria-hidden />
+                <span>
+                  <strong className="text-slate-900">Reads</strong>{' '}
+                  subscriptions, cancellations, and failed payments.
+                </span>
+              </li>
+              <li className="flex items-start gap-2.5 text-slate-700">
+                <X className="w-4 h-4 text-slate-400 flex-shrink-0 mt-0.5" aria-hidden />
+                <span>
+                  <strong className="text-slate-900">Cannot</strong>{' '}
+                  charge customers, issue refunds, or change prices.
+                </span>
+              </li>
+              <li className="flex items-start gap-2.5 text-slate-700">
+                <Check className="w-4 h-4 text-blue-600 flex-shrink-0 mt-0.5" aria-hidden />
+                <span>
+                  <strong className="text-slate-900">Disconnect</strong>{' '}
+                  anytime in one click from Settings or your Stripe
+                  dashboard.
+                </span>
+              </li>
+            </ul>
           </div>
 
           {/* Expand-if-curious disclosures. Default to collapsed — confident
