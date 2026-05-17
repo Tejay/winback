@@ -499,6 +499,47 @@ psql -h host -U user -d db -c "SELECT 1"   # prompts for password
      - Restart `npm run dev` after changing either — Next.js doesn't pick
        up `.env.local` edits via Fast Refresh.
 
+10. **Visually verify UI changes with Chrome DevTools MCP — every time.**
+    Any change that touches rendered output (React components, Tailwind
+    classes, copy in JSX, layout, marketing pages, dashboards) MUST be
+    confirmed by an actual screenshot before claiming it's done.
+    Inspecting source/diff is not verification — JSX whitespace bugs,
+    style conflicts, hydration mismatches, and SSR/CSR drift only show
+    up at render time.
+
+    Mandatory loop after any UI edit:
+    ```
+    1. Save the edit
+    2. Confirm dev server is up: lsof -i :3000 -sTCP:LISTEN -t
+       (if not running, ask the user to start it — don't auto-start)
+    3. mcp__plugin_chrome-devtools-mcp_chrome-devtools__navigate_page
+       to the affected URL (or new_page if no tab is open)
+    4. resize_page to 1280×900 (or the relevant breakpoint)
+    5. take_screenshot fullPage:true → /var/folders/.../T/<name>.png
+    6. Read the screenshot back and visually compare to:
+       - the approved mockup (when porting from marketing/*.html)
+       - or the pre-change behaviour (when fixing a bug)
+    7. If anything looks wrong — alignment, spacing, missing whitespace,
+       wrong colour, broken layout — fix and re-screenshot. Do not
+       commit until the screenshot is correct.
+    ```
+
+    Same rule applies for `/payment-recovery`, `/win-back`, `/reasons`,
+    dashboard previews, and email previews. When a change spans multiple
+    pages, screenshot each one — don't assume "the component looks fine
+    in isolation" means every consumer renders correctly.
+
+    For interactive states (hover, focus, modal open, form-filled),
+    use `click`, `hover`, `fill_form` from the same MCP before the
+    screenshot so the screenshot captures the actual state being changed.
+
+    Curl + grep is a fine sanity check that the server returned HTML, but
+    it is NOT a substitute for a screenshot. Past failures from skipping
+    this step: misaligned proof-zone labels, eaten JSX whitespace, stale
+    service-worker cache serving old bundle, "5 customers" graphic
+    breaking the card layout. Each took multiple round-trips that a
+    screenshot would have caught in one.
+
 ### Auth pattern — use in every protected route and page
 
 API route:
