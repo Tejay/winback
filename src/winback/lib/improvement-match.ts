@@ -1,6 +1,15 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { z } from 'zod'
 import type { ClassificationResult, SubscriberSignals } from './types'
+// Prompt source of truth: /prompts/*.md
+// Regenerate prompts.generated.ts with `npm run prompts:build`.
+import {
+  MATCH_SYSTEM_PROMPT,
+  GENERATE_SYSTEM_PROMPT,
+  SANITY_SYSTEM_PROMPT,
+  GENERATE_PROMOTION_SYSTEM_PROMPT,
+  SANITY_PROMO_SYSTEM_PROMPT,
+} from './prompts.generated'
 
 /**
  * Spec 65 — improvement matcher + email generator + pre-send sanity check.
@@ -62,14 +71,6 @@ export interface ImprovementForMatcher {
 // --------------------------------------------------------------------------
 // Match check — one subscriber's triggerNeed against one improvement
 // --------------------------------------------------------------------------
-const MATCH_SYSTEM_PROMPT = `You decide whether a single shipped product improvement addresses a single cancelled subscriber's stated reason for leaving.
-
-Be strict. False positives (saying "matches" when it doesn't) cause us to send the subscriber a wrong email — that burns their trust permanently. False negatives (saying "doesn't match" when it does) just delay a possible recovery — recoverable.
-
-Return ONLY a JSON object: {"matches": true|false, "confidence": <number 0..1>, "reasoning": "<one short sentence>"}. No preamble, no markdown.
-
-Use confidence aggressively: only set matches=true with confidence ≥ 0.7 if the improvement clearly and directly addresses the subscriber's stated need. Synonyms and feature-equivalent capabilities count; tangential mentions, partial overlaps, or "maybe" connections do not.`
-
 const MatchSchema = z.object({
   matches:    z.boolean(),
   confidence: z.number().min(0).max(1),
@@ -141,54 +142,6 @@ export async function findBestMatch(
 // --------------------------------------------------------------------------
 // Email generation — age-aware tone
 // --------------------------------------------------------------------------
-const GENERATE_SYSTEM_PROMPT = `You write a single short re-engagement email to a previously-cancelled subscriber.
-
-The product just shipped something that addresses their stated reason for leaving. Tell them specifically what shipped and end with one soft close. That's it.
-
-SHAPE (non-negotiable):
-  Line 1:  "Hi <firstName>,"
-  Line 2:  blank
-  Line 3:  EXACTLY 2 sentences. No more, no less.
-  Line 4:  blank
-  Line 5:  "— <founderFirstName>"
-
-LENGTH CAP: Body MUST be 250 characters or fewer including greeting, sentences,
-and sign-off. Newlines count. The reactivation link and unsubscribe footer are
-appended by our system — do NOT include them. Going over 250 chars is a hard failure.
-
-SENTENCE 1 — what shipped:
-- Name the specific feature using language from the improvement title/description.
-- Connect it to what they asked for in one clause.
-- Do NOT say "we made improvements" or "we've been working on things" — say what shipped.
-- Age framing: shipped < 3 months ago → "I just shipped X" / "X is live now".
-  Shipped 3+ months ago → "we rolled out X a few months back" / "you may have missed X".
-
-SENTENCE 2 — one soft close:
-- A single low-pressure pointer or question. Never both.
-- Good: "Worth another look?" / "Door's open if that changes things." / "Want to give it a try?"
-- Never a hard sell. Never a discount. Never stacked ("Worth a look? Let me know if you have questions!").
-
-RULES:
-- Plain text only — no markdown, no HTML.
-- First-person singular ("I"), not "we" or "the team".
-- No exclamation marks. Ever.
-- Do NOT include the unsubscribe / reactivation footer — appended automatically.
-- Sign with the founder's first name only.
-
-GOOD EXAMPLES (both under 250 chars):
-  "Hi Jamie,\n\nI shipped the Zapier-HubSpot integration you asked for — two-way sync, no code, live now. Worth another look?\n\n— Alex"
-
-  "Hi Sam,\n\nWe just launched a $15 starter tier — same reports you were using, no team overhead. Door's open if that changes things.\n\n— Alex"
-
-  "Hi Jordan,\n\nWe rolled out uncapped CSV exports a few months back — streams straight to S3, no row limit. Worth another look whenever it suits.\n\n— Priya"
-
-BAD EXAMPLES (do not write these):
-  Any body with 3 or more sentences. (Guaranteed to blow the 250-char cap.)
-  Anything vague: "we've made a lot of improvements lately" — say what shipped.
-  Discount offers: "come back for 20% off" — never.
-
-Return ONLY valid JSON: {"subject": "...", "body": "..."}. No preamble, no markdown.`
-
 const GeneratedEmailSchema = z.object({
   subject: z.string().min(1).max(120),
   body:    z.string().min(1).max(250, 'Body exceeds 250-character cap'),
@@ -243,19 +196,6 @@ Write a short, concrete re-engagement email. Return JSON.`
 // Pre-send sanity check — does the drafted email actually correspond to
 // the matched improvement + triggerNeed? Catches hallucination.
 // --------------------------------------------------------------------------
-const SANITY_SYSTEM_PROMPT = `You're a quality gate for re-engagement emails. You receive:
-- A cancelled subscriber's stated reason for leaving
-- A product improvement we just matched to it
-- The drafted email we're about to send
-
-Decide: does the drafted email accurately reference the improvement AND address the subscriber's reason? Return JSON: {"pass": true|false, "reason": "<short>"}.
-
-Pass if: the email mentions the actual improvement (by feature name or specific capability), and the connection to the subscriber's reason is reasonable.
-
-Fail if: the email mentions a feature NOT in the improvement; the email is generic and doesn't reference the specific improvement at all; the email makes false claims (e.g., implies the feature shipped longer ago than it did, or claims a feature that doesn't appear in the improvement); the email is fundamentally about a different topic than the subscriber's reason.
-
-Be strict only on factual mismatches and topic drift. Stylistic preferences are not failures.`
-
 const SanitySchema = z.object({
   pass:   z.boolean(),
   reason: z.string().default(''),
@@ -319,55 +259,6 @@ Does the email accurately reference the improvement AND address the subscriber's
  * "should we offer a discount?" — only "what's the most respectful way
  * to mention it once."
  */
-const GENERATE_PROMOTION_SYSTEM_PROMPT = `You write a single short re-engagement email to a previously-cancelled subscriber whose stated reason for leaving was price.
-
-The merchant has authored a Stripe promotion they want offered to price-driven cancellations. Your job: name the discount once, plainly, with a soft close. Not a hard sell, not stacked offers, not urgency theatre.
-
-SHAPE (non-negotiable):
-  Line 1:  "Hi <firstName>,"
-  Line 2:  blank
-  Line 3:  EXACTLY 2 sentences. No more, no less.
-  Line 4:  blank
-  Line 5:  "— <founderFirstName>"
-
-LENGTH CAP: Body MUST be 250 characters or fewer including greeting, sentences,
-and sign-off. Newlines count. The reactivation link and unsubscribe footer are
-appended by our system — do NOT include them. Going over 250 chars is a hard failure.
-
-SENTENCE 1 — name the offer:
-- State the discount clearly using the exact terms (percent or amount, duration).
-- Reference that price was their stated reason — one phrase, not a paragraph.
-- Examples of good shape:
-  "Saw price was the holdup — I've put aside 25% off the next 3 months for you."
-  "You mentioned cost when you left — 50% off your first month is on me if you want another go."
-
-SENTENCE 2 — one soft close:
-- A single low-pressure pointer or question. Never both.
-- Good: "Worth another look?" / "Code's WINBACK25 if so." / "No pressure either way."
-- Never urgency ("today only", "expires soon" — even if it does).
-- Never stacked closes ("Want to try? Let me know if questions!").
-
-RULES:
-- Plain text only — no markdown, no HTML.
-- First-person singular ("I"), not "we" or "the team".
-- No exclamation marks. Ever.
-- Mention the promo code exactly once, when it adds clarity.
-- Do NOT include the unsubscribe / reactivation footer — appended automatically.
-- Sign with the founder's first name only.
-
-GOOD EXAMPLES (both under 250 chars):
-  "Hi Jamie,\n\nSaw price was the sticking point — I've put 25% off the next 3 months on the table with code WINBACK25. Worth another look?\n\n— Alex"
-
-  "Hi Sam,\n\nYou mentioned cost when you left — 50% off your first month back if you'd like to try again. Code's COMEBACK50, no pressure either way.\n\n— Priya"
-
-BAD EXAMPLES (do not write these):
-  Any body with 3 or more sentences. (Guaranteed to blow the 250-char cap.)
-  Urgency: "expires Friday!" — never.
-  Stacked closes: "Want to try? Let me know if questions!"
-  Hiding the discount: "I've got something that might help" — say what.
-
-Return ONLY valid JSON: {"subject": "...", "body": "..."}. No preamble, no markdown.`
-
 const GeneratedPromotionEmailSchema = GeneratedEmailSchema
 
 export interface PromotionForEmail {
@@ -434,19 +325,6 @@ Write a short, plain re-engagement email naming this discount once. Return JSON.
     return null
   }
 }
-
-const SANITY_PROMO_SYSTEM_PROMPT = `You're a quality gate for a promotion-bearing re-engagement email. You receive:
-- The cancelled subscriber's stated reason for leaving (might be empty)
-- The Stripe promotion code we're offering them (code + terms)
-- The drafted email
-
-Decide: does the drafted email mention the actual promotion code and its terms accurately, in a respectful single mention? Return JSON: {"pass": true|false, "reason": "<short>"}.
-
-Pass if: the email names the actual promo code (case-insensitive), states the discount correctly (percent or amount + duration), and doesn't violate the tone rules (no urgency theatre, no stacked closes, no exclamation marks, no hard sell).
-
-Fail if: the email cites a different code or wrong discount terms; the email never names the code at all; the email uses urgency language ("today only", "expires soon"); the email contains exclamation marks; the email tries to offer more than what the promo actually is.
-
-Be strict on factual mismatches and tone violations. Stylistic preferences are not failures.`
 
 export async function sanityCheckPromotionEmail(params: {
   promotion: PromotionForEmail

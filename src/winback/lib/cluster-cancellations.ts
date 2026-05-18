@@ -9,6 +9,9 @@ import {
   improvementMatches,
 } from '@/lib/schema'
 import { logEvent } from './events'
+// Prompt source of truth: /prompts/cluster-system.md
+// Regenerate prompts.generated.ts with `npm run prompts:build`.
+import { CLUSTER_SYSTEM_PROMPT } from './prompts.generated'
 
 /**
  * Spec 79 — AI clusters unmatched cancellations into themes.
@@ -39,6 +42,19 @@ const WINDOW_DAYS                = 90
 const MIN_CANCELLATIONS_TO_RUN   = 10  // below this, return early — not enough signal
 const MIN_THEME_SIZE             = 3   // below this, the LLM is told to drop the cluster
 const MAX_INPUT_QUOTES           = 200 // hard cap to keep token budget bounded
+
+// Drift guard: the cluster prompt hardcodes the "at least N subscribers"
+// rule for the LLM (it can't interpolate `${MIN_THEME_SIZE}` when stored
+// as plain markdown). If you change MIN_THEME_SIZE above, update
+// /prompts/cluster-system.md to match, then `npm run prompts:build`.
+// This check fires at module load and crashes loudly rather than silently
+// shipping a misaligned prompt to production.
+if (!CLUSTER_SYSTEM_PROMPT.includes(`at least ${MIN_THEME_SIZE} subscribers`)) {
+  throw new Error(
+    `prompts/cluster-system.md is out of sync with MIN_THEME_SIZE=${MIN_THEME_SIZE}. ` +
+    `Update the markdown to say "at least ${MIN_THEME_SIZE} subscribers" and run npm run prompts:build.`,
+  )
+}
 
 // --------------------------------------------------------------------------
 // Anthropic client (mirrors the pattern in improvement-match.ts —
@@ -100,25 +116,6 @@ interface ShippedImprovementInput {
   description:  string
   dateShipped:  string  // YYYY-MM-DD
 }
-
-const CLUSTER_SYSTEM_PROMPT = `You analyze cancellation reasons from cancelled SaaS subscribers and group them into actionable themes for the founder.
-
-Each input is one subscriber's stated reason for cancelling, plus metadata. Cluster these by what the customer ACTUALLY WANTS (or what's MISSING). Customers may use different words for the same underlying need — group them together.
-
-Rules:
-1. Each theme MUST include at least ${MIN_THEME_SIZE} subscribers. Drop any cluster below that.
-2. Title: 4-6 word noun phrase describing the underlying need (e.g. "Native Slack integration", "SAML / SSO for enterprise"). NOT a category label like "Feature requests".
-3. Description: ONE sentence in the founder's voice describing the pattern. Include a specific detail from the quotes when possible (e.g. "Wanted a first-party Slack app with channel routing, not just the Zapier workaround.").
-4. Category: 'Price', 'Feature', or 'Other'. Match the cancellation category of the majority of subscribers in the cluster.
-5. Emoji: pick one based on cluster size — 5+ subscribers = 🔥, 4 = 📊, 3 = 🌱.
-6. subscriberIds: include the exact UUIDs of every subscriber in this cluster.
-7. sampleQuotes: pick 2-3 of the most representative quotes from the cluster, verbatim from the input.
-8. addressesImprovementId: if a SHIPPED IMPROVEMENT in the merchant's list (provided below) semantically addresses the same need this cluster represents, AND at least 3 subscribers in this cluster cancelled AFTER the improvement's dateShipped (not all — just at least 3), set this to the improvement's id. Otherwise null. The signal is "people are still cancelling over this even though I shipped a fix"; a single pre-ship subscriber in the same cluster doesn't disqualify the insight.
-
-Output ONLY valid JSON of shape:
-{ "themes": [ { "title": "...", "description": "...", "category": "Price"|"Feature"|"Other", "emoji": "🔥"|"📊"|"🌱", "subscriberIds": ["..."], "sampleQuotes": ["..."], "addressesImprovementId": null|"..." } ] }
-
-No preamble. No markdown. JSON only.`
 
 function buildUserPrompt(quotes: QuoteInput[], shipped: ShippedImprovementInput[]): string {
   const shippedBlock = shipped.length === 0
