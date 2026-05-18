@@ -4,7 +4,7 @@ import { emailsSent, churnedSubscribers, customers, users, inboundEvents, subscr
 import { eq, count, desc, and } from 'drizzle-orm'
 import { Webhook } from 'svix'
 import { classifySubscriber } from '@/src/winback/lib/classifier'
-import { sendReplyEmail, resolveFounderNotificationEmail } from '@/src/winback/lib/email'
+import { sendReplyEmail, resolveFounderNotificationEmail, buildFromDisplayName } from '@/src/winback/lib/email'
 import { buildReplyAfterHandoffNotification } from '@/src/winback/lib/founder-handoff-email'
 import { Resend } from 'resend'
 import { SubscriberSignals } from '@/src/winback/lib/types'
@@ -518,7 +518,10 @@ export async function POST(req: Request) {
           subscriberId,
           email: subscriber.email,
           classification: replyClassification,
-          fromName: customer?.founderName ?? 'The team',
+          fromName: buildFromDisplayName({
+            founderName: customer?.founderName,
+            productName: customer?.productName,
+          }),
           founderEmail,
         })
         if (!result.sent) {

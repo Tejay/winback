@@ -29,6 +29,7 @@ import {
   sendDunningEmail,
   sendDunningFollowupEmail,
   sendReplyEmail,
+  buildFromDisplayName,
 } from './email'
 import { logEvent } from './events'
 import type { SubscriberSignals } from './types'
@@ -372,7 +373,7 @@ async function processCancellationItem(sub: SubscriberRow): Promise<DrainItem> {
       subscriberId: sub.id,
       email: sub.email!,
       classification,
-      fromName: customer.founderName ?? 'The team',
+      fromName: buildFromDisplayName({ founderName: customer.founderName, productName: customer.productName }),
     })
     await markProcessed(sub.id)
     return { subscriberId: sub.id, customerId: sub.customerId, category: 'cancellation', action: 'handoff' }
@@ -382,7 +383,7 @@ async function processCancellationItem(sub: SubscriberRow): Promise<DrainItem> {
     subscriberId: sub.id,
     email: sub.email!,
     classification,
-    fromName: customer.founderName ?? 'The team',
+    fromName: buildFromDisplayName({ founderName: customer.founderName, productName: customer.productName }),
   })
   await markProcessed(sub.id)
   return { subscriberId: sub.id, customerId: sub.customerId, category: 'cancellation', action: 'sent' }
@@ -395,7 +396,7 @@ async function processDunningItem(sub: SubscriberRow): Promise<DrainItem> {
   // dunning emails use template based on dunningState/touchCount; no
   // classifier judgement applies.
   const touchCount = sub.dunningTouchCount ?? 0
-  const fromName = customer.founderName ?? 'The team'
+  const fromName = buildFromDisplayName({ founderName: customer.founderName, productName: customer.productName })
   const planName = sub.planName ?? 'your plan'
   const amountDue = sub.mrrCents
   const currency = 'usd' // wb_churned_subscribers doesn't track per-sub currency yet; safe default
@@ -487,7 +488,7 @@ async function processReplyItem(sub: SubscriberRow): Promise<DrainItem> {
     subscriberId: sub.id,
     email: sub.email!,
     classification,
-    fromName: customer.founderName ?? 'The team',
+    fromName: buildFromDisplayName({ founderName: customer.founderName, productName: customer.productName }),
   })
 
   await markProcessed(sub.id)

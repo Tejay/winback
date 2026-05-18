@@ -8,7 +8,7 @@ import { getPlatformStripe } from '@/src/winback/lib/platform-stripe'
 // Spec 72 — classifier no longer runs inline in the webhook; rows are
 // inserted with classified_at = NULL and the classifier cron picks them
 // up. scheduleExitEmail moved with it (lives in classifier-tick.ts).
-import { sendDunningEmail } from '@/src/winback/lib/email'
+import { sendDunningEmail, buildFromDisplayName } from '@/src/winback/lib/email'
 import { logEvent } from '@/src/winback/lib/events'
 import {
   getCurrentDefaultPaymentMethodId,
@@ -865,7 +865,10 @@ async function processPaymentFailed(event: Stripe.Event) {
     .from(users)
     .where(eq(users.id, customer.userId))
     .limit(1)
-  const fromName = customer.productName ?? customer.founderName ?? user?.name ?? 'The team'
+  const fromName = buildFromDisplayName({
+    founderName: customer.founderName ?? user?.name,
+    productName: customer.productName,
+  })
 
   await sendDunningEmail({
     subscriberId,

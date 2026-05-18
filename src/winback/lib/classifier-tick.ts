@@ -2,7 +2,7 @@ import { db } from '@/lib/db'
 import { churnedSubscribers, customers } from '@/lib/schema'
 import { and, eq, isNull, asc, lt, sql, count } from 'drizzle-orm'
 import { classifySubscriber } from './classifier'
-import { scheduleExitEmail } from './email'
+import { scheduleExitEmail, buildFromDisplayName } from './email'
 import { logEvent } from './events'
 import type { ClassificationResult, SubscriberSignals } from './types'
 import { buildConversationThread } from './conversation'
@@ -237,7 +237,10 @@ export async function runClassifierTick(): Promise<ClassifierTickStats> {
             subscriberId: sub.id,
             email: sub.email!,
             classification,
-            fromName: customer.founderName ?? 'The team',
+            fromName: buildFromDisplayName({
+              founderName: customer.founderName,
+              productName: customer.productName,
+            }),
           })
           stats.exitEmailsSent++
         } catch (emailErr) {

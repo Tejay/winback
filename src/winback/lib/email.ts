@@ -96,6 +96,33 @@ export function reactivationUrl(subscriberId: string): string {
   return `${base}/api/reactivate/${subscriberId}`
 }
 
+/**
+ * The "From" display name shown in Gmail's sender column when a
+ * subscriber receives a win-back or dunning email. Combines founder +
+ * product when both are present so the recipient gets brand
+ * recognition before opening the email.
+ *
+ * Resolution order:
+ *   founder && product → "{founder} from {product}"
+ *   founder only       → "{founder}"
+ *   product only       → "{product}"
+ *   neither            → "The team"  (or `fallback` if supplied)
+ *
+ * Used by every subscriber-facing send path so the inbox-line
+ * branding stays consistent across exit, follow-up, improvement-match,
+ * promotion, and dunning emails.
+ */
+export function buildFromDisplayName(opts: {
+  founderName?: string | null
+  productName?: string | null
+  fallback?:    string
+}): string {
+  const founder = opts.founderName?.trim()
+  const product = opts.productName?.trim()
+  if (founder && product) return `${founder} from ${product}`
+  return founder || product || opts.fallback || 'The team'
+}
+
 function listUnsubscribeHeaders(subscriberId: string) {
   return {
     'List-Unsubscribe': `<${unsubscribeUrl(subscriberId)}>, <mailto:unsubscribe@winbackflow.co>`,
