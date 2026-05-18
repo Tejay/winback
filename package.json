@@ -7,7 +7,11 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "vitest run"
+    "test": "vitest run",
+    "prompts:build": "tsx scripts/build-prompts.ts",
+    "prompts:verify": "tsx scripts/verify-prompts.ts",
+    "prompts:smoke": "tsx --env-file=.env.local scripts/smoke-prompts.ts",
+    "prebuild": "tsx scripts/build-prompts.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.87.0",
@@ -43,6 +47,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.2.3",
     "tailwindcss": "^4",
+    "tsx": "^4.21.0",
     "typescript": "^5",
     "vitest": "^4.1.4"
   }
