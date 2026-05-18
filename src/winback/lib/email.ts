@@ -6,7 +6,16 @@ import { ClassificationResult } from './types'
 import { generateUnsubscribeToken } from './unsubscribe-token'
 import { logEvent } from './events'
 import { callWithRetry } from './retry'
-import { renderDunningEmailHtml } from './email-html'
+import {
+  renderDunningEmailHtml,
+  renderWinbackEmailHtml,
+  renderPasswordResetHtml,
+  renderVerificationEmailHtml,
+  renderOnboardingNudgeHtml,
+  renderDormantWarningHtml,
+  renderPilotEndingHtml,
+  renderFounderHandoffHtml,
+} from './email-html'
 import { declineCodeToCopy, DeclineCopy } from './decline-codes'
 import { isCustomerBillingHealthy_BySubscriber } from './billing-enforcement'
 import { getLatestReply } from './conversation'
@@ -304,7 +313,7 @@ async function triggerFounderHandoff(params: {
       console.log('Hand-off: no recipient email resolved for customer', sub.customerId)
       return
     }
-    const { buildHandoffNotification } = await import('./founder-handoff-email')
+    const { buildHandoffNotification, extractHandoffMailto } = await import('./founder-handoff-email')
     // Spec 71 — latest reply now lives in wb_subscriber_replies, not on
     // the subscriber row. Fetch here for the handoff-notification copy.
     const replyText = await getLatestReply(sub.id)
@@ -325,12 +334,21 @@ async function triggerFounderHandoff(params: {
       handoffReasoning:   classification.handoffReasoning,
       recoveryLikelihood: classification.recoveryLikelihood,
     })
+    const mailtoMatch = extractHandoffMailto(body)
+    const dashboardUrl = `${process.env.NEXT_PUBLIC_APP_URL ?? 'https://winbackflow.co'}/dashboard?subscriber=${sub.id}`
+    const html = renderFounderHandoffHtml({
+      body,
+      mailtoUrl:    mailtoMatch?.url,
+      mailtoLabel:  mailtoMatch ? `Reply to ${mailtoMatch.firstName}` : undefined,
+      dashboardUrl,
+    })
     const resend = getResendClient()
     await resend.emails.send({
       from: `Winback <noreply@winbackflow.co>`,
       to: recipient,
       subject,
       text: body,
+      html,
     })
     console.log('Handoff notification sent to:', recipient)
   } catch (notifyErr) {
@@ -367,6 +385,11 @@ export async function sendEmail(params: {
   const from = `${fromName} <reply+${subscriberId}@reply.winbackflow.co>`
 
   const fullBody = appendStandardFooter(body, subscriberId, fromName)
+  const html     = renderWinbackEmailHtml({
+    body,
+    reactivationUrl: reactivationUrl(subscriberId),
+    unsubscribeUrl:  unsubscribeUrl(subscriberId),
+  })
 
   // Spec 28 — wrap the Resend send so transient 429s are absorbed inside
   // the function call rather than bubbling up as webhook 5xxs.
@@ -377,6 +400,7 @@ export async function sendEmail(params: {
         to,
         subject,
         text: fullBody,
+        html,
         headers: listUnsubscribeHeaders(subscriberId),
       }),
     { ctx: 'sendEmail' },
@@ -648,6 +672,11 @@ export async function sendReplyEmail(params: {
   // subdomain. Same regex parses the prefix in /api/email/inbound.
   const from = `${fromName} <reply+${subscriberId}@reply.winbackflow.co>`
   const fullBody = appendStandardFooter(body, subscriberId, fromName)
+  const html     = renderWinbackEmailHtml({
+    body,
+    reactivationUrl: reactivationUrl(subscriberId),
+    unsubscribeUrl:  unsubscribeUrl(subscriberId),
+  })
 
   // Thread headers — if we have the original message ID, use it
   const headers: Record<string, string> = {
@@ -668,6 +697,7 @@ export async function sendReplyEmail(params: {
         to: email,
         subject: subject.startsWith('Re:') ? subject : `Re: ${subject}`,
         text: fullBody,
+        html,
         headers,
       }),
     { ctx: 'sendFollowup' },
@@ -1105,13 +1135,14 @@ export async function sendPasswordResetEmail(opts: {
   const subject = 'Reset your Winback password'
   const body = `Someone requested a password reset for this Winback account.
 
-If it was you, click here to set a new password:
+If it was you, open this link to set a new password:
 ${resetUrl}
 
 This link expires in 24 hours and can only be used once. If you've requested
 multiple reset emails, only the most recent link will work.
 
 If you didn't request this, you can ignore this email — your password won't change.`
+  const html = renderPasswordResetHtml({ resetUrl })
 
   const res = await callWithRetry(
     () =>
@@ -1120,6 +1151,7 @@ If you didn't request this, you can ignore this email — your password won't ch
         to,
         subject,
         text: body,
+        html,
       }),
     { ctx: 'sendPasswordResetEmail' },
   )
@@ -1145,15 +1177,14 @@ export async function sendOnboardingNudgeEmail(opts: {
   const base = process.env.NEXT_PUBLIC_APP_URL ?? 'https://winbackflow.co'
   const greeting = founderName ? `Hi ${founderName},` : 'Hi there,'
 
+  const connectUrl = `${base}/onboarding/stripe`
   const subject = 'Still want to set up Winback?'
   const body = `${greeting}
 
 You signed up a few days ago but haven't connected Stripe yet — that's the
-only step left:
+only step left. Open this link to finish (takes about 90 seconds):
 
-${base}/onboarding/stripe
-
-Takes about 90 seconds.
+${connectUrl}
 
 If something's blocking you — Stripe permissions, a question about how it
 works, anything else — just hit reply and tell us. We'd genuinely like to
@@ -1163,6 +1194,7 @@ If it's not the right fit, ignore this — we'll clean up the unused account
 in 90 days.
 
 — Winback`
+  const html = renderOnboardingNudgeHtml({ founderName, connectUrl })
 
   const res = await callWithRetry(
     () =>
@@ -1171,6 +1203,7 @@ in 90 days.
         to,
         subject,
         text: body,
+        html,
       }),
     { ctx: 'sendOnboardingNudgeEmail' },
   )
@@ -1196,18 +1229,19 @@ export async function sendDormantAccountDeletionWarningEmail(opts: {
   const base = process.env.NEXT_PUBLIC_APP_URL ?? 'https://winbackflow.co'
   const greeting = founderName ? `Hi ${founderName},` : 'Hi there,'
 
+  const connectUrl = `${base}/onboarding/stripe`
   const subject = 'Your Winback account will be deleted in 7 days'
   const body = `${greeting}
 
 You signed up ~12 weeks ago but never connected Stripe. We'll delete the
 unused account in 7 days.
 
-To keep it, connect Stripe (~90 seconds):
-${base}/onboarding/stripe
+To keep it, connect Stripe (~90 seconds): ${connectUrl}
 
 If you'd rather we delete it, ignore this — no further messages. Questions? Hit reply.
 
 — Winback`
+  const html = renderDormantWarningHtml({ founderName, connectUrl })
 
   const res = await callWithRetry(
     () =>
@@ -1216,6 +1250,7 @@ If you'd rather we delete it, ignore this — no further messages. Questions? Hi
         to,
         subject,
         text: body,
+        html,
       }),
     { ctx: 'sendDormantAccountDeletionWarningEmail' },
   )
@@ -1258,6 +1293,7 @@ hit reply.
 Thanks for kicking the tires.
 
 — Winback`
+  const html = renderPilotEndingHtml({ founderName, dateStr })
 
   const res = await callWithRetry(
     () =>
@@ -1266,6 +1302,7 @@ Thanks for kicking the tires.
         to,
         subject,
         text: body,
+        html,
       }),
     { ctx: 'sendPilotEndingSoonEmail' },
   )
@@ -1295,7 +1332,7 @@ export async function sendVerificationEmail(opts: {
   const subject = 'Confirm your email to finish setting up Winback'
   const body = `${greeting}
 
-Welcome to Winback. Click the link below to confirm your email and
+Welcome to Winback. Open the link below to confirm your email and
 finish creating your account:
 
 ${verifyUrl}
@@ -1304,6 +1341,7 @@ This link expires in 7 days. If you didn't sign up for Winback, you can
 safely ignore this email.
 
 — Winback`
+  const html = renderVerificationEmailHtml({ founderName, verifyUrl })
 
   const res = await callWithRetry(
     () =>
@@ -1312,6 +1350,7 @@ safely ignore this email.
         to,
         subject,
         text: body,
+        html,
       }),
     { ctx: 'sendVerificationEmail' },
   )

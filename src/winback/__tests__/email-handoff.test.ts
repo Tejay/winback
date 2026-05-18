@@ -71,6 +71,9 @@ const mockBuildHandoffNotification = vi.hoisted(() => vi.fn().mockResolvedValue(
 }))
 vi.mock('../lib/founder-handoff-email', () => ({
   buildHandoffNotification: mockBuildHandoffNotification,
+  // Returns null in the mocked body (no embedded mailto line) — that's fine,
+  // the production send path treats null as "skip the Reply CTA button".
+  extractHandoffMailto:     vi.fn().mockReturnValue(null),
 }))
 
 import { sendReplyEmail, scheduleExitEmail } from '../lib/email'
