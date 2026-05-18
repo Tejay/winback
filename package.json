@@ -10,6 +10,7 @@
     "test": "vitest run",
     "prompts:build": "tsx scripts/build-prompts.ts",
     "prompts:verify": "tsx scripts/verify-prompts.ts",
+    "prompts:smoke": "tsx --env-file=.env.local scripts/smoke-prompts.ts",
     "prebuild": "tsx scripts/build-prompts.ts"
   },
   "dependencies": {
