@@ -148,7 +148,7 @@ export async function runClassifierTick(): Promise<ClassifierTickStats> {
           ...base,
           firstMessage: {
             subject: `A quick question, ${firstName}`,
-            body: `Hi ${firstName},\n\nSaw you cancelled ${productName} recently. If you have a minute, I'd love to know what didn't land. Even one line is enough — I read every reply.\n\n— ${founderName}\n`,
+            body: `Hi ${firstName},\n\nSaw you cancelled ${productName} recently. If you have a minute, I'd love to know what we got wrong. Even one line is enough.\n\n— ${founderName}\n`,
             sendDelaySecs: 60,
           },
         }
