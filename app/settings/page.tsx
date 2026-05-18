@@ -56,6 +56,23 @@ export default async function SettingsPage({
   const paymentFailing =
     subscriptionDetails?.status === 'past_due' ||
     subscriptionDetails?.status === 'unpaid'
+
+  // 2026-05-18 fix — display state derived from the LIVE Stripe
+  // subscription status, not from `customer.stripeSubscriptionId`
+  // alone. Before this, the badge ladder used "is there a sub ID
+  // stored in our DB?" as the proxy for active, so a sub that
+  // Stripe transitioned to `incomplete_expired`, `canceled`,
+  // `past_due` etc. (without us nulling the DB field) still
+  // displayed as "Active" with the green badge. Founder-facing
+  // bug: merchants whose subs silently expired would think their
+  // account was fine. Demo workspace incident:
+  // sub_1TWPQc4G... in `incomplete_expired` displaying "Active".
+  const billingDisplay = deriveBillingDisplay(
+    subscriptionDetails?.status ?? null,
+    subscriptionDetails?.cancelAtPeriodEnd ?? false,
+    customer?.activatedAt ?? null,
+    invoices.length,
+  )
   // Serialize Date → ISO string for passing to client component
   const invoicesSerialized = invoices.map(inv => ({
     ...inv,
@@ -159,13 +176,7 @@ export default async function SettingsPage({
               Subscription
             </h2>
             <p className="text-sm text-slate-500 mt-1 mb-6">
-              {customer?.stripeSubscriptionId
-                ? 'Your billing is active.'
-                : invoices.length > 0
-                ? 'Subscription canceled. Reactivate any time by adding a payment method on a future recovery.'
-                : customer?.activatedAt
-                ? 'Add a payment method to start billing for your delivered recovery.'
-                : 'No charge until we deliver your first save or win-back.'}
+              {billingDisplay.caption}
             </p>
 
             {/* Payment-failed banner — shown when Stripe Subscription is
@@ -186,31 +197,20 @@ export default async function SettingsPage({
             )}
 
             {/* Plan card — Phase B: $99/mo platform + 1× MRR per win-back.
-                Badge derived from a small ladder of signals so the cancelled
-                state (sub gone, but invoice history) is distinguishable from
-                the never-activated state and the awaiting-card state. */}
+                Badge + footer derived from billingDisplay (see
+                deriveBillingDisplay() below), which reads the LIVE
+                Stripe subscription status instead of just "is there a
+                sub ID stored in our DB?" — the latter was wrong for
+                any sub that Stripe transitioned to incomplete_expired
+                / canceled / past_due without us nulling our DB field. */}
             <div className="border border-slate-200 rounded-2xl p-5">
               <div className="flex items-center">
                 <span className="text-xs font-semibold uppercase tracking-widest text-slate-400">
                   Current plan
                 </span>
-                {customer?.stripeSubscriptionId ? (
-                  <span className="bg-green-50 text-green-700 border border-green-200 rounded-full px-3 py-1 text-xs font-semibold ml-2">
-                    Active
-                  </span>
-                ) : invoices.length > 0 ? (
-                  <span className="bg-slate-100 text-slate-600 border border-slate-200 rounded-full px-3 py-1 text-xs font-semibold ml-2">
-                    Canceled
-                  </span>
-                ) : customer?.activatedAt ? (
-                  <span className="bg-amber-50 text-amber-700 border border-amber-200 rounded-full px-3 py-1 text-xs font-semibold ml-2">
-                    Awaiting card
-                  </span>
-                ) : (
-                  <span className="bg-blue-50 text-blue-700 border border-blue-200 rounded-full px-3 py-1 text-xs font-semibold ml-2">
-                    Free until first delivery
-                  </span>
-                )}
+                <span className={`${billingDisplay.badge.classes} rounded-full px-3 py-1 text-xs font-semibold ml-2`}>
+                  {billingDisplay.badge.label}
+                </span>
               </div>
 
               <div className="mt-4">
@@ -220,36 +220,15 @@ export default async function SettingsPage({
               <p className="text-sm text-slate-500 mt-2">
                 Includes up to 500 payment recoveries per month. Plus a one-time fee of <strong className="text-slate-900">1× whatever your customer&apos;s first paid invoice is</strong> per win-back, charged when that invoice settles. If they never pay, neither do you. Fully refundable if the customer re-cancels within 14 days.
               </p>
-              {customer?.stripeSubscriptionId && customer?.activatedAt && (
+              {billingDisplay.footer && (
                 <p className="text-xs text-slate-400 mt-3">
-                  Active since{' '}
-                  {customer.activatedAt.toLocaleDateString('en-GB', {
-                    day: 'numeric',
-                    month: 'short',
-                    year: 'numeric',
-                  })}
-                  {' · Cancel anytime'}
-                </p>
-              )}
-              {!customer?.stripeSubscriptionId && invoices.length > 0 && (
-                <p className="text-xs text-slate-400 mt-3">
-                  Subscription canceled · Past invoices remain visible below
-                </p>
-              )}
-              {!customer?.stripeSubscriptionId && !customer?.activatedAt && invoices.length === 0 && (
-                <p className="text-xs text-slate-400 mt-3">
-                  No card at signup · Billing starts after your first save or win-back · Cancel anytime
-                </p>
-              )}
-              {!customer?.stripeSubscriptionId && customer?.activatedAt && invoices.length === 0 && (
-                <p className="text-xs text-slate-400 mt-3">
-                  Recovery delivered · Add a payment method below to start billing
+                  {billingDisplay.footer}
                 </p>
               )}
 
               {/* Cancel / Resume controls — visible only when a Stripe
                   Subscription is on file and in an active state. */}
-              {subscriptionDetails && (
+              {subscriptionDetails && billingDisplay.showCancelControl && (
                 <SubscriptionActions
                   status={subscriptionDetails.status ?? 'unknown'}
                   cancelAtPeriodEnd={subscriptionDetails.cancelAtPeriodEnd}
@@ -307,4 +286,146 @@ export default async function SettingsPage({
       </main>
     </>
   )
+}
+
+/**
+ * Visual state for the Billing card, derived from the live Stripe
+ * subscription status. Returns a single object so the JSX stays as a
+ * single ladder instead of four parallel ones.
+ *
+ * Inputs:
+ *   stripeStatus       — sub status from getSubscriptionDetails(), or
+ *                        null when there's no sub on file
+ *   cancelAtPeriodEnd  — true when an active sub has a cancel queued
+ *                        for cycle-end
+ *   activatedAt        — when activation completed (legacy proxy used
+ *                        in pre-2026-05-18 no-sub fallback paths)
+ *   invoiceCount       — to distinguish "never billed" from "billed
+ *                        in the past then cancelled"
+ *
+ * Returns:
+ *   badge.label       — short status label for the pill in the plan card
+ *   badge.classes     — Tailwind classes for the pill background/border
+ *   caption           — top-line copy ("Your billing is active.", etc.)
+ *   footer            — small footer text under the price; null hides it
+ *   showCancelControl — should we render <SubscriptionActions>?
+ *                       Only true for active/trialing — see
+ *                       subscription-actions.tsx which double-guards.
+ */
+type BillingDisplay = {
+  badge:   { label: string; classes: string }
+  caption: string
+  footer:  string | null
+  showCancelControl: boolean
+}
+
+function deriveBillingDisplay(
+  stripeStatus: string | null,
+  cancelAtPeriodEnd: boolean,
+  activatedAt: Date | null,
+  invoiceCount: number,
+): BillingDisplay {
+  const greenBadge  = 'bg-green-50 text-green-700 border border-green-200'
+  const amberBadge  = 'bg-amber-50 text-amber-700 border border-amber-200'
+  const roseBadge   = 'bg-rose-50  text-rose-700  border border-rose-200'
+  const slateBadge  = 'bg-slate-100 text-slate-600 border border-slate-200'
+  const blueBadge   = 'bg-blue-50  text-blue-700  border border-blue-200'
+
+  // When a sub IS on file, status drives everything.
+  if (stripeStatus !== null) {
+    switch (stripeStatus) {
+      case 'active':
+      case 'trialing':
+        return cancelAtPeriodEnd
+          ? {
+              badge:   { label: 'Cancelling', classes: amberBadge },
+              caption: 'Your subscription will end at the cycle close.',
+              footer:  'Resume any time before cycle end to keep billing uninterrupted.',
+              showCancelControl: true,
+            }
+          : {
+              badge:   { label: 'Active', classes: greenBadge },
+              caption: 'Your billing is active.',
+              footer:  activatedAt
+                ? `Active since ${activatedAt.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })} · Cancel anytime`
+                : 'Cancel anytime',
+              showCancelControl: true,
+            }
+      case 'past_due':
+        return {
+          badge:   { label: 'Payment failed', classes: roseBadge },
+          caption: "We're trying to bill you but the last payment failed. Update your payment method below.",
+          footer:  'Stripe will keep retrying for a few days before the subscription is suspended.',
+          showCancelControl: false,
+        }
+      case 'unpaid':
+        return {
+          badge:   { label: 'Suspended', classes: roseBadge },
+          caption: 'Your subscription is suspended because retries were exhausted. Update your payment method below to restore service.',
+          footer:  null,
+          showCancelControl: false,
+        }
+      case 'incomplete':
+        return {
+          badge:   { label: 'Setup incomplete', classes: amberBadge },
+          caption: "Your subscription is awaiting its first payment. Update your payment method below if needed.",
+          footer:  null,
+          showCancelControl: false,
+        }
+      case 'incomplete_expired':
+        return {
+          badge:   { label: 'Setup failed', classes: slateBadge },
+          caption: "The initial subscription setup didn't complete in time. Contact support to start a fresh subscription.",
+          footer:  null,
+          showCancelControl: false,
+        }
+      case 'canceled':
+        return {
+          badge:   { label: 'Cancelled', classes: slateBadge },
+          caption: 'Subscription cancelled. Re-subscribe by adding a payment method on a future recovery.',
+          footer:  'Past invoices remain visible below.',
+          showCancelControl: false,
+        }
+      case 'paused':
+        return {
+          badge:   { label: 'Paused', classes: blueBadge },
+          caption: 'Your subscription is paused.',
+          footer:  null,
+          showCancelControl: false,
+        }
+      default:
+        // Unknown Stripe status — be honest about it so support can dig in.
+        return {
+          badge:   { label: stripeStatus, classes: slateBadge },
+          caption: `Subscription is in an unexpected state (${stripeStatus}). Please contact support@winbackflow.co.`,
+          footer:  null,
+          showCancelControl: false,
+        }
+    }
+  }
+
+  // No sub on file — fall back to legacy ladder based on activation +
+  // invoice history (matches pre-fix behaviour for these paths).
+  if (invoiceCount > 0) {
+    return {
+      badge:   { label: 'Cancelled', classes: slateBadge },
+      caption: 'Subscription cancelled. Reactivate any time by adding a payment method on a future recovery.',
+      footer:  'Past invoices remain visible below.',
+      showCancelControl: false,
+    }
+  }
+  if (activatedAt) {
+    return {
+      badge:   { label: 'Awaiting card', classes: amberBadge },
+      caption: 'Add a payment method to start billing for your delivered recovery.',
+      footer:  'Recovery delivered · Add a payment method below to start billing',
+      showCancelControl: false,
+    }
+  }
+  return {
+    badge:   { label: 'Free until first delivery', classes: blueBadge },
+    caption: 'No charge until we deliver your first save or win-back.',
+    footer:  'No card at signup · Billing starts after your first save or win-back · Cancel anytime',
+    showCancelControl: false,
+  }
 }
