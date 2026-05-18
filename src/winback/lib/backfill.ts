@@ -211,3 +211,44 @@ export async function runInitialBackfillBurst(
     }
   }
 }
+
+/**
+ * Clear all backfill bookkeeping for a customer.
+ *
+ * Why this exists: when a merchant disconnects + reconnects Stripe (or
+ * switches Stripe accounts), the OAuth callback correctly identifies the
+ * reconnect as `needsBackfill = true` and fires `/api/backfill/start`.
+ * But `runBackfillIngestTick`'s atomic-claim WHERE clause includes
+ * `isNull(backfillCompletedAt)` — so if a previous backfill ever
+ * completed, the claim silently fails and `runInitialBackfillBurst`
+ * bails after the first tick returns `{ kind: 'skipped', reason:
+ * 'claim_failed' }`. The endpoint returns `success: true` because
+ * nothing threw, but no rows are ingested.
+ *
+ * Net result before this helper existed: a merchant who reconnects
+ * after a previous successful backfill ends up with an empty dashboard
+ * and no error surfaced. Found 2026-05-18 on the demo workspace.
+ *
+ * Fix: the OAuth callback must reset these columns before triggering
+ * the burst whenever `needsBackfill = true` so the atomic claim can
+ * succeed against the row.
+ *
+ * Important caveat: this function does NOT touch existing
+ * wb_churned_subscribers rows. On an account-changed reconnect those
+ * rows are stale (they belong to the previous stripe_account_id) but
+ * deletion is the caller's responsibility — it's a data-retention
+ * decision worth flagging rather than burying inside a reset helper.
+ */
+export async function resetBackfillState(customerId: string): Promise<void> {
+  await db
+    .update(customers)
+    .set({
+      backfillStartedAt:    null,
+      backfillCompletedAt:  null,
+      backfillTotal:        0,
+      backfillProcessed:    0,
+      backfillCursor:       null,
+      backfillProcessingAt: null,
+    })
+    .where(eq(customers.id, customerId))
+}

@@ -5,6 +5,7 @@ import { eq, and, ne } from 'drizzle-orm'
 import { encrypt } from '@/src/winback/lib/encryption'
 import { extractSignals } from '@/src/winback/lib/stripe'
 import { classifySubscriber } from '@/src/winback/lib/classifier'
+import { resetBackfillState } from '@/src/winback/lib/backfill'
 import { logEvent } from '@/src/winback/lib/events'
 import Stripe from 'stripe'
 
@@ -160,9 +161,20 @@ export async function GET(req: NextRequest) {
     })
     .where(eq(customers.id, state))
 
-  // Trigger historical backfill on first connect or when the account changed
-  // (fire-and-forget via internal API).
+  // Trigger historical backfill on first connect or when the account
+  // changed (fire-and-forget via internal API).
+  //
+  // Reset the backfill bookkeeping FIRST. Without this, a reconnect
+  // after a previous successful backfill leaves backfillCompletedAt
+  // set, which causes runBackfillIngestTick's atomic claim WHERE
+  // clause (`isNull(backfillCompletedAt)`) to silently fail. The
+  // burst endpoint then returns success but ingests no rows — the
+  // exact "merchant reconnects and dashboard stays empty forever"
+  // bug we hit on 2026-05-18. See resetBackfillState() doc comment
+  // for the full chain.
   if (needsBackfill) {
+    await resetBackfillState(state)
+
     const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? baseUrl()
     fetch(`${appUrl}/api/backfill/start`, {
       method: 'POST',

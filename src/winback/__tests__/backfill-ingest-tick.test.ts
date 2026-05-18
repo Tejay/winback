@@ -27,9 +27,11 @@ vi.mock('@/lib/schema', () => ({
   customers: {
     id: 'id',
     backfillCursor: 'backfill_cursor',
+    backfillStartedAt: 'backfill_started_at',
     backfillCompletedAt: 'backfill_completed_at',
     backfillProcessingAt: 'backfill_processing_at',
     backfillProcessed: 'backfill_processed',
+    backfillTotal: 'backfill_total',
   },
   churnedSubscribers: {
     id: 'id',
@@ -56,7 +58,7 @@ vi.mock('../lib/stripe', () => ({
 }))
 vi.mock('../lib/events', () => ({ logEvent: mockLogEvent }))
 
-import { runBackfillIngestTick } from '../lib/backfill'
+import { runBackfillIngestTick, resetBackfillState } from '../lib/backfill'
 
 function updateClaimReturning(rows: unknown[]) {
   return {
@@ -195,5 +197,67 @@ describe('runBackfillIngestTick', () => {
       name: 'backfill_failed',
       properties: expect.objectContaining({ errorMessage: 'Stripe down' }),
     }))
+  })
+})
+
+/**
+ * resetBackfillState — regression coverage for the 2026-05-18 bug
+ * where a Stripe reconnect after a previous successful backfill left
+ * `backfill_completed_at` set, causing runBackfillIngestTick's atomic
+ * claim to silently no-op. The OAuth callback now invokes
+ * resetBackfillState BEFORE firing the burst so the claim WHERE
+ * clause (`isNull(backfillCompletedAt)`) actually matches.
+ */
+describe('resetBackfillState', () => {
+  it('nulls all six backfill bookkeeping columns for the given customer', async () => {
+    const setSpy = vi.fn().mockReturnValue({
+      where: vi.fn().mockResolvedValue(undefined),
+    })
+    mockUpdate.mockReturnValueOnce({ set: setSpy })
+
+    await resetBackfillState('cust_reconnect')
+
+    expect(setSpy).toHaveBeenCalledTimes(1)
+    expect(setSpy).toHaveBeenCalledWith({
+      backfillStartedAt:    null,
+      backfillCompletedAt:  null,
+      backfillTotal:        0,
+      backfillProcessed:    0,
+      backfillCursor:       null,
+      backfillProcessingAt: null,
+    })
+  })
+
+  it('lets a subsequent runBackfillIngestTick succeed after reset (claim no longer blocked by completed_at)', async () => {
+    // 1. resetBackfillState clears the state
+    const resetSet = vi.fn().mockReturnValue({
+      where: vi.fn().mockResolvedValue(undefined),
+    })
+    mockUpdate.mockReturnValueOnce({ set: resetSet })
+    await resetBackfillState('cust_reconnect')
+
+    // 2. After reset, the next runBackfillIngestTick claim succeeds —
+    //    the WHERE clause matches because backfillCompletedAt is now NULL
+    mockUpdate
+      .mockReturnValueOnce(updateClaimReturning([{
+        backfillCursor: null,
+        stripeAccessToken: 'fresh-token',
+        backfillProcessed: 0,
+      }]))
+      .mockReturnValueOnce(updateNoReturn())  // final state update
+    mockInsert.mockReturnValue(insertReturning([{ id: 'sub_new' }]))
+    mockGetConnect.mockReturnValue({
+      subscriptions: {
+        list: vi.fn().mockResolvedValue({
+          data: [
+            { id: 'sub_1', canceled_at: Math.floor(Date.now() / 1000), customer: 'cus_a' },
+          ],
+          has_more: false,
+        }),
+      },
+    })
+
+    const result = await runBackfillIngestTick('cust_reconnect')
+    expect(result.kind).toBe('completed')  // would be 'skipped/claim_failed' without the reset
   })
 })
