@@ -98,6 +98,7 @@ export function renderDunningEmailHtml(i: DunningHtmlInputs): string {
   return `
 <!doctype html>
 <html>
+  <head><meta charset="utf-8"></head>
   <body style="margin:0;padding:0;background:#f5f5f5;font-family:'Helvetica Neue',Arial,sans-serif;color:#0f172a;">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f5f5f5;padding:32px 0;">
       <tr><td align="center">
@@ -126,3 +127,304 @@ export function renderDunningEmailHtml(i: DunningHtmlInputs): string {
   </body>
 </html>`.trim()
 }
+
+// ============================================================================
+// Shared building blocks for non-dunning emails (added later — dunning
+// has its own bespoke renderer above and is left untouched).
+//
+// Design goals (consistent with renderDunningEmailHtml):
+//   - Single dark CTA button (`<a>` styled as button — cross-client safe)
+//   - Small 11px grey unsubscribe / footer line, separated by a hairline
+//   - 600px max-width card on a light grey backdrop
+//   - All variables HTML-escaped at the edge
+// ============================================================================
+
+interface CtaInput {
+  label: string
+  url:   string
+}
+
+interface FooterLinkInput {
+  label: string
+  url:   string
+}
+
+interface EmailLayoutInputs {
+  /**
+   * Small uppercase eyebrow at the top (e.g. "Heads up", "Verify your
+   * email"). Optional — omitting renders nothing.
+   */
+  tone?:           string
+  /**
+   * Plain-text body. May contain blank lines (`\n\n`) which become
+   * paragraph breaks. Each paragraph is HTML-escaped — do NOT pass
+   * HTML here.
+   */
+  body:            string
+  /**
+   * Optional CTA button below the body. Renders as a dark pill anchor.
+   */
+  cta?:            CtaInput
+  /**
+   * Optional small grey footer line. Used for unsubscribe ("Don't want
+   * these? Unsubscribe."), or any de-emphasised tertiary action.
+   */
+  footer?: {
+    text:  string
+    link?: FooterLinkInput
+  }
+}
+
+/**
+ * Render a body paragraph block from plain text. Blank-line-separated
+ * paragraphs become `<p>` elements; single line breaks within a
+ * paragraph become `<br>`. Output is HTML-escaped.
+ */
+function renderBodyParagraphs(body: string): string {
+  const paragraphs = body.trim().split(/\n\s*\n/)
+  return paragraphs
+    .map(p => {
+      const escaped = escapeHtml(p.trim()).replace(/\n/g, '<br>')
+      return `<p style="margin:0 0 16px 0;font-size:14px;line-height:1.6;color:#475569;">${escaped}</p>`
+    })
+    .join('\n            ')
+}
+
+/**
+ * Render a single dark pill CTA button. Padded `<a>` (cross-client safe;
+ * `<button>` is not).
+ */
+function renderCtaButton(cta: CtaInput): string {
+  return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 24px 0;">
+              <tr><td style="background:#0f172a;border-radius:9999px;">
+                <a href="${escapeHtml(cta.url)}" style="display:inline-block;padding:12px 28px;font-size:14px;font-weight:500;color:#ffffff;text-decoration:none;">${escapeHtml(cta.label)}</a>
+              </td></tr>
+            </table>`
+}
+
+/**
+ * Generic email shell. Used by every non-dunning renderer below.
+ *
+ * Card layout, dark CTA button (optional), tiny grey footer (optional).
+ * Body paragraphs are HTML-escaped.
+ */
+function renderEmailShell(i: EmailLayoutInputs): string {
+  const toneBlock = i.tone
+    ? `<p style="margin:0 0 8px 0;font-size:12px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:#3b82f6;">${escapeHtml(i.tone)}</p>`
+    : ''
+  const ctaBlock = i.cta ? renderCtaButton(i.cta) : ''
+  const footerBlock = i.footer
+    ? `<tr><td style="border-top:1px solid #e2e8f0;padding:16px 40px;">
+            <p style="margin:0;font-size:11px;line-height:1.5;color:#94a3b8;">
+              ${escapeHtml(i.footer.text)}${i.footer.link ? ` <a href="${escapeHtml(i.footer.link.url)}" style="color:#94a3b8;text-decoration:underline;">${escapeHtml(i.footer.link.label)}</a>.` : ''}
+            </p>
+          </td></tr>`
+    : ''
+  return `
+<!doctype html>
+<html>
+  <head><meta charset="utf-8"></head>
+  <body style="margin:0;padding:0;background:#f5f5f5;font-family:'Helvetica Neue',Arial,sans-serif;color:#0f172a;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f5f5f5;padding:32px 0;">
+      <tr><td align="center">
+        <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="background:#ffffff;border-radius:12px;border:1px solid #e2e8f0;max-width:600px;">
+          <tr><td style="padding:32px 40px;">
+            ${toneBlock}
+            ${renderBodyParagraphs(i.body)}
+            ${ctaBlock}
+          </td></tr>
+          ${footerBlock}
+        </table>
+      </td></tr>
+    </table>
+  </body>
+</html>`.trim()
+}
+
+// ============================================================================
+// Per-email-type renderers — thin adapters that decide tone, CTA label,
+// and footer presence for each kind of email.
+// ============================================================================
+
+/**
+ * Win-back emails (Tier 1/2 exit + follow-up + improvement-match +
+ * promotion + Tier 3 silent-churn). Goes to subscribers — gets a
+ * Resubscribe button and a small unsubscribe footer.
+ *
+ * `body` is the LLM-generated (or hardcoded for Tier 3) text body
+ * complete with greeting and signature — we render it verbatim and
+ * add the Resubscribe button + unsubscribe footer around it.
+ */
+export function renderWinbackEmailHtml(i: {
+  body:             string
+  reactivationUrl:  string
+  unsubscribeUrl:   string
+}): string {
+  return renderEmailShell({
+    body: i.body,
+    cta:  { label: 'Resubscribe', url: i.reactivationUrl },
+    footer: {
+      text: "Don't want these emails?",
+      link: { label: 'Unsubscribe', url: i.unsubscribeUrl },
+    },
+  })
+}
+
+/**
+ * Password reset — single dark "Reset password" button, no unsub
+ * footer (transactional/account-recovery; same precedent as the
+ * text-only version in email.ts:sendPasswordResetEmail).
+ */
+export function renderPasswordResetHtml(i: { resetUrl: string }): string {
+  return renderEmailShell({
+    tone: 'Reset your password',
+    body: `Someone requested a password reset for this Winback account.
+
+If it was you, click the button below to set a new password.
+
+This link expires in 24 hours and can only be used once. If you've requested multiple reset emails, only the most recent link will work.
+
+If you didn't request this, you can ignore this email — your password won't change.`,
+    cta:  { label: 'Reset password', url: i.resetUrl },
+  })
+}
+
+/**
+ * Email verification — single "Verify email" button, no unsub footer
+ * (transactional/account-lifecycle).
+ */
+export function renderVerificationEmailHtml(i: {
+  founderName: string | null
+  verifyUrl:   string
+}): string {
+  const greeting = i.founderName ? `Hi ${i.founderName},` : 'Hi there,'
+  return renderEmailShell({
+    tone: 'Confirm your email',
+    body: `${greeting}
+
+Welcome to Winback. Click the button below to confirm your email and finish creating your account.
+
+This link expires in 7 days. If you didn't sign up for Winback, you can safely ignore this email.
+
+— Winback`,
+    cta:  { label: 'Confirm email', url: i.verifyUrl },
+  })
+}
+
+/**
+ * Day-3 onboarding nudge — founder signed up but hasn't connected
+ * Stripe. Single "Connect Stripe" button. Transactional/relationship
+ * (no unsubscribe by design; precedent: sendOnboardingNudgeEmail).
+ */
+export function renderOnboardingNudgeHtml(i: {
+  founderName: string | null
+  connectUrl:  string
+}): string {
+  const greeting = i.founderName ? `Hi ${i.founderName},` : 'Hi there,'
+  return renderEmailShell({
+    tone: 'Still want to set up Winback?',
+    body: `${greeting}
+
+You signed up a few days ago but haven't connected Stripe yet — that's the only step left. Takes about 90 seconds.
+
+If something's blocking you — Stripe permissions, a question about how it works, anything else — just hit reply and tell us. We'd genuinely like to know what's in the way.
+
+If it's not the right fit, ignore this — we'll clean up the unused account in 90 days.
+
+— Winback`,
+    cta:  { label: 'Connect Stripe', url: i.connectUrl },
+  })
+}
+
+/**
+ * Day-83 dormant-account deletion warning — courtesy notice 7 days
+ * before the cron auto-prunes. Single "Connect Stripe" button.
+ * Transactional/functional (no unsubscribe).
+ */
+export function renderDormantWarningHtml(i: {
+  founderName: string | null
+  connectUrl:  string
+}): string {
+  const greeting = i.founderName ? `Hi ${i.founderName},` : 'Hi there,'
+  return renderEmailShell({
+    tone: 'Account closing in 7 days',
+    body: `${greeting}
+
+You signed up ~12 weeks ago but never connected Stripe. We'll delete the unused account in 7 days.
+
+To keep it, connect Stripe (~90 seconds).
+
+If you'd rather we delete it, ignore this — no further messages. Questions? Hit reply.
+
+— Winback`,
+    cta:  { label: 'Connect Stripe', url: i.connectUrl },
+  })
+}
+
+/**
+ * Pilot ending soon — informational heads-up before normal billing
+ * kicks in. No CTA button (no action required), no unsubscribe (the
+ * recipient is the merchant, who is in an active commercial
+ * relationship). Just clean HTML wrapper for visual consistency.
+ */
+export function renderPilotEndingHtml(i: {
+  founderName: string | null
+  dateStr:     string
+}): string {
+  const greeting = i.founderName ? `Hi ${i.founderName},` : 'Hi there,'
+  return renderEmailShell({
+    tone: 'Your pilot ends soon',
+    body: `${greeting}
+
+Quick heads-up: your Winback pilot ends on ${i.dateStr}. After that, normal billing kicks in — $99/mo platform fee plus 1× MRR per win-back recovery (refundable for 14 days).
+
+Nothing for you to do right now. We'll email a usage summary at the end of the pilot. If you want to discuss pricing or extend the pilot, just hit reply.
+
+Thanks for kicking the tires.
+
+— Winback`,
+  })
+}
+
+/**
+ * Founder handoff — internal email TO the founder when the AI decides
+ * a subscriber is better served by a personal reply. The mailto link
+ * IS the action (opens the founder's email client pre-populated).
+ *
+ * `body` is the pre-built rich-text body from buildHandoffNotification()
+ * which already contains the subscriber context + conversation history.
+ * We surface the mailto link as a "Reply to {name}" button and add a
+ * smaller "View dashboard" footer link. No unsubscribe (internal email).
+ */
+export function renderFounderHandoffHtml(i: {
+  body:         string
+  mailtoUrl?:   string
+  mailtoLabel?: string
+  dashboardUrl: string
+}): string {
+  // The plain-text body uses box-drawing dividers (──────) as section
+  // separators — appropriate in monospace, ugly in HTML. Strip those
+  // lines; the paragraph breaks they delimited still give visual
+  // separation via the email shell's <p> margin-bottom.
+  // Also strip the "→ REPLY TO <name>: mailto:..." and "→ View full
+  // details: ..." lines — those URLs become the CTA button and the
+  // dashboard footer link respectively, so the inline raw versions
+  // become redundant noise in HTML.
+  const cleanedBody = i.body
+    .split('\n')
+    .filter(line => !/^[─━]+\s*$/.test(line))
+    .filter(line => !/^→ REPLY TO /.test(line))
+    .filter(line => !/^→ View full details:/.test(line))
+    .filter(line => !/^\s*\(opens your email client/.test(line))
+    .filter(line => !/^\s*their reactivation link included\)/.test(line))
+    .filter(line => !/^\s*\(subscriber has no email/.test(line))
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')  // collapse runs of blank lines from the strip
+    .trim()
+  return renderEmailShell({
+    body: cleanedBody,
+    cta:  i.mailtoUrl ? { label: i.mailtoLabel ?? 'Reply', url: i.mailtoUrl } : undefined,
+    footer: { text: 'Full subscriber details:', link: { label: 'Open dashboard', url: i.dashboardUrl } },
+  })
+}
+

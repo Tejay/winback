@@ -221,5 +221,20 @@ ${mailto ? `→ REPLY TO ${firstName}: ${mailto}\n\n` : ''}→ View full details
   return { subject, body }
 }
 
+/**
+ * Extract the mailto: URL and subscriber firstName from a handoff notification
+ * body so callers can surface it as a CTA button in the HTML version of the
+ * email. The body's plain-text format embeds it as:
+ *   → REPLY TO {firstName}: {mailto: URL}
+ *
+ * Returns null when the body has no embedded mailto (e.g. subscriber has no
+ * email on file, in which case buildHandoffNotification omits the mailto).
+ */
+export function extractHandoffMailto(body: string): { firstName: string; url: string } | null {
+  const m = body.match(/→ REPLY TO ([^:]+?): (mailto:[^\s]+)/)
+  if (!m) return null
+  return { firstName: m[1].trim(), url: m[2] }
+}
+
 // Exported for testing
 export { buildMailto, formatConversation, daysSince }

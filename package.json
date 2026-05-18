@@ -11,6 +11,7 @@
     "prompts:build": "tsx scripts/build-prompts.ts",
     "prompts:verify": "tsx scripts/verify-prompts.ts",
     "prompts:smoke": "tsx --env-file=.env.local scripts/smoke-prompts.ts",
+    "emails:preview": "tsx scripts/preview-emails.ts && open /tmp/email-previews/index.html",
     "prebuild": "tsx scripts/build-prompts.ts"
   },
   "dependencies": {
