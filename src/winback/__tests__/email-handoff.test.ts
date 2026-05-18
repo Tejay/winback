@@ -48,6 +48,15 @@ vi.mock('drizzle-orm', () => ({
 const mockLogEvent = vi.hoisted(() => vi.fn())
 vi.mock('../lib/events', () => ({ logEvent: mockLogEvent }))
 
+// Billing-health gate (2026-05-18) — bypass in tests so the new gate
+// in sendEmail/sendReplyEmail doesn't short-circuit before the
+// handoff logic these tests exercise. Gate behaviour covered by
+// billing-enforcement.test.ts.
+vi.mock('../lib/billing-enforcement', () => ({
+  isCustomerBillingHealthy:               async () => true,
+  isCustomerBillingHealthy_BySubscriber:  async () => true,
+}))
+
 // Spec 71 — email.ts now fetches latest reply via the conversation helper.
 const mockGetLatestReply = vi.hoisted(() => vi.fn().mockResolvedValue('Can I talk to your founder?'))
 vi.mock('../lib/conversation', () => ({

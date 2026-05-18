@@ -7,6 +7,7 @@ import { logEvent } from './events'
 import type { ClassificationResult, SubscriberSignals } from './types'
 import { buildConversationThread } from './conversation'
 import { deriveTriggerNeedConfidence } from './improvement-match'
+import { isCustomerBillingHealthy } from './billing-enforcement'
 
 /**
  * Spec 72 — consumer side of the producer/consumer pipeline.
@@ -112,6 +113,20 @@ export async function runClassifierTick(): Promise<ClassifierTickStats> {
         .limit(1)
       if (!customer) {
         throw new Error(`customer ${sub.customerId} not found`)
+      }
+
+      // 2026-05-18 — billing-health gate. Skip classification (and the
+      // ~$0.003 Anthropic spend) for merchants whose platform sub is in
+      // a non-paying state. Leaves classified_at NULL so the row
+      // resumes automatically once billing heals (the 5-min cache in
+      // billing-enforcement.ts expires + the next tick re-checks).
+      if (!(await isCustomerBillingHealthy(sub.customerId))) {
+        await logEvent({
+          name: 'classifier_skipped_billing_unhealthy',
+          customerId: sub.customerId,
+          properties: { subscriberId: sub.id },
+        })
+        continue
       }
 
       // Skip the LLM call when there's no signal to interpret. Track

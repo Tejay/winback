@@ -8,6 +8,7 @@ import { logEvent } from './events'
 import { callWithRetry } from './retry'
 import { renderDunningEmailHtml } from './email-html'
 import { declineCodeToCopy, DeclineCopy } from './decline-codes'
+import { isCustomerBillingHealthy_BySubscriber } from './billing-enforcement'
 import { getLatestReply } from './conversation'
 
 /**
@@ -433,6 +434,20 @@ export async function scheduleExitEmail(params: {
     return
   }
 
+  // 2026-05-18 — billing-health gate: skip if the merchant's Stripe
+  // sub is in a non-paying state (incomplete_expired / canceled /
+  // unpaid / paused). Stops Anthropic + Resend spend on freeloaders.
+  // Different from the above checks — this looks at LIVE Stripe sub
+  // status, not DB-cached pause flags. See billing-enforcement.ts.
+  if (!(await isCustomerBillingHealthy_BySubscriber(subscriberId))) {
+    console.log('Skipping exit email — merchant billing unhealthy:', subscriberId)
+    await logEvent({
+      name: 'send_skipped_billing_unhealthy',
+      properties: { subscriberId, emailType: 'exit' },
+    })
+    return
+  }
+
   // Spec 22a — per-subscriber AI pause
   if (await isAiPaused(subscriberId)) {
     console.log('Skipping exit email — AI paused for subscriber:', subscriberId)
@@ -545,6 +560,16 @@ export async function sendReplyEmail(params: {
       properties: { subscriberId, emailType: 'reply' },
     })
     return { sent: false, reason: 'billing_paused' }
+  }
+
+  // 2026-05-18 — billing-health gate (see sendEmail for context).
+  if (!(await isCustomerBillingHealthy_BySubscriber(subscriberId))) {
+    console.log('Skipping reply email — merchant billing unhealthy:', subscriberId)
+    await logEvent({
+      name: 'send_skipped_billing_unhealthy',
+      properties: { subscriberId, emailType: 'reply' },
+    })
+    return { sent: false, reason: 'billing_unhealthy' }
   }
 
   // Spec 22a — per-subscriber AI pause
@@ -713,6 +738,18 @@ export async function sendDunningEmail(params: {
   // when we split pause control into win-back + dunning cohorts.
   if (await isCustomerPausedForDunning(subscriberId)) {
     console.log('Skipping dunning email — customer has paused dunning:', subscriberId)
+    return
+  }
+
+  // 2026-05-18 — billing-health gate (see sendEmail for context).
+  // Applies to payment-recovery emails too: a merchant who isn't
+  // paying us shouldn't get Winback running their dunning sequence.
+  if (!(await isCustomerBillingHealthy_BySubscriber(subscriberId))) {
+    console.log('Skipping dunning email — merchant billing unhealthy:', subscriberId)
+    await logEvent({
+      name: 'send_skipped_billing_unhealthy',
+      properties: { subscriberId, emailType: 'dunning' },
+    })
     return
   }
 
@@ -902,6 +939,16 @@ export async function sendDunningFollowupEmail(params: {
     console.log('Skipping dunning followup — post-trial billing pause:', subscriberId)
     await logEvent({
       name: 'send_skipped_billing_pause',
+      properties: { subscriberId, emailType: 'dunning_followup' },
+    })
+    return
+  }
+
+  // 2026-05-18 — billing-health gate (see sendEmail for context).
+  if (!(await isCustomerBillingHealthy_BySubscriber(subscriberId))) {
+    console.log('Skipping dunning followup — merchant billing unhealthy:', subscriberId)
+    await logEvent({
+      name: 'send_skipped_billing_unhealthy',
       properties: { subscriberId, emailType: 'dunning_followup' },
     })
     return

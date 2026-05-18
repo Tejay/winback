@@ -66,6 +66,17 @@ vi.mock('../lib/events', () => ({
   logEvent: mockLogEvent,
 }))
 
+// Billing-health gate (2026-05-18) — bypass so these gate-order tests
+// stay focused on the gates they exercise. Behaviour of the new gate
+// is covered by billing-enforcement.test.ts.
+// Plain async functions (not vi.fn) — vi.resetAllMocks() in the
+// beforeEach would otherwise wipe the resolved value back to undefined,
+// breaking the gate-clear baseline.
+vi.mock('../lib/billing-enforcement', () => ({
+  isCustomerBillingHealthy:               async () => true,
+  isCustomerBillingHealthy_BySubscriber:  async () => true,
+}))
+
 const mockResolveFounderEmail = vi.hoisted(() => vi.fn().mockResolvedValue(null))
 const mockBuildHandoffNotification = vi.hoisted(() =>
   vi.fn().mockResolvedValue({ subject: 'handoff', body: 'body' }),
