@@ -93,6 +93,16 @@ vi.mock('../lib/email', () => ({
 }))
 vi.mock('../lib/events', () => ({ logEvent: mockLogEvent }))
 vi.mock('../lib/conversation', () => ({ buildConversationThread: mockBuildThread }))
+
+// Billing-health gate (2026-05-18) — bypass in tests; covered by
+// billing-enforcement.test.ts. classifier-tick.ts now calls
+// isCustomerBillingHealthy before per-row work; without this mock
+// the test's mocked customer would get fail-open'd to healthy
+// inconsistently and break the funnel assertions.
+vi.mock('../lib/billing-enforcement', () => ({
+  isCustomerBillingHealthy:               async () => true,
+  isCustomerBillingHealthy_BySubscriber:  async () => true,
+}))
 vi.mock('../lib/improvement-match', async (orig) => {
   const actual = await orig<typeof import('../lib/improvement-match')>()
   return {

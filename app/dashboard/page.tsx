@@ -5,7 +5,9 @@ import { customers, recoveries, churnedSubscribers, wbEvents } from '@/lib/schem
 import { eq, and, ne, or, isNull, inArray, sql } from 'drizzle-orm'
 import { TopNav } from '@/components/top-nav'
 import { ImpersonationBanner } from '@/components/impersonation-banner'
+import { BillingPausedBanner } from '@/components/billing-paused-banner'
 import { DashboardClient } from './dashboard-client'
+import { isCustomerBillingHealthy } from '@/src/winback/lib/billing-enforcement'
 
 const DUNNING_REASON = 'Payment failed'
 
@@ -23,6 +25,13 @@ export default async function DashboardPage() {
 
   // Route protection: redirect to onboarding if Stripe not connected
   if (!customer?.stripeAccessToken) redirect('/onboarding/stripe')
+
+  // 2026-05-18 — show a service-paused banner when the platform sub
+  // is in a non-paying state. Behind the scenes the classifier and
+  // email-send paths skip work for this customer (see
+  // src/winback/lib/billing-enforcement.ts); the banner is what the
+  // merchant actually sees so they know WHY nothing is happening.
+  const billingHealthy = await isCustomerBillingHealthy(customer.id)
 
   // First-recovery banner — only show before billing is active. The
   // banner's job is to drive the "add a card" action; once the platform
@@ -132,6 +141,7 @@ export default async function DashboardPage() {
   return (
     <>
       <ImpersonationBanner />
+      {!billingHealthy && <BillingPausedBanner />}
       <TopNav userName={session.user.name} isAdmin={isAdmin} />
       <main className="min-h-screen bg-[#f5f5f5]">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6 sm:py-8">

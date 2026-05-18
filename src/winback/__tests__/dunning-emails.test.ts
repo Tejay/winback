@@ -37,6 +37,15 @@ vi.mock('../lib/events', () => ({
   logEvent: mockLogEvent,
 }))
 
+// Billing-health gate (2026-05-18) — bypass in tests; the gate is
+// covered by billing-enforcement.test.ts. Returning true here keeps
+// the existing test mock chains aligned (the gate would otherwise add
+// extra db.select calls that shift the selectCallCount indices).
+vi.mock('../lib/billing-enforcement', () => ({
+  isCustomerBillingHealthy:               async () => true,
+  isCustomerBillingHealthy_BySubscriber:  async () => true,
+}))
+
 import { sendDunningFollowupEmail } from '../lib/email'
 
 beforeEach(() => {
