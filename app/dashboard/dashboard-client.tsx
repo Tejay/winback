@@ -663,7 +663,7 @@ export function DashboardClient({
   // filter state so switching tabs doesn't lose context.
   const winbackFilters: Array<{ key: string; label: string }> = [
     { key: 'all',       label: 'All' },
-    { key: 'handoff',   label: 'Needs you' },
+    { key: 'handoff',   label: 'You active' },
     { key: 'has-reply', label: 'Has reply' },
     { key: 'paused',    label: 'Paused' },
     { key: 'recovered', label: 'Recovered' },
@@ -1077,7 +1077,7 @@ export function DashboardClient({
                 <th className="hidden lg:table-cell text-left text-xs font-semibold uppercase tracking-wide text-slate-400 py-3 px-4">Plan</th>
                 <th className="hidden sm:table-cell text-left text-xs font-semibold uppercase tracking-wide text-slate-400 py-3 px-4">Cancelled</th>
                 <th className="hidden md:table-cell text-left text-xs font-semibold uppercase tracking-wide text-slate-400 py-3 px-4">Reason</th>
-                <th className="text-left text-xs font-semibold uppercase tracking-wide text-slate-400 py-3 px-4">AI Status</th>
+                <th className="text-left text-xs font-semibold uppercase tracking-wide text-slate-400 py-3 px-4">Status</th>
                 <th className="text-right text-xs font-semibold uppercase tracking-wide text-slate-400 py-3 px-4">MRR</th>
               </tr>
             </thead>
@@ -1116,7 +1116,45 @@ export function DashboardClient({
                     )}
                   </td>
                   <td className="py-4 px-4">
-                    <AiStateBadge sub={sub} compact billingPaused={isPaused} />
+                    {(() => {
+                      // Closed states (recovered / lost / skipped / opted-out)
+                      // get a single neutral chip — recovery + ownership are
+                      // irrelevant once the conversation is done.
+                      const isClosed = sub.status === 'recovered' || sub.status === 'lost' || sub.status === 'skipped' || sub.doNotContact
+                      if (isClosed) {
+                        const closedLabel =
+                          sub.status === 'recovered' ? 'Recovered'
+                          : sub.doNotContact ? 'Unsubscribed'
+                          : sub.status === 'lost' ? 'Lost'
+                          : 'Skipped'
+                        return (
+                          <span className="inline-flex items-center text-[10px] uppercase tracking-wider font-medium text-slate-500 bg-slate-50 border border-slate-200 px-2 py-0.5 rounded-full">
+                            {closedLabel}
+                          </span>
+                        )
+                      }
+                      // Active states: optional amber "High" recovery chip
+                      // + slate "AI" / dark "You" ownership chip.
+                      const isFounderActive = !!(sub.aiPausedUntil && new Date(sub.aiPausedUntil).getTime() > Date.now())
+                      return (
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {sub.recoveryLikelihood === 'high' && (
+                            <span className="inline-flex items-center text-[10px] uppercase tracking-wider font-semibold text-amber-900 bg-amber-100 border border-amber-200 px-2 py-0.5 rounded-full">
+                              High
+                            </span>
+                          )}
+                          <span
+                            className={
+                              isFounderActive
+                                ? 'inline-flex items-center text-[10px] uppercase tracking-wider font-semibold text-white bg-slate-900 px-2 py-0.5 rounded-full'
+                                : 'inline-flex items-center text-[10px] uppercase tracking-wider font-semibold text-slate-600 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-full'
+                            }
+                          >
+                            {isFounderActive ? 'You' : 'AI'}
+                          </span>
+                        </div>
+                      )
+                    })()}
                   </td>
                   <td className="text-sm font-medium text-slate-900 py-4 px-4 text-right">
                     ${(sub.mrrCents / 100).toFixed(2)}
