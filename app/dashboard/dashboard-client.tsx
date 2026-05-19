@@ -280,9 +280,11 @@ export function DashboardClient({
   const [conversation, setConversation] = useState<ConversationMessage[] | null>(null)
   const [conversationLoading, setConversationLoading] = useState(false)
   const [expandedMessageIds, setExpandedMessageIds] = useState<Set<string>>(new Set())
+  const [detailsOpen, setDetailsOpen] = useState(false)
   useEffect(() => {
     // Reset on subscriber change so a new drawer always starts collapsed.
     setExpandedMessageIds(new Set())
+    setDetailsOpen(false)
   }, [selected?.id])
 
   useEffect(() => {
@@ -1220,7 +1222,9 @@ export function DashboardClient({
               </div>
             )}
 
-            {/* Block 4: conversation */}
+            {/* Block 4: conversation (hidden when Details is open — replaced
+                by the Details panel below) */}
+            {!detailsOpen && (
             <div className="px-5 py-4 border-t border-slate-100">
               <div className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold mb-3">
                 Conversation
@@ -1311,9 +1315,101 @@ export function DashboardClient({
                 </ol>
               )}
             </div>
+            )}
 
-            {/* Block 5: reply composer — only when founder has taken over */}
-            {isFounderHandling && selected.email && (
+            {/* Block 4-alt: when Details is open, conversation + composer
+                collapse to a one-line breadcrumb so the Details panel can
+                take the focus. */}
+            {detailsOpen && (
+              <div className="px-5 py-3 border-t border-slate-100">
+                <div className="bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 flex items-center justify-between text-[11px]">
+                  <span className="text-slate-600">
+                    {isFounderHandling
+                      ? <><span className="font-semibold text-slate-900">You're handling.</span>{' '}AI paused.</>
+                      : <><span className="font-semibold text-slate-900">AI handling.</span>{' '}Responses auto-sent.</>}
+                    {conversation && conversation.length > 0 && (
+                      <> · {conversation.length} message{conversation.length === 1 ? '' : 's'}</>
+                    )}
+                  </span>
+                  <button
+                    onClick={() => setDetailsOpen(false)}
+                    className="text-slate-500 hover:text-slate-900 flex items-center gap-0.5"
+                  >
+                    ↑ Back to chat
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Block X: Details panel (AI's full read + Account) */}
+            {detailsOpen && (
+              <>
+                <div className="px-5 py-4 border-t border-slate-100 bg-slate-50/40">
+                  <div className="flex items-baseline justify-between mb-3">
+                    <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">AI's full read</div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-y-2 text-[12px]">
+                    {selected.tier != null && (<>
+                      <div className="text-slate-500">Tier</div>
+                      <div className="text-slate-900 font-medium tabular-nums">{selected.tier}</div>
+                    </>)}
+                    {selected.cancellationCategory && (<>
+                      <div className="text-slate-500">Category</div>
+                      <div className="text-slate-900 font-medium">{selected.cancellationCategory}</div>
+                    </>)}
+                    {selected.confidence != null && (<>
+                      <div className="text-slate-500">Confidence</div>
+                      <div className="text-slate-900 font-medium tabular-nums">{Math.round(Number(selected.confidence) * 100)}%</div>
+                    </>)}
+                    {selected.triggerKeyword && (<>
+                      <div className="text-slate-500">Trigger keyword</div>
+                      <div className="text-slate-900 font-medium">{selected.triggerKeyword}</div>
+                    </>)}
+                    {selected.recoveryLikelihood && (<>
+                      <div className="text-slate-500">Recovery</div>
+                      <div className={
+                        selected.recoveryLikelihood === 'high'  ? 'text-amber-700 font-medium' :
+                        selected.recoveryLikelihood === 'medium'? 'text-slate-700 font-medium' :
+                                                                   'text-slate-500 font-medium'
+                      }>{selected.recoveryLikelihood}</div>
+                    </>)}
+                  </div>
+                  {selected.triggerNeed && (
+                    <div className="mt-3 pt-3 border-t border-slate-200">
+                      <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold mb-1">Trigger need</div>
+                      <div className="text-[12px] text-slate-700 leading-relaxed">{selected.triggerNeed}</div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="px-5 py-4 border-t border-slate-100 bg-slate-50/40">
+                  <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold mb-3">Account</div>
+                  <div className="grid grid-cols-2 gap-y-2 text-[12px]">
+                    <div className="text-slate-500">Plan</div>
+                    <div className="text-slate-700">{selected.planName ?? '—'}</div>
+                    <div className="text-slate-500">Cancelled</div>
+                    <div className="text-slate-700">
+                      {selected.cancelledAt
+                        ? new Date(selected.cancelledAt).toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })
+                        : '—'}
+                    </div>
+                    <div className="text-slate-500">Tenure</div>
+                    <div className="text-slate-700">
+                      {selected.tenureDays != null
+                        ? selected.tenureDays >= 30
+                          ? `${Math.round(selected.tenureDays / 30)} months`
+                          : `${selected.tenureDays} days`
+                        : '—'}
+                    </div>
+                    <div className="text-slate-500">Status</div>
+                    <div className="text-slate-700">{selected.status}</div>
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* Block 5: reply composer — only when founder has taken over AND Details is closed */}
+            {!detailsOpen && isFounderHandling && selected.email && (
               <div className="px-5 py-4 border-t border-slate-100">
                 <div className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold mb-2">Your reply</div>
                 <div className="border border-slate-200 rounded-xl bg-white overflow-hidden focus-within:border-slate-300">
@@ -1355,14 +1451,22 @@ export function DashboardClient({
               </div>
             )}
 
-            {/* Block 6: quiet footer */}
+            {/* Block 6: quiet footer with Details toggle */}
             <div className="px-5 py-3 border-t border-slate-100 flex items-center justify-between text-[11px]">
               <span className="text-slate-400">
                 {selected.cancelledAt
                   ? `Cancelled ${new Date(selected.cancelledAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`
                   : 'Cancelled —'}
+                <span className="text-slate-300 mx-1.5">·</span>
+                {selected.status}
               </span>
-              <span className="text-slate-400">{selected.status}</span>
+              <button
+                onClick={() => setDetailsOpen((v) => !v)}
+                className="text-slate-500 hover:text-slate-900 font-medium flex items-center gap-1"
+              >
+                {detailsOpen ? 'Hide details' : 'Details'}
+                <ChevronDown className={`w-3 h-3 transition-transform ${detailsOpen ? 'rotate-180' : ''}`} />
+              </button>
             </div>
 
           </div>
