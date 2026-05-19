@@ -54,7 +54,7 @@ const POLL_TIMEOUT_MS      = 60_000
 // reason in stripe_comment). Same shape the LLM sees from real users:
 // short, specific, names the gap.
 const CANCEL_FEEDBACK: Stripe.SubscriptionCancelParams.CancellationDetails['feedback'] = 'missing_features'
-const CANCEL_COMMENT  = "The Zapier integration was the dealbreaker — I needed two-way HubSpot sync and yours is one-way only."
+const CANCEL_COMMENT  = "No Slack integration. That was the only reason."
 
 async function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms))
