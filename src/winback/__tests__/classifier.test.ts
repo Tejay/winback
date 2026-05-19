@@ -415,9 +415,9 @@ describe('classifySubscriber', () => {
     expect(ClassificationSchema.safeParse(result).success).toBe(true)
   })
 
-  // ─── Spec 72 — 250-char body cap ───────────────────────────────────────
+  // ─── Spec 72 — body length: prompt target 250, schema ceiling 350 ──────
 
-  it('system prompt includes the 250-character LENGTH CAP rule', async () => {
+  it('system prompt still instructs the LLM to keep bodies under 250 chars', async () => {
     const signals = makeSignals()
     mockLLMResponse({
       tier: 3, tierReason: 't', cancellationReason: 'r', cancellationCategory: 'Other',
@@ -431,8 +431,20 @@ describe('classifySubscriber', () => {
     expect(systemPrompt).toContain('250')
   })
 
-  it('schema rejects firstMessage.body > 250 chars (Spec 72)', () => {
-    const bodyTooLong = 'a'.repeat(251)
+  it('schema accepts firstMessage.body between 251 and 500 chars (drift window)', () => {
+    const bodyInDrift = 'a'.repeat(400)
+    const result = ClassificationSchema.safeParse({
+      tier: 1, tierReason: 't', cancellationReason: 'r', cancellationCategory: 'Price',
+      confidence: 0.9, suppress: false,
+      firstMessage: { subject: 's', body: bodyInDrift, sendDelaySecs: 60 },
+      triggerKeyword: null, triggerNeed: null,
+      winBackSubject: '', winBackBody: '',
+    })
+    expect(result.success).toBe(true)
+  })
+
+  it('schema rejects firstMessage.body > 500 chars (over ceiling)', () => {
+    const bodyTooLong = 'a'.repeat(501)
     const result = ClassificationSchema.safeParse({
       tier: 1, tierReason: 't', cancellationReason: 'r', cancellationCategory: 'Price',
       confidence: 0.9, suppress: false,
@@ -443,8 +455,8 @@ describe('classifySubscriber', () => {
     expect(result.success).toBe(false)
   })
 
-  it('schema rejects winBackBody > 250 chars (Spec 72)', () => {
-    const bodyTooLong = 'a'.repeat(251)
+  it('schema rejects winBackBody > 500 chars (over ceiling)', () => {
+    const bodyTooLong = 'a'.repeat(501)
     const result = ClassificationSchema.safeParse({
       tier: 1, tierReason: 't', cancellationReason: 'r', cancellationCategory: 'Price',
       confidence: 0.9, suppress: false,
@@ -455,12 +467,12 @@ describe('classifySubscriber', () => {
     expect(result.success).toBe(false)
   })
 
-  it('schema accepts firstMessage.body exactly at 250 chars (Spec 72)', () => {
-    const bodyAtCap = 'a'.repeat(250)
+  it('schema accepts firstMessage.body exactly at 500-char ceiling', () => {
+    const bodyAtCeiling = 'a'.repeat(500)
     const result = ClassificationSchema.safeParse({
       tier: 1, tierReason: 't', cancellationReason: 'r', cancellationCategory: 'Price',
       confidence: 0.9, suppress: false,
-      firstMessage: { subject: 's', body: bodyAtCap, sendDelaySecs: 60 },
+      firstMessage: { subject: 's', body: bodyAtCeiling, sendDelaySecs: 60 },
       triggerKeyword: null, triggerNeed: null,
       winBackSubject: '', winBackBody: '',
     })

@@ -142,9 +142,13 @@ export async function findBestMatch(
 // --------------------------------------------------------------------------
 // Email generation — age-aware tone
 // --------------------------------------------------------------------------
+// Spec 72 — body targets 250 chars (prompt's hard rule) with a 500-char
+// ceiling (2× target) to absorb LLM imprecision. Bodies above 500 fail
+// validation and generateImprovementEmail returns null (caller falls
+// back gracefully).
 const GeneratedEmailSchema = z.object({
   subject: z.string().min(1).max(120),
-  body:    z.string().min(1).max(250, 'Body exceeds 250-character cap'),
+  body:    z.string().min(1).max(500, 'Body exceeds 500-character ceiling (target 250)'),
 })
 
 export async function generateImprovementEmail(params: {
