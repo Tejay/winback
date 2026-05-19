@@ -90,6 +90,7 @@ vi.mock('../lib/email', () => ({
   sendEmail: mockSendEmail,
   isCustomerPausedForWinback: mockIsPausedWB,
   isCustomerPausedForBillingByCustomerId: mockIsPausedBill,
+  buildFromDisplayName: vi.fn(() => 'Test Founder'),
 }))
 vi.mock('../lib/events', () => ({ logEvent: mockLogEvent }))
 vi.mock('../lib/conversation', () => ({ buildConversationThread: mockBuildThread }))

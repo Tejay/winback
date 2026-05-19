@@ -50,7 +50,10 @@ vi.mock('drizzle-orm', () => ({
 }))
 
 vi.mock('../lib/classifier', () => ({ classifySubscriber: mockClassify }))
-vi.mock('../lib/email', () => ({ scheduleExitEmail: mockScheduleExit }))
+vi.mock('../lib/email', () => ({
+  scheduleExitEmail: mockScheduleExit,
+  buildFromDisplayName: vi.fn(() => 'Test Founder'),
+}))
 vi.mock('../lib/events', () => ({ logEvent: mockLogEvent }))
 vi.mock('../lib/conversation', () => ({ buildConversationThread: mockBuildThread }))
 
