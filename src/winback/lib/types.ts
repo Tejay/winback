@@ -80,14 +80,28 @@ export interface ClassificationResult {
   winBackSubject:  string         // Deprecated by spec 19c — generated at match time now
   winBackBody:     string         // Deprecated by spec 19c — generated at match time now
   /**
-   * AI-decided hand-off judgment (replaces the count-based MAX_FOLLOWUPS rule).
-   * The classifier decides on every pass whether the subscriber is better
-   * served by another AI email or by a personal reply from the founder,
-   * balancing convertibility, founder-inbox cost, and the 3-email budget.
+   * Drawer insight — purely descriptive summary shown to the founder above
+   * the conversation. Replaces the deprecated `handoff` / `handoffReasoning`
+   * pair (there is no automatic handoff anymore — AI keeps running on every
+   * subscriber, the founder takes over manually when they want).
+   *
+   * `read`         — what's happening (1 sentence, ~100 chars target)
+   * `worthKnowing` — specific detail the founder should be aware of, or ''
+   *
+   * Optional in the type so test fixtures and legacy code paths don't have
+   * to construct it explicitly. The Zod schema in classifier.ts always
+   * defaults it to `{ read: '', worthKnowing: '' }`, so real classifications
+   * from `classifySubscriber()` always have it set.
    */
-  handoff:            boolean
-  handoffReasoning:   string
+  drawerInsight?: {
+    read:         string
+    worthKnowing: string
+  }
   recoveryLikelihood: RecoveryLikelihood
+  /** @deprecated Removed in Phase 7. AI no longer emits this — always false. */
+  handoff:            boolean
+  /** @deprecated Removed in Phase 7. AI no longer emits this — always ''. */
+  handoffReasoning:   string
 }
 
 export interface DashboardStats {

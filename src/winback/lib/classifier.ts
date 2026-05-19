@@ -41,13 +41,14 @@ function getClient() {
 // prompt regression and fails validation.
 //
 // Per-field allowances:
-//   firstMessage.subject : 3–6 words   → ~50 char target → cap 100
-//   firstMessage.body    : ≤250 chars  → cap 500
-//   cancellationReason   : "short phrase, e.g. 'Switched to a competitor'"
-//                                       → ~40 char target → cap 80
-//   triggerKeyword       : 1–3 words   → ~25 char target → cap 50
-//   triggerNeed          : 1–2 sentences → ~150 char target → cap 300
-//   winBackSubject/Body  : deprecated mirror of firstMessage; same caps
+//   firstMessage.subject       : 3–6 words   → ~50 char target → cap 100
+//   firstMessage.body          : ≤250 chars  → cap 500
+//   cancellationReason         : "short phrase" → ~40 char target → cap 80
+//   triggerKeyword             : 1–3 words   → ~25 char target → cap 50
+//   triggerNeed                : 1–2 sentences → ~150 char target → cap 300
+//   winBackSubject/Body        : deprecated mirror of firstMessage
+//   drawerInsight.read         : 1 sentence  → ~100 char target → cap 200
+//   drawerInsight.worthKnowing : 1 sentence (may be empty) → cap 200
 const ClassificationSchema = z.object({
   tier:                 z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]),
   tierReason:           z.string().default(''),
@@ -70,12 +71,22 @@ const ClassificationSchema = z.object({
   triggerNeed:    z.string().max(300, 'triggerNeed exceeds 300-character ceiling (target ~150; 1–2 sentences)').nullable().default(null),
   winBackSubject: z.string().max(100, 'winBackSubject exceeds 100-character ceiling').default(''),
   winBackBody:    z.string().max(500, 'winBackBody exceeds 500-character ceiling (target 250; Spec 72)').default(''),
-  // AI-decided hand-off judgment. The classifier itself (not a rule) decides
-  // on every pass whether this subscriber is better served by another AI
-  // email or by a personal reply from the founder.
+  // Drawer insight — what the founder sees pinned above the conversation.
+  // Purely descriptive; never recommends an action. The founder decides
+  // whether to step in. Replaces the deprecated handoff / handoffReasoning
+  // fields — there is no automatic handoff anymore. AI keeps running on
+  // every subscriber; the founder takes over manually when they want.
+  drawerInsight:      z.object({
+    read:         z.string().max(200, 'drawerInsight.read exceeds 200-character ceiling (target ~100)').default(''),
+    worthKnowing: z.string().max(200, 'drawerInsight.worthKnowing exceeds 200-character ceiling (target ~100)').default(''),
+  }).default({ read: '', worthKnowing: '' }),
+  recoveryLikelihood: z.enum(['high', 'medium', 'low']).default('low'),
+  // DEPRECATED — kept as transitional stubs while consumers migrate to
+  // drawerInsight (Phases 2–7). The prompt no longer asks the LLM for
+  // these, so the defaults below kick in for every new classification.
+  // Remove in Phase 7 once all read-sites are updated.
   handoff:            z.boolean().default(false),
   handoffReasoning:   z.string().default(''),
-  recoveryLikelihood: z.enum(['high', 'medium', 'low']).default('low'),
 })
 
 export async function classifySubscriber(

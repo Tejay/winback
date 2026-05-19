@@ -157,39 +157,48 @@ EMAIL TONE BY AGE (if not suppressed):
 - Medium (7–30 days): "A few weeks ago you cancelled..."
 - Older (30+ days): "We've made some changes since you left..."
 
-HAND-OFF JUDGMENT (handoff / handoffReasoning / recoveryLikelihood):
-You, not a rule, decide whether to hand this subscriber to the founder. On
-every classification pass, weigh these three factors together — no single
-factor is decisive:
+DRAWER INSIGHT (drawerInsight.read / drawerInsight.worthKnowing):
 
-  (a) CONVERTIBILITY. If the founder personally replied to this subscriber
-      right now, what is the realistic chance they come back? Use the full
-      thread, stated objections, engagement signals (reply length, questions
-      asked, billing_portal_clicked), tenure, MRR, and whether their block
-      is concrete (pricing / contract / roadmap) vs. vague (not the right fit).
+On every classification pass, produce a two-field summary the founder will
+see in the dashboard drawer. You are NOT deciding what to do — only describing
+what's going on. The founder decides whether to step in.
 
-  (b) ANTI-SPAM BIAS. The founder's inbox is expensive. Default to
-      handoff=false. Only set true when the expected recovery, weighted by
-      your own confidence, is clearly worth a personal email from the
-      founder. If you are unsure, handoff=false.
+drawerInsight.read — ONE sentence, ≤100 chars target (≤200 hard ceiling)
+  A neutral summary of what's happening with this subscriber. Plain English,
+  third-person, no recommendations. Examples:
+    - "Slack integration is the blocker; 2-week decision window."
+    - "Price objection; would return on annual discount."
+    - "Silent churn; no engagement signals."
+    - "Three replies softening over time; door slightly ajar."
 
-  (c) BUDGET AWARENESS. The subscriber gets at most 3 emails from us total.
-      emails_sent tells you how many have been sent so far (0, 1, or 2).
-      Each slot you spend on an AI follow-up is a slot the founder cannot
-      use. Ask yourself: "Is THIS slot better spent on me, or them?" If
-      the thread has stalled on something AI can't resolve and one slot
-      remains, the founder is the better spend.
+drawerInsight.worthKnowing — ONE sentence, ≤100 chars target (≤200 hard ceiling)
+  The single specific thing in the conversation a founder should be aware of
+  if they scan this drawer. If nothing distinctive stands out, set to empty
+  string — do NOT pad with generic statements. Examples:
+    - "They explicitly asked for a ship date."
+    - "Billing portal clicked but never completed checkout."
+    - "Used the product daily for 3 months before cancelling."
+    - ""  (empty when nothing distinctive)
 
-Set recoveryLikelihood to your honest estimate of whether ANY further touch
-(AI or founder) recovers them:
-  - high:   concrete addressable block, high engagement, explicit interest in staying
+Rules:
+  - Both fields are PURELY DESCRIPTIVE. No "founder should reply", no "worth
+    your time", no recommendations. Describe what's true.
+  - Update on every re-classification pass — these reflect the LATEST state
+    of the conversation, not a frozen judgment from initial churn.
+  - Tier 4 (suppress): drawerInsight.read states the suppression reason;
+    worthKnowing is empty.
+
+RECOVERY LIKELIHOOD (recoveryLikelihood):
+
+Your honest estimate of whether any further touch recovers them:
+  - high:   concrete addressable block, high engagement, explicit interest
   - medium: stated reason but weak engagement, OR strong engagement with a fuzzy reason
   - low:    no engagement, no reply, or a clear "not coming back" signal
 
-Set handoffReasoning to 1–2 sentences in plain English explaining your
-decision. It will be persisted and shown to the founder verbatim. Examples:
-  - "They're explicitly asking to speak to someone and mentioned pricing flexibility twice — a short personal reply has a real shot."
-  - "Dead thread — one reply weeks ago, no engagement since. Not worth your time; closing out."
-  - "AI follow-up has one more slot but they want a roadmap commitment I can't give. Better spent by you than by me."
+This is the dashboard flag that controls row prominence (binary chip when
+'high', no chip otherwise). It's information, not a trigger — there is no
+automatic handoff. AI keeps running on all subscribers regardless of recovery
+score. The founder reads the flag plus the drawerInsight and decides whether
+to take over the conversation manually.
 
-Suppressed subscribers (tier 4) must always have handoff=false, recoveryLikelihood='low', and a short handoffReasoning noting the suppression reason.
+Suppressed subscribers (tier 4) must always have recoveryLikelihood='low'.

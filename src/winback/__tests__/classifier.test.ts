@@ -340,7 +340,7 @@ describe('classifySubscriber', () => {
     expect(result.recoveryLikelihood).toBe('low')
   })
 
-  it('system prompt contains the HAND-OFF JUDGMENT section with all three factor headers', async () => {
+  it('system prompt contains the DRAWER INSIGHT section with both subfields', async () => {
     const signals = makeSignals()
     mockLLMResponse({
       tier: 3, tierReason: 't', cancellationReason: 'r', cancellationCategory: 'Other',
@@ -350,13 +350,14 @@ describe('classifySubscriber', () => {
     })
     await classifySubscriber(signals, {})
     const systemPrompt = mockCreate.mock.calls[0][0].system as string
-    expect(systemPrompt).toContain('HAND-OFF JUDGMENT')
-    expect(systemPrompt).toContain('CONVERTIBILITY')
-    expect(systemPrompt).toContain('ANTI-SPAM BIAS')
-    expect(systemPrompt).toContain('BUDGET AWARENESS')
-    expect(systemPrompt).toContain('handoffReasoning')
+    expect(systemPrompt).toContain('DRAWER INSIGHT')
+    expect(systemPrompt).toContain('drawerInsight.read')
+    expect(systemPrompt).toContain('drawerInsight.worthKnowing')
+    expect(systemPrompt).toContain('PURELY DESCRIPTIVE')
     expect(systemPrompt).toContain('recoveryLikelihood')
-    expect(systemPrompt).toMatch(/3 emails from us total/i)
+    // Handoff is gone — AI runs on every subscriber, founder takes over manually.
+    expect(systemPrompt).not.toContain('HAND-OFF JUDGMENT')
+    expect(systemPrompt).not.toContain('handoffReasoning')
   })
 
   it('buildPrompt renders emails_sent when signals.emailsSent is provided', async () => {
