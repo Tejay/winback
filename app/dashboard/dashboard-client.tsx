@@ -4,7 +4,6 @@ import { useState, useEffect, useCallback, useRef, Fragment } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { StatusBadge } from '@/components/status-badge'
-import { AiStateBadge } from '@/components/ai-state-badge'
 import { Pagination } from '@/components/pagination'
 import { TrendingUp, CheckCircle, DollarSign, Users, Search, Zap, X, RotateCcw, Check, Loader2, Sparkles, MessageSquare, CreditCard, ChevronRight, ChevronDown, Copy, Mail, Send, ArrowLeft } from 'lucide-react'
 
@@ -278,17 +277,11 @@ export function DashboardClient({
   const search = tab === 'winback' ? winbackSearch : paymentSearch
   const setSearch = tab === 'winback' ? setWinbackSearch : setPaymentSearch
   const [selected, setSelected] = useState<Subscriber | null>(null)
-  // Spec 50 — collapsible "email them yourself" section in the suppressed
-  // subscriber drawer. State is keyed nowhere because we only show the
-  // section for one subscriber at a time (the selected one).
-  const [externalContactOpen, setExternalContactOpen] = useState(false)
-  const [copyFeedback, setCopyFeedback] = useState<string | null>(null)
   const [conversation, setConversation] = useState<ConversationMessage[] | null>(null)
   const [conversationLoading, setConversationLoading] = useState(false)
   const [expandedMessageIds, setExpandedMessageIds] = useState<Set<string>>(new Set())
   useEffect(() => {
     // Reset on subscriber change so a new drawer always starts collapsed.
-    setExternalContactOpen(false)
     setExpandedMessageIds(new Set())
   }, [selected?.id])
 
@@ -484,29 +477,6 @@ export function DashboardClient({
   // Spec 51 — dismissBanner removed. Banner is server-derived; no
   // localStorage dismissal. Merchant subscribes or stays paused.
 
-  async function handleAction(id: string, action: 'resend' | 'recover') {
-    await fetch(`/api/subscribers/${id}/${action}`, { method: 'POST' })
-    setSelected(null)
-    fetchData()
-  }
-
-  // Spec 50 — register an external contact (merchant emailed from their
-  // own client). Inserts a stub emails_sent row + flips lost → contacted.
-  async function handleExternalContact(id: string) {
-    await fetch(`/api/subscribers/${id}/external-contact`, { method: 'POST' })
-    setSelected(null)
-    fetchData()
-  }
-
-  // Spec 50 — fire-and-forget version: mark + open the compose URL in
-  // a new tab. Used by the Gmail/Outlook/mailto launch buttons.
-  function fireAndOpen(id: string, composeUrl: string) {
-    fetch(`/api/subscribers/${id}/external-contact`, { method: 'POST' }).catch(() => {})
-    window.open(composeUrl, '_blank', 'noopener,noreferrer')
-    setSelected(null)
-    fetchData()
-  }
-
   // Spec 51 — Subscribe button on the banner. Opens Stripe Checkout
   // directly (setup-intent flow). Used by both the main banner and the
   // persistent paused status bar. Failures bubble up to a small inline
@@ -529,51 +499,6 @@ export function DashboardClient({
       setSubscribeError(e instanceof Error ? e.message : String(e))
       setSubscribing(false)
     }
-  }
-
-  // Spec 50 — clipboard copy with brief "Copied!" feedback.
-  async function copyToClipboard(text: string, label: string) {
-    try {
-      await navigator.clipboard.writeText(text)
-      setCopyFeedback(label)
-      setTimeout(() => setCopyFeedback(null), 2000)
-    } catch {
-      // No-op if clipboard API blocked. Merchant can always select+copy manually.
-    }
-  }
-
-  // Spec 21c — legacy snooze/resolve (handoff-specific buttons on amber banner)
-  async function handleHandoffAction(
-    id: string,
-    action: 'snooze' | 'resolve',
-    durationDays?: number,
-  ) {
-    await fetch(`/api/subscribers/${id}/handoff`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(action === 'snooze' ? { action, durationDays } : { action }),
-    })
-    setSelected(null)
-    fetchData()
-  }
-
-  // Spec 22a — unified pause/resume on any subscriber
-  async function handlePauseAction(
-    id: string,
-    action: 'pause' | 'resume',
-    durationDays?: number | null,
-    reason?: string,
-  ) {
-    const body = action === 'pause'
-      ? { action, durationDays: durationDays ?? null, reason: reason ?? 'founder_handling' }
-      : { action }
-    await fetch(`/api/subscribers/${id}/pause`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    })
-    setSelected(null)
-    fetchData()
   }
 
   // Drawer redesign — take-over toggle. Sets ai_paused_until to a far-

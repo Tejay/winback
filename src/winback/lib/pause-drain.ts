@@ -367,20 +367,6 @@ async function processCancellationItem(sub: SubscriberRow): Promise<DrainItem> {
     }
   }
 
-  if (classification.handoff) {
-    // scheduleExitEmail handles the handoff path internally (calls
-    // triggerFounderHandoff). After it returns, founderHandoffAt is set
-    // on the row, so we can mark drain-processed.
-    await scheduleExitEmail({
-      subscriberId: sub.id,
-      email: sub.email!,
-      classification,
-      fromName: buildFromDisplayName({ founderName: customer.founderName, productName: customer.productName }),
-    })
-    await markProcessed(sub.id)
-    return { subscriberId: sub.id, customerId: sub.customerId, category: 'cancellation', action: 'handoff' }
-  }
-
   await scheduleExitEmail({
     subscriberId: sub.id,
     email: sub.email!,

@@ -14,11 +14,9 @@ import {
   renderOnboardingNudgeHtml,
   renderDormantWarningHtml,
   renderPilotEndingHtml,
-  renderFounderHandoffHtml,
 } from './email-html'
 import { declineCodeToCopy, DeclineCopy } from './decline-codes'
 import { isCustomerBillingHealthy_BySubscriber } from './billing-enforcement'
-import { getLatestReply } from './conversation'
 
 /**
  * Spec 28 — Postgres unique-violation error code. The partial unique index
@@ -299,112 +297,6 @@ export async function isAiPaused(subscriberId: string): Promise<boolean> {
   return row.aiPausedUntil.getTime() > Date.now()
 }
 
-/**
- * Hand off a subscriber to the founder. Idempotent: if already handed off,
- * skips the state update and the notification. Used by both the initial
- * classification path (scheduleExitEmail pre-gate) and the reply path
- * (sendReplyEmail) so the behaviour stays consistent.
- *
- * Persists the classifier's handoffReasoning + recoveryLikelihood so the
- * founder sees the AI's actual judgment, not a bucketed label.
- */
-async function triggerFounderHandoff(params: {
-  subscriberId: string
-  classification: ClassificationResult
-  fromName: string
-  trigger: 'initial_classification' | 'reply_classification'
-}): Promise<void> {
-  const { subscriberId, classification, fromName, trigger } = params
-
-  const [sub] = await db
-    .select()
-    .from(churnedSubscribers)
-    .where(eq(churnedSubscribers.id, subscriberId))
-    .limit(1)
-
-  if (!sub) {
-    console.log('Hand-off skipped — subscriber not found:', subscriberId)
-    return
-  }
-
-  if (sub.founderHandoffAt) {
-    console.log('Hand-off skipped — already handed off:', subscriberId)
-    return
-  }
-
-  await db
-    .update(churnedSubscribers)
-    .set({
-      founderHandoffAt:   new Date(),
-      aiPausedAt:         new Date(),
-      aiPausedUntil:      new Date('9999-12-31T00:00:00Z'),  // indefinite sentinel
-      aiPausedReason:     'handoff',
-      handoffReasoning:   classification.handoffReasoning,
-      recoveryLikelihood: classification.recoveryLikelihood,
-      updatedAt:          new Date(),
-    })
-    .where(eq(churnedSubscribers.id, subscriberId))
-
-  logEvent({
-    name: 'founder_handoff_triggered',
-    customerId: sub.customerId,
-    properties: {
-      subscriberId,
-      trigger,
-      recoveryLikelihood: classification.recoveryLikelihood,
-      reasoningExcerpt:   classification.handoffReasoning.slice(0, 200),
-    },
-  })
-
-  try {
-    const recipient = await resolveFounderNotificationEmail(sub.customerId)
-    if (!recipient) {
-      console.log('Hand-off: no recipient email resolved for customer', sub.customerId)
-      return
-    }
-    const { buildHandoffNotification, extractHandoffMailto } = await import('./founder-handoff-email')
-    // Spec 71 — latest reply now lives in wb_subscriber_replies, not on
-    // the subscriber row. Fetch here for the handoff-notification copy.
-    const replyText = await getLatestReply(sub.id)
-    const { subject, body } = await buildHandoffNotification({
-      subscriber: {
-        id: sub.id,
-        email: sub.email,
-        name: sub.name,
-        planName: sub.planName,
-        mrrCents: sub.mrrCents,
-        cancellationReason: sub.cancellationReason,
-        triggerNeed: sub.triggerNeed,
-        cancelledAt: sub.cancelledAt,
-        stripeComment: sub.stripeComment,
-        replyText,
-      },
-      founderName: fromName,
-      handoffReasoning:   classification.handoffReasoning,
-      recoveryLikelihood: classification.recoveryLikelihood,
-    })
-    const mailtoMatch = extractHandoffMailto(body)
-    const dashboardUrl = `${process.env.NEXT_PUBLIC_APP_URL ?? 'https://winbackflow.co'}/dashboard?subscriber=${sub.id}`
-    const html = renderFounderHandoffHtml({
-      body,
-      mailtoUrl:    mailtoMatch?.url,
-      mailtoLabel:  mailtoMatch ? `Reply to ${mailtoMatch.firstName}` : undefined,
-      dashboardUrl,
-    })
-    const resend = getResendClient()
-    await resend.emails.send({
-      from: `Winback <noreply@winbackflow.co>`,
-      to: recipient,
-      subject,
-      text: body,
-      html,
-    })
-    console.log('Handoff notification sent to:', recipient)
-  } catch (notifyErr) {
-    console.error('Failed to send handoff notification:', notifyErr)
-  }
-}
-
 export async function sendEmail(params: {
   to: string
   subject: string
@@ -527,21 +419,6 @@ export async function scheduleExitEmail(params: {
     return
   }
 
-  // AI-decided hand-off on the initial pass. Rare — requires a strong signal
-  // in stripe_comment alone — but possible (e.g., "I need to talk to someone
-  // about enterprise pricing"). Skip the exit email and route straight to
-  // the founder. Burns 0 of the 3-email budget.
-  if (classification.handoff) {
-    console.log('AI decided initial hand-off for subscriber:', subscriberId)
-    await triggerFounderHandoff({
-      subscriberId,
-      classification,
-      fromName,
-      trigger: 'initial_classification',
-    })
-    return
-  }
-
   const { subject, body } = classification.firstMessage
 
   const { messageId } = await sendEmail({
@@ -651,22 +528,7 @@ export async function sendReplyEmail(params: {
     return { sent: false, reason: 'ai_paused' }
   }
 
-  // 1) AI-decided hand-off (replaces the old count-based trigger). If the
-  //    classifier judges the founder is the better spend, hand off now and
-  //    DO NOT send the AI follow-up this turn.
-  if (classification.handoff) {
-    console.log('AI decided hand-off on reply for subscriber:', subscriberId,
-      '— recoveryLikelihood:', classification.recoveryLikelihood)
-    await triggerFounderHandoff({
-      subscriberId,
-      classification,
-      fromName,
-      trigger: 'reply_classification',
-    })
-    return { sent: false, reason: 'ai_handoff' }
-  }
-
-  // 2) 3-email budget ceiling. Exit email + up to MAX_FOLLOWUPS follow-ups
+  // 3-email budget ceiling. Exit email + up to MAX_FOLLOWUPS follow-ups
   //    is the hard cap. If the AI has already burned both follow-up slots
   //    without deciding to hand off, silently close the subscriber as lost.
   //    Notably: NO founder email — the point of AI judgment is that if the
