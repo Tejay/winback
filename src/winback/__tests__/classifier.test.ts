@@ -479,4 +479,85 @@ describe('classifySubscriber', () => {
     })
     expect(result.success).toBe(true)
   })
+
+  // ─── Forbidden-phrase detection (Phase 8 — listen-only exit emails) ────
+
+  it('rejects AI bodies that promise a future action ("I\'ll send a calendar link")', async () => {
+    const signals = makeSignals()
+    mockLLMResponse({
+      tier: 1, tierReason: 't', cancellationReason: 'r', cancellationCategory: 'Other',
+      confidence: 0.8, suppress: false,
+      firstMessage: { subject: 's', body: "Hi A,\n\nFair call. I'll send a calendar link.\n\n— B", sendDelaySecs: 60 },
+      triggerKeyword: null, winBackSubject: 'w', winBackBody: 'b',
+      drawerInsight: { read: 'r', worthKnowing: '' },
+    })
+    await expect(classifySubscriber(signals, {})).rejects.toThrow(/forbidden phrase/i)
+  })
+
+  it('rejects AI bodies that claim a fix shipped ("we shipped native Slack")', async () => {
+    const signals = makeSignals()
+    mockLLMResponse({
+      tier: 1, tierReason: 't', cancellationReason: 'r', cancellationCategory: 'Feature',
+      confidence: 0.8, suppress: false,
+      firstMessage: { subject: 's', body: 'Hi A,\n\nWe shipped native Slack last week — worth a look.\n\n— B', sendDelaySecs: 60 },
+      triggerKeyword: null, winBackSubject: 'w', winBackBody: 'b',
+      drawerInsight: { read: 'r', worthKnowing: '' },
+    })
+    await expect(classifySubscriber(signals, {})).rejects.toThrow(/forbidden phrase/i)
+  })
+
+  it('rejects AI bodies that offer a discount ("20% off")', async () => {
+    const signals = makeSignals()
+    mockLLMResponse({
+      tier: 1, tierReason: 't', cancellationReason: 'r', cancellationCategory: 'Price',
+      confidence: 0.8, suppress: false,
+      firstMessage: { subject: 's', body: 'Hi A,\n\nFair point. Annual at 20% off would shift the math.\n\n— B', sendDelaySecs: 60 },
+      triggerKeyword: null, winBackSubject: 'w', winBackBody: 'b',
+      drawerInsight: { read: 'r', worthKnowing: '' },
+    })
+    await expect(classifySubscriber(signals, {})).rejects.toThrow(/forbidden phrase/i)
+  })
+
+  it('rejects AI bodies that reference the roadmap ("on the roadmap")', async () => {
+    const signals = makeSignals()
+    mockLLMResponse({
+      tier: 1, tierReason: 't', cancellationReason: 'r', cancellationCategory: 'Feature',
+      confidence: 0.8, suppress: false,
+      firstMessage: { subject: 's', body: "Hi A,\n\nThat's on the roadmap and I'll flag you when it ships.\n\n— B", sendDelaySecs: 60 },
+      triggerKeyword: null, winBackSubject: 'w', winBackBody: 'b',
+      drawerInsight: { read: 'r', worthKnowing: '' },
+    })
+    await expect(classifySubscriber(signals, {})).rejects.toThrow(/forbidden phrase/i)
+  })
+
+  it('accepts a pure listen-only body that asks a question', async () => {
+    const signals = makeSignals()
+    mockLLMResponse({
+      tier: 1, tierReason: 't', cancellationReason: 'r', cancellationCategory: 'Price',
+      confidence: 0.8, suppress: false,
+      firstMessage: { subject: 's', body: 'Hi A,\n\nFair point on the price. What would have actually worked for your team?\n\n— B', sendDelaySecs: 60 },
+      triggerKeyword: null, winBackSubject: 'w', winBackBody: 'b',
+      drawerInsight: { read: 'r', worthKnowing: '' },
+    })
+    const result = await classifySubscriber(signals, {})
+    expect(result.firstMessage?.body).toContain('What would have actually worked')
+  })
+
+  it('system prompt forbids commitments + claims of shipped fixes', async () => {
+    const signals = makeSignals()
+    mockLLMResponse({
+      tier: 3, tierReason: 't', cancellationReason: 'r', cancellationCategory: 'Other',
+      confidence: 0.5, suppress: false,
+      firstMessage: { subject: 's', body: 'b', sendDelaySecs: 60 },
+      triggerKeyword: null, winBackSubject: 'w', winBackBody: 'b',
+    })
+    await classifySubscriber(signals, {})
+    const systemPrompt = mockCreate.mock.calls[0][0].system as string
+    expect(systemPrompt).toContain('YOUR ROLE')
+    expect(systemPrompt).toContain('NOT authorized')
+    expect(systemPrompt).toContain('COMMITMENT LIES')
+    expect(systemPrompt).toContain('FALSE-FIX CLAIMS')
+    // The deprecated "matching fix shipped" branch is gone.
+    expect(systemPrompt).not.toContain('matching fix shipped')
+  })
 })

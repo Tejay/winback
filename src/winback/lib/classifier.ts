@@ -153,6 +153,43 @@ export async function classifySubscriber(
       throw new Error('LLM output failed Zod validation')
     }
 
+    // Defense-in-depth — reject AI bodies that contain commitments,
+    // false-fix claims, or pricing offers the AI is not authorized to
+    // make. Spec: "exit email's job is to LISTEN, not retain." Even with
+    // the prompt forbidding these patterns, the LLM occasionally
+    // hallucinates them; this catches the regression at validation time
+    // and forces a retry on the next classifier-tick pass.
+    const FORBIDDEN_PATTERNS = [
+      // commitments / promises
+      /\bshipp(ed|ing)\b/i, /\bship soon\b/i, /\bnext week\b/i, /\bcoming\b/i,
+      /\bon the roadmap\b/i, /\bin beta\b/i, /\blaunching\b/i, /\brolling out\b/i,
+      /\blive now\b/i, /\buncapped now\b/i,
+      /\bI['']?ll (send|flag|ping|let you know|reach out|get back)\b/i,
+      /\bcalendar (link|invite)\b/i, /\bschedule a call\b/i, /\bjump on a call\b/i,
+      // false-fix claims
+      /\bI rebuilt\b/i, /\bI shipped\b/i, /\bwe shipped\b/i, /\bI['']?ve simplified\b/i,
+      /\bno longer (requires|needs)\b/i, /\bself[- ]serve now\b/i, /\bfixed now\b/i,
+      /\bit['']?s gone\b/i, /\byou can now\b/i, /\bnow you can\b/i,
+      // pricing / offers
+      /\b\d{1,2}% off\b/, /\bdiscount\b/i, /\bannual at\b/i, /\bspecial pricing\b/i,
+      /\bcustom plan\b/i, /\benterprise tier\b/i, /\bhappy to discuss\b/i,
+    ]
+    const body = result.data.firstMessage?.body ?? ''
+    const forbidden = FORBIDDEN_PATTERNS.find((p) => p.test(body))
+    if (forbidden) {
+      console.error('AI body contained forbidden commitment/offer pattern:', forbidden.source)
+      console.error('Body:', body)
+      await logEvent({
+        name: 'classifier_forbidden_phrase',
+        properties: {
+          stripeCustomerId: signals.stripeCustomerId,
+          pattern:          forbidden.source,
+          bodySnippet:      body.slice(0, 200),
+        },
+      })
+      throw new Error(`AI body contained forbidden phrase matching /${forbidden.source}/`)
+    }
+
     // Spec 72 — drift signal. AI is instructed to keep body ≤250 chars; Zod
     // accepts up to 350. Anything in between is the LLM missing the target
     // but still within the ceiling — we send it, but log so we can tune
