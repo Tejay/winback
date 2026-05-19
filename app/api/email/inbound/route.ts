@@ -4,9 +4,7 @@ import { emailsSent, churnedSubscribers, customers, users, inboundEvents, subscr
 import { eq, count, desc, and } from 'drizzle-orm'
 import { Webhook } from 'svix'
 import { classifySubscriber } from '@/src/winback/lib/classifier'
-import { sendReplyEmail, resolveFounderNotificationEmail, buildFromDisplayName } from '@/src/winback/lib/email'
-import { buildReplyAfterHandoffNotification } from '@/src/winback/lib/founder-handoff-email'
-import { Resend } from 'resend'
+import { sendReplyEmail, buildFromDisplayName } from '@/src/winback/lib/email'
 import { SubscriberSignals } from '@/src/winback/lib/types'
 import { logEvent } from '@/src/winback/lib/events'
 import { buildConversationThread } from '@/src/winback/lib/conversation'
@@ -419,56 +417,24 @@ export async function POST(req: Request) {
         ? { subject: classification.winBackSubject, body: classification.winBackBody, sendDelaySecs: 0 }
         : null)
 
-    // Spec 22a — if subscriber is handed off OR has AI paused, route this reply
-    // to the founder (not the AI). Notification rules:
-    //   • Handed off + active pause (snooze) → muted (no notification)
-    //   • Handed off + no active pause → notify (reply-after-handoff)
-    //   • Proactive pause (not handed off) → notify (reply-during-pause)
-    const isHandedOff = subscriber.founderHandoffAt && !subscriber.founderHandoffResolvedAt
-    const isPaused = subscriber.aiPausedUntil && subscriber.aiPausedUntil.getTime() > Date.now()
+    // If the founder has taken over this conversation, AI is paused. The
+    // reply still gets persisted + lastEngagementAt bumped (already done
+    // above) — but no auto-reply fires. The founder sees the new reply
+    // next time they open the drawer.
+    //
+    // The legacy `founderHandoffAt` branch is gone — automatic handoff
+    // was removed in Phase 1 of the drawer redesign. AI no longer
+    // emits `handoff: true`; the only path into a paused state is the
+    // founder's explicit take-over toggle, which sets aiPausedUntil
+    // directly. founderHandoffAt is still read here defensively for any
+    // in-flight legacy rows but will go away in Phase 7 cleanup.
+    const isPaused = (subscriber.aiPausedUntil && subscriber.aiPausedUntil.getTime() > Date.now())
+      || (subscriber.founderHandoffAt && !subscriber.founderHandoffResolvedAt)
 
-    if (isHandedOff || isPaused) {
-      // Handoff-snooze mutes notifications; any other combination notifies.
-      const shouldNotify = !(isHandedOff && isPaused)
-
-      if (!shouldNotify) {
-        console.log('Reply received while handoff is snoozed — saved but no notification:', subscriberId)
-      } else {
-        try {
-          const recipient = customer ? await resolveFounderNotificationEmail(customer.id) : null
-          if (recipient) {
-            const { subject, body } = await buildReplyAfterHandoffNotification({
-              subscriber: {
-                id: subscriber.id,
-                email: subscriber.email,
-                name: subscriber.name,
-                planName: subscriber.planName,
-                mrrCents: subscriber.mrrCents,
-                cancellationReason: subscriber.cancellationReason,
-                triggerNeed: subscriber.triggerNeed,
-                cancelledAt: subscriber.cancelledAt,
-                stripeComment: subscriber.stripeComment,
-                replyText: replyBody,  // the body we just inserted
-              },
-              founderName: customer?.founderName ?? 'there',
-              newReplyText: replyBody,
-            })
-            const resend = new Resend(process.env.RESEND_API_KEY!)
-            await resend.emails.send({
-              from: `Winback <noreply@winbackflow.co>`,
-              to: recipient,
-              subject,
-              text: body,
-            })
-            console.log('Reply-under-pause-or-handoff notification sent to founder:', recipient)
-          }
-        } catch (notifyErr) {
-          console.error('Failed to notify founder of reply under pause/handoff:', notifyErr)
-        }
-      }
-      // Don't auto-reply while under pause or handoff
+    if (isPaused) {
+      console.log('Reply received while founder is handling — saved, no auto-reply:', subscriberId)
       await finalizeInboundEvent(emailId, 'processed', subscriberId)
-      return NextResponse.json({ received: true, processed: true, handedOff: isHandedOff, paused: isPaused })
+      return NextResponse.json({ received: true, processed: true, paused: true })
     }
 
     // Spec 65 — if this reply is to a re-engagement email, the conversation
