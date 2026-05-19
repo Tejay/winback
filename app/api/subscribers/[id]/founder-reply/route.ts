@@ -8,6 +8,7 @@ import { Resend } from 'resend'
 import {
   buildFromDisplayName,
   appendStandardFooter,
+  ensureSignoff,
   reactivationUrl,
   unsubscribeUrl,
   isDoNotContact,
@@ -135,9 +136,12 @@ export async function POST(
   const subject     = lastOutbound?.subject
     ? (lastOutbound.subject.startsWith('Re:') ? lastOutbound.subject : `Re: ${lastOutbound.subject}`)
     : `Following up`
-  const fullBody    = appendStandardFooter(parsed.data.body, subscriberId, fromName)
+  // append-if-missing: respects the founder's own sign-off if they typed one,
+  // adds the canonical one only when absent.
+  const signedBody  = ensureSignoff(parsed.data.body, fromName)
+  const fullBody    = appendStandardFooter(signedBody, subscriberId, fromName)
   const html        = renderWinbackEmailHtml({
-    body:            parsed.data.body,
+    body:            signedBody,
     reactivationUrl: reactivationUrl(subscriberId),
     unsubscribeUrl:  unsubscribeUrl(subscriberId),
   })

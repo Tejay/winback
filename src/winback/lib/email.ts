@@ -137,15 +137,39 @@ function listUnsubscribeHeaders(subscriberId: string) {
  * reactivation) — see sendDunningEmail() for that variant.
  */
 export function appendStandardFooter(body: string, subscriberId: string, fromName: string): string {
+  // NOTE: the sign-off ("— Name") is NOT added here anymore. It belongs to
+  // the body, guaranteed by ensureSignoff() before this runs — so it renders
+  // consistently in BOTH the text (this) and HTML (renderWinbackEmailHtml,
+  // which takes the raw body) paths. This footer only adds the resubscribe
+  // CTA + unsubscribe line.
   return `${body}
 
 Ready to give us another try? Resubscribe here:
 ${reactivationUrl(subscriberId)}
 
-— ${fromName}
-
 — — —
 If you'd rather not hear from us, unsubscribe: ${unsubscribeUrl(subscriberId)}`
+}
+
+/**
+ * Guarantees a body ends with exactly one sign-off line ("— {fromName}").
+ *
+ * Append-if-missing, never strip: if the body already ends with a sign-off
+ * (em-dash / en-dash / hyphen + a word), it's left untouched — this respects
+ * a founder's hand-typed closing on the take-over reply path. Only when no
+ * sign-off is present do we append the canonical one.
+ *
+ * Why this exists: the sign-off used to be split across three owners (the
+ * LLM prompt asked for it, appendStandardFooter added another, the HTML
+ * renderer added none). Result: ~76% of AI exit emails shipped with no
+ * sign-off in HTML, and the rare LLM-signed ones double-signed in text.
+ * Now code owns it, in one place, before both render paths.
+ */
+export function ensureSignoff(body: string, fromName: string): string {
+  const trimmed = body.trimEnd()
+  // Already ends with a sign-off line? (e.g. "\n— Alex", "\n– Sam", "\n- Jo")
+  if (/\n\s*[—–-]\s*\S.*$/.test(trimmed)) return trimmed
+  return `${trimmed}\n\n— ${fromName}`
 }
 
 /**
@@ -325,9 +349,12 @@ export async function sendEmail(params: {
   // doesn't matter as long as MX is set up. See spec 27 + inbound DNS plan.
   const from = `${fromName} <reply+${subscriberId}@reply.winbackflow.co>`
 
-  const fullBody = appendStandardFooter(body, subscriberId, fromName)
+  // Sign-off is code-owned: ensure exactly one in the body BEFORE rendering
+  // so text + HTML stay consistent. See ensureSignoff().
+  const signedBody = ensureSignoff(body, fromName)
+  const fullBody = appendStandardFooter(signedBody, subscriberId, fromName)
   const html     = renderWinbackEmailHtml({
-    body,
+    body: signedBody,
     reactivationUrl: reactivationUrl(subscriberId),
     unsubscribeUrl:  unsubscribeUrl(subscriberId),
   })
@@ -433,9 +460,9 @@ export async function scheduleExitEmail(params: {
   if (!messageId) return
 
   // Spec 27 — persist the full body so /admin/subscribers/[id] can render
-  // the conversation turn-by-turn. Use the already-footered body so what we
-  // store matches what the subscriber actually received.
-  const fullBody = appendStandardFooter(body, subscriberId, fromName)
+  // the conversation turn-by-turn. Sign + footer it so the stored copy
+  // matches exactly what sendEmail() actually sent (which signs the body).
+  const fullBody = appendStandardFooter(ensureSignoff(body, fromName), subscriberId, fromName)
   // Spec 28 — idempotent on (subscriber_id, type) per migration 023.
   await recordEmailSentIdempotent(
     {
@@ -582,9 +609,10 @@ export async function sendReplyEmail(params: {
   // reply+{id}@reply.winbackflow.co — see comment in sendEmail for why the
   // subdomain. Same regex parses the prefix in /api/email/inbound.
   const from = `${fromName} <reply+${subscriberId}@reply.winbackflow.co>`
-  const fullBody = appendStandardFooter(body, subscriberId, fromName)
+  const signedBody = ensureSignoff(body, fromName)
+  const fullBody = appendStandardFooter(signedBody, subscriberId, fromName)
   const html     = renderWinbackEmailHtml({
-    body,
+    body: signedBody,
     reactivationUrl: reactivationUrl(subscriberId),
     unsubscribeUrl:  unsubscribeUrl(subscriberId),
   })
