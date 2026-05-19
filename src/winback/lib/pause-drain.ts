@@ -28,7 +28,6 @@ import {
   scheduleExitEmail,
   sendDunningEmail,
   sendDunningFollowupEmail,
-  sendReplyEmail,
   buildFromDisplayName,
 } from './email'
 import { logEvent } from './events'
@@ -457,13 +456,16 @@ async function processReplyItem(sub: SubscriberRow): Promise<DrainItem> {
     productName: customer.productName ?? undefined,
   })
 
-  // Persist refreshed classification for visibility
+  // Drawer redesign — AI does NOT send follow-up emails. A reply that
+  // queued during a pause gets re-classified to refresh the founder-facing
+  // analysis (drawerInsight + recovery), then the row is marked processed.
+  // No auto-reply. The founder owns any reply via the take-over composer —
+  // they'll see the queued reply in the drawer when they open it.
   await db
     .update(churnedSubscribers)
     .set({
       tier: classification.tier,
       confidence: String(classification.confidence),
-      handoffReasoning: classification.handoffReasoning,
       recoveryLikelihood: classification.recoveryLikelihood,
       drawerInsightRead:         classification.drawerInsight?.read ?? '',
       drawerInsightWorthKnowing: classification.drawerInsight?.worthKnowing ?? '',
@@ -471,30 +473,14 @@ async function processReplyItem(sub: SubscriberRow): Promise<DrainItem> {
     })
     .where(eq(churnedSubscribers.id, sub.id))
 
-  // sendReplyEmail handles classification.handoff and classification.suppress
-  // internally and returns { sent, reason }. Whatever it returns, the row
-  // has reached a terminal decision and should be marked drain-processed.
-  const result = await sendReplyEmail({
-    subscriberId: sub.id,
-    email: sub.email!,
-    classification,
-    fromName: buildFromDisplayName({ founderName: customer.founderName, productName: customer.productName }),
-  })
-
   await markProcessed(sub.id)
 
-  if (result.sent) {
-    return { subscriberId: sub.id, customerId: sub.customerId, category: 'reply', action: 'sent' }
-  }
-  if (result.reason === 'ai_handoff') {
-    return { subscriberId: sub.id, customerId: sub.customerId, category: 'reply', action: 'handoff' }
-  }
   return {
     subscriberId: sub.id,
     customerId: sub.customerId,
     category: 'reply',
     action: 'skipped_classifier',
-    reasoning: result.reason,
+    reasoning: 'reply re-classified (analysis only); AI follow-ups removed',
   }
 }
 
