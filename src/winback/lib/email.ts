@@ -151,6 +151,28 @@ If you'd rather not hear from us, unsubscribe: ${unsubscribeUrl(subscriberId)}`
 }
 
 /**
+ * Strips the standard footer (reactivation block, sign-off separator,
+ * unsubscribe link) from a stored body so the dashboard can render the
+ * conversation without boilerplate or signed URLs. Truncates at the first
+ * marker that appears — handles both the win-back footer (starts with
+ * "Ready to give us another try?") and the dunning footer (starts with the
+ * "— — —" separator before the unsubscribe line).
+ */
+export function stripStandardFooter(body: string): string {
+  const markers = [
+    'Ready to give us another try? Resubscribe here:',
+    '\n— — —',
+    "If you'd rather not hear from us, unsubscribe:",
+  ]
+  let cut = body.length
+  for (const m of markers) {
+    const i = body.indexOf(m)
+    if (i !== -1 && i < cut) cut = i
+  }
+  return body.slice(0, cut).trimEnd()
+}
+
+/**
  * Returns true if the subscriber has opted out. Callers must skip sending.
  */
 export async function isDoNotContact(subscriberId: string): Promise<boolean> {

@@ -37,11 +37,17 @@ interface Subscriber {
   aiPausedReason: string | null
   // Spec 21a
   doNotContact?: boolean | null
-  // Migration 017 — AI-decided hand-off judgment, persisted on every
-  // classification pass (not just when hand-off fires). Lets the founder
-  // see WHY the AI made the call it made.
+  // DEPRECATED — Phase 1 of the drawer redesign replaced this. The
+  // LLM no longer emits handoff/handoffReasoning; the column still
+  // exists during the transition but values are always falsy on rows
+  // classified post-migration. Removed in Phase 7 cleanup.
   handoffReasoning: string | null
   recoveryLikelihood: 'high' | 'medium' | 'low' | null
+  // Drawer insight — populated on every classification pass. Replaces
+  // handoffReasoning as the founder-facing summary pinned above the
+  // conversation. Migration 050.
+  drawerInsightRead?: string | null
+  drawerInsightWorthKnowing?: string | null
   // Spec 40 — dunning fields surfaced on the payment-recovery tab.
   dunningState: 'awaiting_retry' | 'final_retry_pending' | 'churned_during_dunning' | 'recovered_during_dunning' | null
   dunningTouchCount: number | null
@@ -58,6 +64,25 @@ interface Subscriber {
   // to the promotion's wb_improvements row.
   appliedPromotionChip?: string | null
 }
+
+type ConversationMessage =
+  | {
+      direction: 'outbound'
+      id: string
+      type: string
+      subject: string | null
+      bodyText: string | null
+      sentAt: string
+      repliedAt: string | null
+    }
+  | {
+      direction: 'inbound'
+      id: string
+      body: string
+      fromEmail: string | null
+      receivedAt: string
+      inReplyToEmailId: string | null
+    }
 
 // Spec 39/40 — KPIs split by recovery type and time window plus
 // Spec 40 attention/pattern fields (handoff alert, top reasons,
@@ -258,9 +283,41 @@ export function DashboardClient({
   // section for one subscriber at a time (the selected one).
   const [externalContactOpen, setExternalContactOpen] = useState(false)
   const [copyFeedback, setCopyFeedback] = useState<string | null>(null)
+  const [conversation, setConversation] = useState<ConversationMessage[] | null>(null)
+  const [conversationLoading, setConversationLoading] = useState(false)
+  const [expandedMessageIds, setExpandedMessageIds] = useState<Set<string>>(new Set())
   useEffect(() => {
     // Reset on subscriber change so a new drawer always starts collapsed.
     setExternalContactOpen(false)
+    setExpandedMessageIds(new Set())
+  }, [selected?.id])
+
+  useEffect(() => {
+    if (!selected?.id) {
+      setConversation(null)
+      setConversationLoading(false)
+      return
+    }
+    const subscriberId = selected.id
+    let cancelled = false
+    setConversationLoading(true)
+    fetch(`/api/subscribers/${subscriberId}/conversation`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then((data) => {
+        if (cancelled) return
+        setConversation(Array.isArray(data?.messages) ? data.messages : [])
+      })
+      .catch((err) => {
+        if (cancelled) return
+        console.error('[dashboard] conversation fetch failed:', err)
+        setConversation([])
+      })
+      .finally(() => {
+        if (!cancelled) setConversationLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
   }, [selected?.id])
   // Spec 51 — bannerDismissed removed. Banner visibility is now derived
   // purely from server state (activatedAt + stripeSubscriptionId). No more
@@ -517,6 +574,88 @@ export function DashboardClient({
     })
     setSelected(null)
     fetchData()
+  }
+
+  // Drawer redesign — take-over toggle. Sets ai_paused_until to a far-
+  // future sentinel + ai_paused_reason='takeover'. AI stops auto-replying
+  // for this subscriber until handleHandBack flips it back.
+  async function handleTakeOver(id: string) {
+    const res = await fetch(`/api/subscribers/${id}/take-over`, { method: 'POST' })
+    if (!res.ok) {
+      console.error('[dashboard] take-over failed:', res.status)
+      return
+    }
+    // Optimistic update so the toggle flips immediately without a refetch.
+    setSelected((prev) => prev && prev.id === id
+      ? { ...prev, aiPausedUntil: new Date('9999-12-31T00:00:00Z').toISOString(), aiPausedReason: 'takeover' }
+      : prev)
+    fetchData()
+  }
+
+  async function handleHandBack(id: string) {
+    const res = await fetch(`/api/subscribers/${id}/hand-back`, { method: 'POST' })
+    if (!res.ok) {
+      console.error('[dashboard] hand-back failed:', res.status)
+      return
+    }
+    setSelected((prev) => prev && prev.id === id
+      ? { ...prev, aiPausedUntil: null, aiPausedReason: null, aiPausedAt: null }
+      : prev)
+    fetchData()
+  }
+
+  // Drawer redesign — founder reply composer. 500-char Zod-enforced on
+  // the server. On success, append the new outbound to the conversation
+  // optimistically so the drawer reflects it before the refetch lands.
+  const [replyDraft, setReplyDraft] = useState('')
+  const [replySending, setReplySending] = useState(false)
+  const [replyError, setReplyError] = useState<string | null>(null)
+  // No draft persistence by design — close the drawer = lose unsent text.
+  useEffect(() => { setReplyDraft(''); setReplyError(null) }, [selected?.id])
+
+  async function handleFounderReply(id: string) {
+    const body = replyDraft.trim()
+    if (!body || body.length > 500) return
+    setReplySending(true)
+    setReplyError(null)
+    try {
+      const res = await fetch(`/api/subscribers/${id}/founder-reply`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ body }),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.error ?? `HTTP ${res.status}`)
+      }
+      // Optimistic: append a synthetic outbound so the conversation
+      // re-renders with the new message immediately. The next fetch
+      // replaces it with the canonical row from the conversation API.
+      const data = await res.json().catch(() => ({}))
+      setConversation((prev) => prev
+        ? [...prev, {
+            direction: 'outbound' as const,
+            id: data.messageId ?? `local-${Date.now()}`,
+            type: 'founder_reply',
+            subject: null,
+            bodyText: body,
+            sentAt: new Date().toISOString(),
+            repliedAt: null,
+          }]
+        : prev)
+      setReplyDraft('')
+      // Re-fetch the conversation to pick up the canonical row.
+      if (selected?.id === id) {
+        fetch(`/api/subscribers/${id}/conversation`)
+          .then((r) => r.ok ? r.json() : null)
+          .then((d) => { if (d?.messages) setConversation(d.messages) })
+          .catch(() => {})
+      }
+    } catch (err) {
+      setReplyError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setReplySending(false)
+    }
   }
 
   // Spec 22b + Spec 40 — AI-state filters for win-back cohort, dunning-
@@ -1188,9 +1327,117 @@ export function DashboardClient({
 
             <div className="px-6 mt-5">
               <div className="text-sm font-semibold text-slate-900 mb-3">Email history</div>
-              <p className="text-sm text-slate-400">
-                No emails sent yet. Winback will send the first one automatically.
-              </p>
+              {conversationLoading && conversation === null ? (
+                <div className="flex items-center gap-2 text-sm text-slate-400">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" /> Loading…
+                </div>
+              ) : !conversation || conversation.length === 0 ? (
+                <p className="text-sm text-slate-400">
+                  No emails sent yet. Winback will send the first one automatically.
+                </p>
+              ) : (
+                <ol className="space-y-2">
+                  {conversation.map((m) => {
+                    const expanded = expandedMessageIds.has(m.id)
+                    const toggle = () => {
+                      setExpandedMessageIds((prev) => {
+                        const next = new Set(prev)
+                        if (next.has(m.id)) next.delete(m.id)
+                        else next.add(m.id)
+                        return next
+                      })
+                    }
+                    const ts = m.direction === 'outbound' ? m.sentAt : m.receivedAt
+                    const dateLabel = new Date(ts).toLocaleDateString(undefined, {
+                      month: 'short',
+                      day: 'numeric',
+                    })
+                    if (m.direction === 'outbound') {
+                      const hasBody = !!m.bodyText && m.bodyText.trim().length > 0
+                      const title = m.subject ?? '(no subject)'
+                      return (
+                        <li key={m.id} className="border border-slate-200 rounded-xl">
+                          <button
+                            type="button"
+                            onClick={toggle}
+                            className="w-full flex items-start gap-3 p-3 text-left"
+                          >
+                            <span className="mt-0.5 inline-flex items-center justify-center w-6 h-6 rounded-full bg-slate-900 text-white text-[10px] font-semibold shrink-0">
+                              W
+                            </span>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-0.5 flex-wrap">
+                                <span className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">
+                                  Winback · {m.type}
+                                </span>
+                                <span className="text-[10px] text-slate-400">{dateLabel}</span>
+                                {m.repliedAt && (
+                                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-medium">
+                                    replied
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-sm text-slate-800 truncate">{title}</div>
+                            </div>
+                            {hasBody && (
+                              <ChevronDown
+                                className={`w-3.5 h-3.5 text-slate-400 mt-1.5 shrink-0 transition-transform ${
+                                  expanded ? 'rotate-180' : ''
+                                }`}
+                              />
+                            )}
+                          </button>
+                          {expanded && hasBody && (
+                            <div className="px-3 pb-3 -mt-1">
+                              <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-line">
+                                {m.bodyText}
+                              </p>
+                            </div>
+                          )}
+                        </li>
+                      )
+                    }
+                    const initial =
+                      (m.fromEmail?.trim()?.[0] ?? selected?.name?.trim()?.[0] ?? '?').toUpperCase()
+                    return (
+                      <li key={m.id} className="border border-blue-200 bg-blue-50/40 rounded-xl">
+                        <button
+                          type="button"
+                          onClick={toggle}
+                          className="w-full flex items-start gap-3 p-3 text-left"
+                        >
+                          <span className="mt-0.5 inline-flex items-center justify-center w-6 h-6 rounded-full bg-blue-600 text-white text-[10px] font-semibold shrink-0">
+                            {initial}
+                          </span>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-0.5">
+                              <span className="text-[10px] uppercase tracking-wider text-blue-700 font-semibold">
+                                Reply
+                              </span>
+                              <span className="text-[10px] text-slate-400">{dateLabel}</span>
+                            </div>
+                            <div className="text-sm text-slate-800 truncate">
+                              {m.fromEmail ?? 'Subscriber reply'}
+                            </div>
+                          </div>
+                          <ChevronDown
+                            className={`w-3.5 h-3.5 text-slate-400 mt-1.5 shrink-0 transition-transform ${
+                              expanded ? 'rotate-180' : ''
+                            }`}
+                          />
+                        </button>
+                        {expanded && (
+                          <div className="px-3 pb-3 -mt-1">
+                            <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-line">
+                              {m.body}
+                            </p>
+                          </div>
+                        )}
+                      </li>
+                    )
+                  })}
+                </ol>
+              )}
             </div>
 
             <div className="px-6 mt-5 pt-5 border-t border-slate-100 pb-6">
