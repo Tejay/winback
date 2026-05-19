@@ -350,6 +350,8 @@ async function processCancellationItem(sub: SubscriberRow): Promise<DrainItem> {
       winBackBody: classification.winBackBody,
       handoffReasoning: classification.handoffReasoning,
       recoveryLikelihood: classification.recoveryLikelihood,
+      drawerInsightRead:         classification.drawerInsight?.read ?? '',
+      drawerInsightWorthKnowing: classification.drawerInsight?.worthKnowing ?? '',
       updatedAt: new Date(),
     })
     .where(eq(churnedSubscribers.id, sub.id))
@@ -361,7 +363,7 @@ async function processCancellationItem(sub: SubscriberRow): Promise<DrainItem> {
       customerId: sub.customerId,
       category: 'cancellation',
       action: 'skipped_classifier',
-      reasoning: classification.suppressReason ?? classification.handoffReasoning,
+      reasoning: classification.suppressReason ?? classification.drawerInsight?.read ?? '',
     }
   }
 
@@ -477,6 +479,8 @@ async function processReplyItem(sub: SubscriberRow): Promise<DrainItem> {
       confidence: String(classification.confidence),
       handoffReasoning: classification.handoffReasoning,
       recoveryLikelihood: classification.recoveryLikelihood,
+      drawerInsightRead:         classification.drawerInsight?.read ?? '',
+      drawerInsightWorthKnowing: classification.drawerInsight?.worthKnowing ?? '',
       updatedAt: new Date(),
     })
     .where(eq(churnedSubscribers.id, sub.id))

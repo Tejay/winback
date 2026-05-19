@@ -199,6 +199,8 @@ export async function runClassifierTick(): Promise<ClassifierTickStats> {
         winBackBody:          classification.winBackBody,
         handoffReasoning:     classification.handoffReasoning,
         recoveryLikelihood:   classification.recoveryLikelihood,
+        drawerInsightRead:         classification.drawerInsight?.read ?? '',
+        drawerInsightWorthKnowing: classification.drawerInsight?.worthKnowing ?? '',
         status:               classification.tier === 4 ? 'skipped' : (sub.status ?? 'pending'),
         classifiedAt:         new Date(),
         updatedAt:            new Date(),
