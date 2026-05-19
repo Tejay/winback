@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { StatusBadge } from '@/components/status-badge'
 import { AiStateBadge } from '@/components/ai-state-badge'
 import { Pagination } from '@/components/pagination'
-import { TrendingUp, CheckCircle, DollarSign, Users, Search, Zap, X, RotateCcw, Check, Loader2, Sparkles, MessageSquare, CreditCard, ChevronRight, ChevronDown, Copy, Mail } from 'lucide-react'
+import { TrendingUp, CheckCircle, DollarSign, Users, Search, Zap, X, RotateCcw, Check, Loader2, Sparkles, MessageSquare, CreditCard, ChevronRight, ChevronDown, Copy, Mail, Send, ArrowLeft } from 'lucide-react'
 
 interface Subscriber {
   id: string
@@ -1156,184 +1156,123 @@ export function DashboardClient({
         itemLabel={tab === 'winback' ? 'subscribers' : 'recoveries'}
       />
 
-      {/* Subscriber detail panel */}
-      {selected && (
+      {/* Subscriber detail panel — block layout (drawer redesign Phase 5).
+          Six discrete blocks separated by hairline dividers: identity ·
+          take-over toggle · AI insight · conversation · reply composer ·
+          footer. Founder takes over via the toggle; AI is paused for
+          this subscriber until they explicitly hand back. */}
+      {selected && (() => {
+        const isFounderHandling = !!(selected.aiPausedUntil && new Date(selected.aiPausedUntil).getTime() > Date.now())
+        const hasInsight = !!(selected.drawerInsightRead || selected.drawerInsightWorthKnowing)
+        const replyOver = replyDraft.length > 500
+        const firstInitial = (selected.name?.trim()?.[0] ?? selected.email?.trim()?.[0] ?? '?').toUpperCase()
+        return (
         <>
           <div className="fixed inset-0 bg-black/20 z-40" onClick={() => setSelected(null)} />
-          <div className="fixed right-0 top-0 h-full w-full sm:w-96 bg-white shadow-xl border-l border-slate-100 z-50 overflow-y-auto">
-            <div className="px-6 pt-6 pb-4 border-b border-slate-100 flex items-start justify-between">
-              <div>
-                <div className="text-xs font-semibold uppercase tracking-widest text-slate-400 mb-1">Subscriber</div>
-                <div className="text-xl font-bold text-slate-900">{selected.name ?? 'Unknown'}</div>
-              </div>
-              <button onClick={() => setSelected(null)} className="text-slate-400 hover:text-slate-600">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
+          <div className="fixed right-0 top-0 h-full w-full sm:w-[420px] bg-white shadow-xl border-l border-slate-100 z-50 overflow-y-auto">
 
-            <div className="px-6 py-4 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <StatusBadge status={selected.status as 'pending' | 'contacted' | 'recovered' | 'lost' | 'skipped'} />
-                {selected.status === 'recovered' && selected.attributionType && (
-                  <span className={`text-xs font-medium ${
-                    selected.attributionType === 'strong'
-                      ? 'text-green-600'
-                      : 'text-blue-600'
-                  }`}>
-                    {selected.attributionType === 'strong' ? '— via Winback link' : '— resubscribed organically'}
+            {/* Block 1: identity — name + email + MRR + recovery chip */}
+            <div className="px-5 pt-5 pb-4 flex items-start gap-3">
+              <div className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-amber-200 text-amber-900 text-sm font-semibold shrink-0">
+                {firstInitial}
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-start justify-between">
+                  <div className="min-w-0">
+                    <div className="text-base font-semibold text-slate-900 truncate">{selected.name ?? 'Unknown'}</div>
+                    <div className="text-xs text-slate-500 truncate mt-0.5">{selected.email ?? '(no email on file)'}</div>
+                  </div>
+                  <button
+                    onClick={() => setSelected(null)}
+                    className="w-7 h-7 -mr-1 -mt-1 rounded-full hover:bg-slate-100 flex items-center justify-center text-slate-400 hover:text-slate-700 shrink-0"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+                <div className="flex items-center gap-2 mt-2 flex-wrap">
+                  <span className="text-sm font-semibold text-slate-900 tabular-nums">
+                    ${(selected.mrrCents / 100).toFixed(0)}<span className="text-xs text-slate-400 font-medium">/mo</span>
                   </span>
-                )}
-              </div>
-              <div className="text-right">
-                <div className="text-xs font-semibold uppercase tracking-widest text-slate-400">MRR</div>
-                <div className="text-xl font-bold text-slate-900">${(selected.mrrCents / 100).toFixed(2)}</div>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3 px-6">
-              <div className="bg-slate-50 rounded-xl p-3">
-                <div className="text-xs font-semibold uppercase tracking-widest text-slate-400 mb-1">Email</div>
-                <div className="text-sm font-medium text-slate-900 truncate">{selected.email ?? '—'}</div>
-              </div>
-              <div className="bg-slate-50 rounded-xl p-3">
-                <div className="text-xs font-semibold uppercase tracking-widest text-slate-400 mb-1">Plan</div>
-                <div className="text-sm font-medium text-slate-900">{selected.planName ?? '—'}</div>
-              </div>
-              <div className="bg-slate-50 rounded-xl p-3">
-                <div className="text-xs font-semibold uppercase tracking-widest text-slate-400 mb-1">Cancelled</div>
-                <div className="text-sm font-medium text-slate-900">
-                  {selected.cancelledAt ? new Date(selected.cancelledAt).toISOString().split('T')[0] : '—'}
-                </div>
-              </div>
-              <div className="bg-slate-50 rounded-xl p-3">
-                <div className="text-xs font-semibold uppercase tracking-widest text-slate-400 mb-1">Tenure</div>
-                <div className="text-sm font-medium text-slate-900">
-                  {selected.tenureDays != null
-                    ? selected.tenureDays >= 30
-                      ? `${Math.round(selected.tenureDays / 30)} months`
-                      : `${selected.tenureDays} days`
-                    : '—'}
-                </div>
-              </div>
-            </div>
-
-            {/* Spec 40 polish — Why they cancelled, side-by-side.
-                Left: what the customer typed in Stripe's cancel flow
-                  (stripeComment / stripeEnum) — the raw voice.
-                Right: how the AI interpreted that into our internal
-                  cancellationReason + category + tier.
-                Lets the founder spot-check whether the AI's read
-                matches what the customer actually said. */}
-            {(selected.cancellationReason || selected.stripeComment || selected.stripeEnum) && (
-              <div className="mx-6 mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div className="bg-slate-50 rounded-xl p-4 border border-slate-100">
-                  <div className="text-[10px] font-semibold uppercase tracking-widest text-slate-500 mb-2">
-                    What they said
-                  </div>
-                  {selected.stripeEnum && (
-                    <div className="inline-flex items-center text-[11px] font-mono px-2 py-0.5 rounded bg-slate-200/70 text-slate-700 mb-2">
-                      {selected.stripeEnum}
-                    </div>
-                  )}
-                  {selected.stripeComment ? (
-                    <div className="text-sm text-slate-700 italic leading-relaxed">
-                      &ldquo;{selected.stripeComment}&rdquo;
-                    </div>
-                  ) : !selected.stripeEnum ? (
-                    <div className="text-xs text-slate-400 italic">
-                      Customer left no comment in Stripe&apos;s cancel flow.
-                    </div>
-                  ) : null}
-                </div>
-                <div className="bg-blue-50 rounded-xl p-4 border border-blue-100">
-                  <div className="flex items-center justify-between mb-2 gap-2">
-                    <div className="text-[10px] font-semibold uppercase tracking-widest text-blue-600">
-                      What we heard
-                    </div>
-                    {selected.tier != null && (
-                      <span className="inline-flex items-center rounded-full bg-blue-100 text-blue-700 text-[10px] font-bold px-2 py-0.5">
-                        T{selected.tier}
+                  {selected.recoveryLikelihood === 'high' && (
+                    <>
+                      <span className="text-slate-300">·</span>
+                      <span className="inline-flex items-center text-[10px] uppercase tracking-wider font-semibold text-amber-900 bg-amber-100 border border-amber-200 px-2 py-0.5 rounded-full">
+                        High recovery
                       </span>
-                    )}
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Block 2: state toggle — take-over / hand-back */}
+            <div className="px-5 py-3 border-t border-slate-100">
+              {isFounderHandling ? (
+                <div className="bg-slate-900 rounded-xl px-3.5 py-2.5 flex items-center justify-between">
+                  <div>
+                    <div className="text-[13px] font-semibold text-white leading-tight">You're handling this</div>
+                    <div className="text-[11px] text-slate-300 leading-tight mt-0.5">AI is paused on this conversation</div>
                   </div>
-                  {selected.cancellationReason && (
-                    <div className="text-sm font-medium text-slate-900 mb-1">
-                      {selected.cancellationReason}
+                  <button
+                    onClick={() => handleHandBack(selected.id)}
+                    className="text-xs font-medium text-slate-900 bg-white hover:bg-slate-100 rounded-full px-3 py-1.5 flex items-center gap-1 shadow-sm"
+                  >
+                    <ArrowLeft className="w-3 h-3" />
+                    Hand back
+                  </button>
+                </div>
+              ) : (
+                <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-3.5 py-2.5 flex items-center justify-between">
+                  <div>
+                    <div className="text-[13px] font-semibold text-emerald-900 leading-tight">AI handling this conversation</div>
+                    <div className="text-[11px] text-emerald-700/80 leading-tight mt-0.5">Replies are auto-answered</div>
+                  </div>
+                  <button
+                    onClick={() => handleTakeOver(selected.id)}
+                    className="text-xs font-medium text-slate-900 bg-white hover:bg-slate-50 border border-slate-200 rounded-full px-3 py-1.5"
+                  >
+                    Take over →
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Block 3: AI insight — Read + Worth knowing */}
+            {hasInsight && (
+              <div className="px-5 py-3 border-t border-slate-100">
+                <div className="rounded-xl bg-violet-50 border border-violet-200/60 p-3.5 flex items-start gap-2.5">
+                  <div className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-violet-600 text-white text-[10px] font-bold shrink-0 mt-0.5">AI</div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[10px] uppercase tracking-wider font-semibold text-violet-700 mb-1">Insight</div>
+                    <div className="text-[13px] text-slate-800 leading-relaxed space-y-1">
+                      {selected.drawerInsightRead && (
+                        <div><span className="text-violet-700 font-semibold">Read.</span> {selected.drawerInsightRead}</div>
+                      )}
+                      {selected.drawerInsightWorthKnowing && (
+                        <div><span className="text-violet-700 font-semibold">Worth knowing.</span> {selected.drawerInsightWorthKnowing}</div>
+                      )}
                     </div>
-                  )}
-                  {selected.cancellationCategory && (
-                    <div className="text-xs text-slate-500">
-                      Category: <span className="text-slate-700 font-medium">{selected.cancellationCategory}</span>
-                    </div>
-                  )}
+                  </div>
                 </div>
               </div>
             )}
 
-            {selected.triggerNeed && (
-              <div className="mx-6 mt-4 bg-violet-50 rounded-xl p-4 border border-violet-100">
-                <div className="flex items-start gap-3">
-                  <div className="bg-violet-100 rounded-lg w-8 h-8 flex items-center justify-center text-violet-700 flex-shrink-0 mt-0.5">
-                    <Sparkles className="w-4 h-4" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="text-[10px] font-semibold uppercase tracking-widest text-violet-700 mb-1">
-                      What would win them back
-                    </div>
-                    <div className="text-sm text-slate-800 italic leading-relaxed">
-                      &ldquo;{selected.triggerNeed}&rdquo;
-                    </div>
-                    <div className="text-[11px] text-violet-700/70 mt-2">
-                      We&apos;ll auto-fire a win-back when you ship a matching improvement on the{' '}
-                      <a href="/reasons" className="underline">Winback reasons</a> page.
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Migration 017 — AI judgment panel. Renders on every subscriber
-                that's been classified, not just handed-off ones, so you can
-                see why the AI escalated / kept going / closed out. */}
-            {(selected.handoffReasoning || selected.recoveryLikelihood) && (
-              <div className="mx-6 mt-4 bg-slate-50 rounded-xl p-4 border border-slate-100">
-                <div className="flex items-center justify-between mb-2 gap-2">
-                  <div className="text-xs font-semibold uppercase tracking-widest text-slate-500">
-                    AI Judgment
-                  </div>
-                  {selected.recoveryLikelihood && (
-                    <span
-                      className={`text-xs font-semibold px-2 py-0.5 rounded-full border whitespace-nowrap ${
-                        selected.recoveryLikelihood === 'high'
-                          ? 'bg-green-50 text-green-700 border-green-200'
-                          : selected.recoveryLikelihood === 'medium'
-                            ? 'bg-amber-50 text-amber-700 border-amber-200'
-                            : 'bg-slate-100 text-slate-500 border-slate-200'
-                      }`}
-                    >
-                      Recovery: {selected.recoveryLikelihood}
-                    </span>
-                  )}
-                </div>
-                {selected.handoffReasoning ? (
-                  <p className="text-sm text-slate-700 italic leading-relaxed">
-                    &ldquo;{selected.handoffReasoning}&rdquo;
-                  </p>
-                ) : (
-                  <p className="text-xs text-slate-400 italic">No reasoning persisted yet.</p>
+            {/* Block 4: conversation */}
+            <div className="px-5 py-4 border-t border-slate-100">
+              <div className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold mb-3">
+                Conversation
+                {conversation && conversation.length > 0 && (
+                  <span className="ml-1.5 text-slate-400 normal-case tracking-normal">· {conversation.length} message{conversation.length === 1 ? '' : 's'}</span>
                 )}
               </div>
-            )}
 
-            <div className="px-6 mt-5">
-              <div className="text-sm font-semibold text-slate-900 mb-3">Email history</div>
               {conversationLoading && conversation === null ? (
                 <div className="flex items-center gap-2 text-sm text-slate-400">
                   <Loader2 className="w-3.5 h-3.5 animate-spin" /> Loading…
                 </div>
               ) : !conversation || conversation.length === 0 ? (
                 <p className="text-sm text-slate-400">
-                  No emails sent yet. Winback will send the first one automatically.
+                  No messages yet. AI will send the first one automatically.
                 </p>
               ) : (
                 <ol className="space-y-2">
@@ -1348,89 +1287,59 @@ export function DashboardClient({
                       })
                     }
                     const ts = m.direction === 'outbound' ? m.sentAt : m.receivedAt
-                    const dateLabel = new Date(ts).toLocaleDateString(undefined, {
-                      month: 'short',
-                      day: 'numeric',
-                    })
+                    const dateLabel = new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+                    const timeLabel = new Date(ts).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
                     if (m.direction === 'outbound') {
                       const hasBody = !!m.bodyText && m.bodyText.trim().length > 0
                       const title = m.subject ?? '(no subject)'
+                      const isFounderSent = m.type === 'founder_reply'
+                      const senderLabel = isFounderSent ? 'You · sent personally' : `AI · sent on your behalf · ${m.type}`
                       return (
-                        <li key={m.id} className="border border-slate-200 rounded-xl">
-                          <button
-                            type="button"
-                            onClick={toggle}
-                            className="w-full flex items-start gap-3 p-3 text-left"
-                          >
+                        <li key={m.id} className="border border-slate-200 rounded-xl bg-white">
+                          <button type="button" onClick={toggle} className="w-full flex items-start gap-3 p-3 text-left">
                             <span className="mt-0.5 inline-flex items-center justify-center w-6 h-6 rounded-full bg-slate-900 text-white text-[10px] font-semibold shrink-0">
-                              W
+                              {isFounderSent ? firstInitial : 'AI'}
                             </span>
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2 mb-0.5 flex-wrap">
-                                <span className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">
-                                  Winback · {m.type}
-                                </span>
-                                <span className="text-[10px] text-slate-400">{dateLabel}</span>
+                                <span className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">{senderLabel}</span>
+                                <span className="text-[10px] text-slate-400">{dateLabel} · {timeLabel}</span>
                                 {m.repliedAt && (
-                                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-medium">
-                                    replied
-                                  </span>
+                                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-medium">replied</span>
                                 )}
                               </div>
                               <div className="text-sm text-slate-800 truncate">{title}</div>
                             </div>
                             {hasBody && (
-                              <ChevronDown
-                                className={`w-3.5 h-3.5 text-slate-400 mt-1.5 shrink-0 transition-transform ${
-                                  expanded ? 'rotate-180' : ''
-                                }`}
-                              />
+                              <ChevronDown className={`w-3.5 h-3.5 text-slate-400 mt-1.5 shrink-0 transition-transform ${expanded ? 'rotate-180' : ''}`} />
                             )}
                           </button>
                           {expanded && hasBody && (
                             <div className="px-3 pb-3 -mt-1">
-                              <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-line">
-                                {m.bodyText}
-                              </p>
+                              <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-line">{m.bodyText}</p>
                             </div>
                           )}
                         </li>
                       )
                     }
-                    const initial =
-                      (m.fromEmail?.trim()?.[0] ?? selected?.name?.trim()?.[0] ?? '?').toUpperCase()
                     return (
-                      <li key={m.id} className="border border-blue-200 bg-blue-50/40 rounded-xl">
-                        <button
-                          type="button"
-                          onClick={toggle}
-                          className="w-full flex items-start gap-3 p-3 text-left"
-                        >
-                          <span className="mt-0.5 inline-flex items-center justify-center w-6 h-6 rounded-full bg-blue-600 text-white text-[10px] font-semibold shrink-0">
-                            {initial}
+                      <li key={m.id} className="border border-indigo-200 bg-indigo-50/40 rounded-xl">
+                        <button type="button" onClick={toggle} className="w-full flex items-start gap-3 p-3 text-left">
+                          <span className="mt-0.5 inline-flex items-center justify-center w-6 h-6 rounded-full bg-indigo-600 text-white text-[10px] font-semibold shrink-0">
+                            {firstInitial}
                           </span>
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 mb-0.5">
-                              <span className="text-[10px] uppercase tracking-wider text-blue-700 font-semibold">
-                                Reply
-                              </span>
-                              <span className="text-[10px] text-slate-400">{dateLabel}</span>
+                              <span className="text-[10px] uppercase tracking-wider text-indigo-700 font-semibold">Them</span>
+                              <span className="text-[10px] text-slate-400">{dateLabel} · {timeLabel}</span>
                             </div>
-                            <div className="text-sm text-slate-800 truncate">
-                              {m.fromEmail ?? 'Subscriber reply'}
-                            </div>
+                            <div className="text-sm text-slate-800 truncate">{m.body}</div>
                           </div>
-                          <ChevronDown
-                            className={`w-3.5 h-3.5 text-slate-400 mt-1.5 shrink-0 transition-transform ${
-                              expanded ? 'rotate-180' : ''
-                            }`}
-                          />
+                          <ChevronDown className={`w-3.5 h-3.5 text-slate-400 mt-1.5 shrink-0 transition-transform ${expanded ? 'rotate-180' : ''}`} />
                         </button>
                         {expanded && (
                           <div className="px-3 pb-3 -mt-1">
-                            <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-line">
-                              {m.body}
-                            </p>
+                            <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-line">{m.body}</p>
                           </div>
                         )}
                       </li>
@@ -1440,239 +1349,63 @@ export function DashboardClient({
               )}
             </div>
 
-            <div className="px-6 mt-5 pt-5 border-t border-slate-100 pb-6">
-              {/* Spec 21b/22a — handoff status banner */}
-              {selected.founderHandoffAt && !selected.founderHandoffResolvedAt && (
-                <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-xl">
-                  <div className="text-xs font-semibold uppercase tracking-wider text-amber-800 mb-1">
-                    Founder action needed
-                  </div>
-                  <p className="text-sm text-slate-700 mb-3">
-                    AI follow-ups exhausted. {selected.aiPausedUntil &&
-                      new Date(selected.aiPausedUntil).getTime() > Date.now() &&
-                      new Date(selected.aiPausedUntil).getFullYear() < 2099
-                      ? `Snoozed until ${new Date(selected.aiPausedUntil).toLocaleDateString()}.`
-                      : 'Reply to them directly — see your inbox for the alert with mailto link.'}
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      onClick={() => handleHandoffAction(selected.id, 'snooze', 1)}
-                      className="border border-slate-200 bg-white text-slate-700 rounded-full px-3 py-1 text-xs font-medium hover:bg-slate-50"
-                    >
-                      Pause 1 day
-                    </button>
-                    <button
-                      onClick={() => handleHandoffAction(selected.id, 'snooze', 7)}
-                      className="border border-slate-200 bg-white text-slate-700 rounded-full px-3 py-1 text-xs font-medium hover:bg-slate-50"
-                    >
-                      Pause 1 week
-                    </button>
-                    <button
-                      onClick={() => handleHandoffAction(selected.id, 'resolve')}
-                      className="bg-[#0f172a] text-white rounded-full px-3 py-1 text-xs font-medium hover:bg-[#1e293b]"
-                    >
-                      Mark resolved
-                    </button>
+            {/* Block 5: reply composer — only when founder has taken over */}
+            {isFounderHandling && selected.email && (
+              <div className="px-5 py-4 border-t border-slate-100">
+                <div className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold mb-2">Your reply</div>
+                <div className="border border-slate-200 rounded-xl bg-white overflow-hidden focus-within:border-slate-300">
+                  <textarea
+                    value={replyDraft}
+                    onChange={(e) => setReplyDraft(e.target.value)}
+                    disabled={replySending}
+                    rows={4}
+                    placeholder="Write your reply…"
+                    className="w-full px-3.5 pt-3 pb-2 text-[13px] text-slate-800 leading-relaxed focus:outline-none resize-none placeholder:text-slate-400 disabled:opacity-60"
+                  />
+                  <div className="px-3.5 py-2 border-t border-slate-100 bg-slate-50/60 text-[10px] text-slate-500 flex items-center justify-between">
+                    <span className="truncate">↓ auto-appends reactivate · sign-off · unsubscribe</span>
+                    <span className={`tabular-nums font-medium ml-2 shrink-0 ${replyOver ? 'text-red-600' : 'text-slate-400'}`}>
+                      {replyDraft.length} / 500
+                    </span>
                   </div>
                 </div>
-              )}
-
-              {/* Spec 22a — proactive pause banner (non-handoff) */}
-              {(!selected.founderHandoffAt || selected.founderHandoffResolvedAt) &&
-                selected.aiPausedUntil &&
-                new Date(selected.aiPausedUntil).getTime() > Date.now() && (
-                <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-xl">
-                  <div className="text-xs font-semibold uppercase tracking-wider text-blue-800 mb-1">
-                    AI paused
-                  </div>
-                  <p className="text-sm text-slate-700 mb-3">
-                    {new Date(selected.aiPausedUntil).getFullYear() >= 2099
-                      ? 'Paused indefinitely.'
-                      : `Paused until ${new Date(selected.aiPausedUntil).toLocaleDateString()}.`}
-                    {selected.aiPausedReason && selected.aiPausedReason !== 'handoff' && (
-                      <span className="text-slate-500"> · {selected.aiPausedReason.replace(/_/g, ' ')}</span>
+                {replyError && (
+                  <div className="text-[11px] text-red-600 mt-2">{replyError}</div>
+                )}
+                <div className="flex items-center justify-end mt-3">
+                  <button
+                    onClick={() => handleFounderReply(selected.id)}
+                    disabled={replySending || replyDraft.trim().length === 0 || replyOver}
+                    className="bg-slate-900 hover:bg-slate-800 disabled:bg-slate-300 disabled:cursor-not-allowed text-white rounded-full px-4 py-2 text-xs font-semibold flex items-center gap-1.5"
+                  >
+                    {replySending ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" /> Sending…
+                      </>
+                    ) : (
+                      <>
+                        Send reply <Send className="w-3 h-3" />
+                      </>
                     )}
-                  </p>
-                  <button
-                    onClick={() => handlePauseAction(selected.id, 'resume')}
-                    className="bg-[#0f172a] text-white rounded-full px-3 py-1 text-xs font-medium hover:bg-[#1e293b]"
-                  >
-                    Resume AI
                   </button>
                 </div>
-              )}
+              </div>
+            )}
 
-              {selected.status !== 'recovered' && selected.status !== 'lost' && (
-                <div className="flex gap-3 mb-3">
-                  <button
-                    onClick={() => handleAction(selected.id, 'resend')}
-                    className="flex-1 border border-slate-200 bg-white text-slate-700 rounded-full px-4 py-2 text-sm font-medium flex items-center justify-center gap-1.5"
-                  >
-                    <RotateCcw className="w-3.5 h-3.5" /> Resend
-                  </button>
-                  <button
-                    onClick={() => handleAction(selected.id, 'recover')}
-                    className="flex-1 bg-[#0f172a] text-white rounded-full px-4 py-2 text-sm font-medium flex items-center justify-center gap-1.5 hover:bg-[#1e293b]"
-                  >
-                    <Check className="w-3.5 h-3.5" /> Mark recovered
-                  </button>
-                </div>
-              )}
-
-              {/* Spec 50 — collapsible "email them yourself" helper for suppressed subs.
-                  AI's suppression is final from our side; this lets the merchant pick up
-                  the conversation in their own inbox using the signed reactivate URL. */}
-              {selected.status === 'lost' && selected.email && !selected.doNotContact && (() => {
-                const appUrl =
-                  (typeof window !== 'undefined' ? window.location.origin : '') ||
-                  process.env.NEXT_PUBLIC_APP_URL || 'https://winbackflow.co'
-                const reactivateUrl = `${appUrl}/api/reactivate/${selected.id}`
-                const firstName = selected.name?.split(' ')[0] ?? 'there'
-                const fromName = founderName ?? 'The team'
-                const subject = `Following up on your cancellation`
-                const body =
-                  `Hi ${firstName},\n\n` +
-                  `Saw you cancelled — wanted to reach out personally.\n\n` +
-                  `[your message here]\n\n` +
-                  `When you're ready, here's a one-click link to restart:\n` +
-                  `→ ${reactivateUrl}\n\n` +
-                  `– ${fromName}`
-                const enc = encodeURIComponent
-                const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${enc(selected.email)}&su=${enc(subject)}&body=${enc(body)}`
-                const outlookUrl = `https://outlook.live.com/mail/0/deeplink/compose?to=${enc(selected.email)}&subject=${enc(subject)}&body=${enc(body)}`
-                const mailtoUrl = `mailto:${enc(selected.email)}?subject=${enc(subject)}&body=${enc(body)}`
-
-                return (
-                  <div className="border-t border-slate-100 pt-3">
-                    <button
-                      onClick={() => setExternalContactOpen((v) => !v)}
-                      className="w-full flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-500 hover:text-slate-700"
-                    >
-                      {externalContactOpen ? (
-                        <ChevronDown className="w-3.5 h-3.5" />
-                      ) : (
-                        <ChevronRight className="w-3.5 h-3.5" />
-                      )}
-                      Email them yourself
-                    </button>
-
-                    {externalContactOpen && (
-                      <div className="mt-3 space-y-3">
-                        <p className="text-xs text-slate-500 leading-relaxed">
-                          Have context the AI didn&apos;t? Email from your own inbox.
-                        </p>
-
-                        <div>
-                          <div className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">
-                            To
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm text-slate-700 truncate flex-1">{selected.email}</span>
-                            <button
-                              onClick={() => copyToClipboard(selected.email!, 'email')}
-                              className="border border-slate-200 bg-white text-slate-600 rounded-full px-2.5 py-0.5 text-xs font-medium hover:bg-slate-50 inline-flex items-center gap-1"
-                            >
-                              <Copy className="w-3 h-3" />
-                              {copyFeedback === 'email' ? 'Copied!' : 'Copy'}
-                            </button>
-                          </div>
-                        </div>
-
-                        <div>
-                          <div className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">
-                            Reactivate link
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs text-slate-600 truncate flex-1 font-mono">{reactivateUrl}</span>
-                            <button
-                              onClick={() => copyToClipboard(reactivateUrl, 'link')}
-                              className="border border-slate-200 bg-white text-slate-600 rounded-full px-2.5 py-0.5 text-xs font-medium hover:bg-slate-50 inline-flex items-center gap-1"
-                            >
-                              <Copy className="w-3 h-3" />
-                              {copyFeedback === 'link' ? 'Copied!' : 'Copy'}
-                            </button>
-                          </div>
-                          <p className="text-xs text-slate-400 mt-1 leading-relaxed">
-                            Including this link lets us credit the recovery if they come back.
-                          </p>
-                        </div>
-
-                        <div className="flex flex-wrap gap-2">
-                          <button
-                            onClick={() => fireAndOpen(selected.id, gmailUrl)}
-                            className="border border-slate-200 bg-white text-slate-700 rounded-full px-3 py-1.5 text-xs font-medium hover:bg-slate-50 inline-flex items-center gap-1.5"
-                          >
-                            <Mail className="w-3 h-3" /> Open in Gmail
-                          </button>
-                          <button
-                            onClick={() => fireAndOpen(selected.id, outlookUrl)}
-                            className="border border-slate-200 bg-white text-slate-700 rounded-full px-3 py-1.5 text-xs font-medium hover:bg-slate-50 inline-flex items-center gap-1.5"
-                          >
-                            <Mail className="w-3 h-3" /> Open in Outlook
-                          </button>
-                          <button
-                            onClick={() => fireAndOpen(selected.id, mailtoUrl)}
-                            className="border border-slate-200 bg-white text-slate-700 rounded-full px-3 py-1.5 text-xs font-medium hover:bg-slate-50 inline-flex items-center gap-1.5"
-                          >
-                            <Mail className="w-3 h-3" /> Open in mail app
-                          </button>
-                        </div>
-
-                        <div className="pt-2 border-t border-slate-100">
-                          <p className="text-xs text-slate-500 mb-2">Used a different tool?</p>
-                          <button
-                            onClick={() => handleExternalContact(selected.id)}
-                            className="border border-slate-200 bg-white text-slate-700 rounded-full px-3 py-1.5 text-xs font-medium hover:bg-slate-50 inline-flex items-center gap-1.5"
-                          >
-                            <Check className="w-3 h-3" /> Mark as contacted
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )
-              })()}
-
-              {/* Spec 22a — Pause AI dropdown (any non-paused, non-handoff, non-terminal sub) */}
-              {selected.status !== 'recovered' && selected.status !== 'lost' &&
-                !(selected.founderHandoffAt && !selected.founderHandoffResolvedAt) &&
-                !(selected.aiPausedUntil && new Date(selected.aiPausedUntil).getTime() > Date.now()) && (
-                <div className="border-t border-slate-100 pt-3 mt-2">
-                  <div className="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">
-                    Pause AI
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      onClick={() => handlePauseAction(selected.id, 'pause', 1, 'founder_handling')}
-                      className="border border-slate-200 bg-white text-slate-700 rounded-full px-3 py-1 text-xs font-medium hover:bg-slate-50"
-                    >
-                      1 day
-                    </button>
-                    <button
-                      onClick={() => handlePauseAction(selected.id, 'pause', 7, 'founder_handling')}
-                      className="border border-slate-200 bg-white text-slate-700 rounded-full px-3 py-1 text-xs font-medium hover:bg-slate-50"
-                    >
-                      1 week
-                    </button>
-                    <button
-                      onClick={() => handlePauseAction(selected.id, 'pause', 30, 'founder_handling')}
-                      className="border border-slate-200 bg-white text-slate-700 rounded-full px-3 py-1 text-xs font-medium hover:bg-slate-50"
-                    >
-                      1 month
-                    </button>
-                    <button
-                      onClick={() => handlePauseAction(selected.id, 'pause', null, 'founder_handling')}
-                      className="border border-slate-200 bg-white text-slate-700 rounded-full px-3 py-1 text-xs font-medium hover:bg-slate-50"
-                    >
-                      Indefinite
-                    </button>
-                  </div>
-                </div>
-              )}
+            {/* Block 6: quiet footer */}
+            <div className="px-5 py-3 border-t border-slate-100 flex items-center justify-between text-[11px]">
+              <span className="text-slate-400">
+                {selected.cancelledAt
+                  ? `Cancelled ${new Date(selected.cancelledAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`
+                  : 'Cancelled —'}
+              </span>
+              <span className="text-slate-400">{selected.status}</span>
             </div>
+
           </div>
         </>
-      )}
+        )
+      })()}
 
     </>
   )
