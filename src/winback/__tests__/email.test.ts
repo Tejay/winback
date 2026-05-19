@@ -30,7 +30,7 @@ vi.mock('drizzle-orm', () => ({
   eq: vi.fn((a, b) => ({ a, b })),
 }))
 
-import { sendEmail, scheduleExitEmail, recordEmailSentIdempotent } from '../lib/email'
+import { sendEmail, scheduleExitEmail, recordEmailSentIdempotent, ensureSignoff, appendStandardFooter } from '../lib/email'
 import { ClassificationResult } from '../lib/types'
 
 /**
@@ -325,5 +325,42 @@ describe('recordEmailSentIdempotent', () => {
         'test',
       ),
     ).rejects.toBe(wrapped)
+  })
+})
+
+describe('ensureSignoff — code-owned sign-off (append-if-missing)', () => {
+  const DASH = '—' // em-dash
+
+  it('appends a sign-off when the body has none (the common AI case)', () => {
+    const body = 'Hi Sam,\n\nFair point on the price. What would have worked for you?'
+    const out = ensureSignoff(body, 'Alex')
+    expect(out).toBe(`${body}\n\n${DASH} Alex`)
+    // exactly one sign-off line
+    expect((out.match(new RegExp(`${DASH} `, 'g')) ?? []).length).toBe(1)
+  })
+
+  it('leaves an existing sign-off untouched (respects founder voice / LLM that signed)', () => {
+    const body = `Hi Sam,\n\nFair point.\n\n${DASH} Alex`
+    expect(ensureSignoff(body, 'Alex')).toBe(body)
+  })
+
+  it('does not double-sign when the LLM already signed', () => {
+    const body = `Hi Sam,\n\nFair point.\n\n${DASH} Alex`
+    const full = appendStandardFooter(ensureSignoff(body, 'Alex'), 'sub_1', 'Alex')
+    expect((full.match(new RegExp(`${DASH} Alex`, 'g')) ?? []).length).toBe(1)
+  })
+
+  it('recognizes en-dash and hyphen sign-offs too', () => {
+    expect(ensureSignoff('Hi,\n\nThanks.\n\n– Sam', 'Alex')).toMatch(/– Sam$/)
+    expect(ensureSignoff('Hi,\n\nThanks.\n\n- Jo', 'Alex')).toMatch(/- Jo$/)
+  })
+
+  it('appendStandardFooter no longer injects its own sign-off (only resubscribe + unsubscribe)', () => {
+    const footed = appendStandardFooter('BODY', 'sub_1', 'Alex')
+    // The body had no sign-off and the footer must NOT add one — that's
+    // ensureSignoff's job now. The footer only carries resubscribe + unsub.
+    expect((footed.match(new RegExp(`${DASH} Alex`, 'g')) ?? []).length).toBe(0)
+    expect(footed).toContain('Resubscribe here:')
+    expect(footed).toContain('unsubscribe:')
   })
 })

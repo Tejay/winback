@@ -1,7 +1,7 @@
 import { Resend } from 'resend'
 import { db } from '@/lib/db'
 import { emailsSent, churnedSubscribers, customers, users } from '@/lib/schema'
-import { eq, and, count } from 'drizzle-orm'
+import { eq, and } from 'drizzle-orm'
 import { ClassificationResult } from './types'
 import { generateUnsubscribeToken } from './unsubscribe-token'
 import { logEvent } from './events'
@@ -14,11 +14,9 @@ import {
   renderOnboardingNudgeHtml,
   renderDormantWarningHtml,
   renderPilotEndingHtml,
-  renderFounderHandoffHtml,
 } from './email-html'
 import { declineCodeToCopy, DeclineCopy } from './decline-codes'
 import { isCustomerBillingHealthy_BySubscriber } from './billing-enforcement'
-import { getLatestReply } from './conversation'
 
 /**
  * Spec 28 — Postgres unique-violation error code. The partial unique index
@@ -53,9 +51,6 @@ export async function recordEmailSentIdempotent(
     throw err
   }
 }
-
-/** Maximum follow-up emails per subscriber. After this, flag for founder. */
-const MAX_FOLLOWUPS = 2
 
 /**
  * Resolves the email address that should receive founder notifications
@@ -96,6 +91,33 @@ export function reactivationUrl(subscriberId: string): string {
   return `${base}/api/reactivate/${subscriberId}`
 }
 
+/**
+ * The "From" display name shown in Gmail's sender column when a
+ * subscriber receives a win-back or dunning email. Combines founder +
+ * product when both are present so the recipient gets brand
+ * recognition before opening the email.
+ *
+ * Resolution order:
+ *   founder && product → "{founder} from {product}"
+ *   founder only       → "{founder}"
+ *   product only       → "{product}"
+ *   neither            → "The team"  (or `fallback` if supplied)
+ *
+ * Used by every subscriber-facing send path so the inbox-line
+ * branding stays consistent across exit, follow-up, improvement-match,
+ * promotion, and dunning emails.
+ */
+export function buildFromDisplayName(opts: {
+  founderName?: string | null
+  productName?: string | null
+  fallback?:    string
+}): string {
+  const founder = opts.founderName?.trim()
+  const product = opts.productName?.trim()
+  if (founder && product) return `${founder} from ${product}`
+  return founder || product || opts.fallback || 'The team'
+}
+
 function listUnsubscribeHeaders(subscriberId: string) {
   return {
     'List-Unsubscribe': `<${unsubscribeUrl(subscriberId)}>, <mailto:unsubscribe@winbackflow.co>`,
@@ -112,15 +134,61 @@ function listUnsubscribeHeaders(subscriberId: string) {
  * reactivation) — see sendDunningEmail() for that variant.
  */
 export function appendStandardFooter(body: string, subscriberId: string, fromName: string): string {
+  // NOTE: the sign-off ("— Name") is NOT added here anymore. It belongs to
+  // the body, guaranteed by ensureSignoff() before this runs — so it renders
+  // consistently in BOTH the text (this) and HTML (renderWinbackEmailHtml,
+  // which takes the raw body) paths. This footer only adds the resubscribe
+  // CTA + unsubscribe line.
   return `${body}
 
 Ready to give us another try? Resubscribe here:
 ${reactivationUrl(subscriberId)}
 
-— ${fromName}
-
 — — —
 If you'd rather not hear from us, unsubscribe: ${unsubscribeUrl(subscriberId)}`
+}
+
+/**
+ * Guarantees a body ends with exactly one sign-off line ("— {fromName}").
+ *
+ * Append-if-missing, never strip: if the body already ends with a sign-off
+ * (em-dash / en-dash / hyphen + a word), it's left untouched — this respects
+ * a founder's hand-typed closing on the take-over reply path. Only when no
+ * sign-off is present do we append the canonical one.
+ *
+ * Why this exists: the sign-off used to be split across three owners (the
+ * LLM prompt asked for it, appendStandardFooter added another, the HTML
+ * renderer added none). Result: ~76% of AI exit emails shipped with no
+ * sign-off in HTML, and the rare LLM-signed ones double-signed in text.
+ * Now code owns it, in one place, before both render paths.
+ */
+export function ensureSignoff(body: string, fromName: string): string {
+  const trimmed = body.trimEnd()
+  // Already ends with a sign-off line? (e.g. "\n— Alex", "\n– Sam", "\n- Jo")
+  if (/\n\s*[—–-]\s*\S.*$/.test(trimmed)) return trimmed
+  return `${trimmed}\n\n— ${fromName}`
+}
+
+/**
+ * Strips the standard footer (reactivation block, sign-off separator,
+ * unsubscribe link) from a stored body so the dashboard can render the
+ * conversation without boilerplate or signed URLs. Truncates at the first
+ * marker that appears — handles both the win-back footer (starts with
+ * "Ready to give us another try?") and the dunning footer (starts with the
+ * "— — —" separator before the unsubscribe line).
+ */
+export function stripStandardFooter(body: string): string {
+  const markers = [
+    'Ready to give us another try? Resubscribe here:',
+    '\n— — —',
+    "If you'd rather not hear from us, unsubscribe:",
+  ]
+  let cut = body.length
+  for (const m of markers) {
+    const i = body.indexOf(m)
+    if (i !== -1 && i < cut) cut = i
+  }
+  return body.slice(0, cut).trimEnd()
 }
 
 /**
@@ -250,112 +318,6 @@ export async function isAiPaused(subscriberId: string): Promise<boolean> {
   return row.aiPausedUntil.getTime() > Date.now()
 }
 
-/**
- * Hand off a subscriber to the founder. Idempotent: if already handed off,
- * skips the state update and the notification. Used by both the initial
- * classification path (scheduleExitEmail pre-gate) and the reply path
- * (sendReplyEmail) so the behaviour stays consistent.
- *
- * Persists the classifier's handoffReasoning + recoveryLikelihood so the
- * founder sees the AI's actual judgment, not a bucketed label.
- */
-async function triggerFounderHandoff(params: {
-  subscriberId: string
-  classification: ClassificationResult
-  fromName: string
-  trigger: 'initial_classification' | 'reply_classification'
-}): Promise<void> {
-  const { subscriberId, classification, fromName, trigger } = params
-
-  const [sub] = await db
-    .select()
-    .from(churnedSubscribers)
-    .where(eq(churnedSubscribers.id, subscriberId))
-    .limit(1)
-
-  if (!sub) {
-    console.log('Hand-off skipped — subscriber not found:', subscriberId)
-    return
-  }
-
-  if (sub.founderHandoffAt) {
-    console.log('Hand-off skipped — already handed off:', subscriberId)
-    return
-  }
-
-  await db
-    .update(churnedSubscribers)
-    .set({
-      founderHandoffAt:   new Date(),
-      aiPausedAt:         new Date(),
-      aiPausedUntil:      new Date('9999-12-31T00:00:00Z'),  // indefinite sentinel
-      aiPausedReason:     'handoff',
-      handoffReasoning:   classification.handoffReasoning,
-      recoveryLikelihood: classification.recoveryLikelihood,
-      updatedAt:          new Date(),
-    })
-    .where(eq(churnedSubscribers.id, subscriberId))
-
-  logEvent({
-    name: 'founder_handoff_triggered',
-    customerId: sub.customerId,
-    properties: {
-      subscriberId,
-      trigger,
-      recoveryLikelihood: classification.recoveryLikelihood,
-      reasoningExcerpt:   classification.handoffReasoning.slice(0, 200),
-    },
-  })
-
-  try {
-    const recipient = await resolveFounderNotificationEmail(sub.customerId)
-    if (!recipient) {
-      console.log('Hand-off: no recipient email resolved for customer', sub.customerId)
-      return
-    }
-    const { buildHandoffNotification, extractHandoffMailto } = await import('./founder-handoff-email')
-    // Spec 71 — latest reply now lives in wb_subscriber_replies, not on
-    // the subscriber row. Fetch here for the handoff-notification copy.
-    const replyText = await getLatestReply(sub.id)
-    const { subject, body } = await buildHandoffNotification({
-      subscriber: {
-        id: sub.id,
-        email: sub.email,
-        name: sub.name,
-        planName: sub.planName,
-        mrrCents: sub.mrrCents,
-        cancellationReason: sub.cancellationReason,
-        triggerNeed: sub.triggerNeed,
-        cancelledAt: sub.cancelledAt,
-        stripeComment: sub.stripeComment,
-        replyText,
-      },
-      founderName: fromName,
-      handoffReasoning:   classification.handoffReasoning,
-      recoveryLikelihood: classification.recoveryLikelihood,
-    })
-    const mailtoMatch = extractHandoffMailto(body)
-    const dashboardUrl = `${process.env.NEXT_PUBLIC_APP_URL ?? 'https://winbackflow.co'}/dashboard?subscriber=${sub.id}`
-    const html = renderFounderHandoffHtml({
-      body,
-      mailtoUrl:    mailtoMatch?.url,
-      mailtoLabel:  mailtoMatch ? `Reply to ${mailtoMatch.firstName}` : undefined,
-      dashboardUrl,
-    })
-    const resend = getResendClient()
-    await resend.emails.send({
-      from: `Winback <noreply@winbackflow.co>`,
-      to: recipient,
-      subject,
-      text: body,
-      html,
-    })
-    console.log('Handoff notification sent to:', recipient)
-  } catch (notifyErr) {
-    console.error('Failed to send handoff notification:', notifyErr)
-  }
-}
-
 export async function sendEmail(params: {
   to: string
   subject: string
@@ -384,9 +346,12 @@ export async function sendEmail(params: {
   // doesn't matter as long as MX is set up. See spec 27 + inbound DNS plan.
   const from = `${fromName} <reply+${subscriberId}@reply.winbackflow.co>`
 
-  const fullBody = appendStandardFooter(body, subscriberId, fromName)
+  // Sign-off is code-owned: ensure exactly one in the body BEFORE rendering
+  // so text + HTML stay consistent. See ensureSignoff().
+  const signedBody = ensureSignoff(body, fromName)
+  const fullBody = appendStandardFooter(signedBody, subscriberId, fromName)
   const html     = renderWinbackEmailHtml({
-    body,
+    body: signedBody,
     reactivationUrl: reactivationUrl(subscriberId),
     unsubscribeUrl:  unsubscribeUrl(subscriberId),
   })
@@ -478,21 +443,6 @@ export async function scheduleExitEmail(params: {
     return
   }
 
-  // AI-decided hand-off on the initial pass. Rare — requires a strong signal
-  // in stripe_comment alone — but possible (e.g., "I need to talk to someone
-  // about enterprise pricing"). Skip the exit email and route straight to
-  // the founder. Burns 0 of the 3-email budget.
-  if (classification.handoff) {
-    console.log('AI decided initial hand-off for subscriber:', subscriberId)
-    await triggerFounderHandoff({
-      subscriberId,
-      classification,
-      fromName,
-      trigger: 'initial_classification',
-    })
-    return
-  }
-
   const { subject, body } = classification.firstMessage
 
   const { messageId } = await sendEmail({
@@ -507,9 +457,9 @@ export async function scheduleExitEmail(params: {
   if (!messageId) return
 
   // Spec 27 — persist the full body so /admin/subscribers/[id] can render
-  // the conversation turn-by-turn. Use the already-footered body so what we
-  // store matches what the subscriber actually received.
-  const fullBody = appendStandardFooter(body, subscriberId, fromName)
+  // the conversation turn-by-turn. Sign + footer it so the stored copy
+  // matches exactly what sendEmail() actually sent (which signs the body).
+  const fullBody = appendStandardFooter(ensureSignoff(body, fromName), subscriberId, fromName)
   // Spec 28 — idempotent on (subscriber_id, type) per migration 023.
   await recordEmailSentIdempotent(
     {
@@ -531,219 +481,6 @@ export async function scheduleExitEmail(params: {
     name: 'email_sent',
     properties: { subscriberId, emailType: 'exit', subject, messageId },
   })
-}
-
-/**
- * Send a follow-up email in the same thread after re-classification.
- * Uses In-Reply-To / References headers so email clients thread it.
- * Respects DNC, customer-paused, and max follow-up limits.
- *
- * Returns `{ sent: true }` if email was sent, `{ sent: false, reason }` otherwise.
- * When the follow-up limit is reached, notifies the founder via email.
- */
-export async function sendReplyEmail(params: {
-  subscriberId: string
-  email: string
-  classification: ClassificationResult
-  fromName: string
-  /** @deprecated since spec 21c — recipient now resolved via customers.notificationEmail. Kept for backwards compat. */
-  founderEmail?: string
-}): Promise<{ sent: boolean; reason?: string }> {
-  const { subscriberId, email, classification, fromName } = params
-
-  if (!classification.firstMessage) {
-    console.log('No firstMessage after re-classification, skipping reply email')
-    return { sent: false, reason: 'no_first_message' }
-  }
-
-  if (classification.tier === 4) {
-    console.log('Tier 4 on re-classification, suppressing reply email:', subscriberId)
-    return { sent: false, reason: 'tier_4_suppress' }
-  }
-
-  if (await isDoNotContact(subscriberId)) {
-    console.log('Skipping reply email — subscriber unsubscribed:', subscriberId)
-    return { sent: false, reason: 'do_not_contact' }
-  }
-
-  // Spec 55 — win-back cohort pause (reply emails are part of the
-  // win-back conversation thread)
-  if (await isCustomerPausedForWinback(subscriberId)) {
-    console.log('Skipping reply email — customer has paused win-back sending:', subscriberId)
-    return { sent: false, reason: 'customer_paused' }
-  }
-
-  // Spec 53 — post-trial billing pause. Defensive: the reengagement cron
-  // pre-filters paused customers at batch level, so this gate primarily
-  // catches the inbound webhook path (a subscriber whose exit email
-  // landed pre-trial-end and replies after).
-  if (await isCustomerPausedForBilling(subscriberId)) {
-    console.log('Skipping reply email — customer in post-trial billing pause:', subscriberId)
-    await logEvent({
-      name: 'send_skipped_billing_pause',
-      properties: { subscriberId, emailType: 'reply' },
-    })
-    return { sent: false, reason: 'billing_paused' }
-  }
-
-  // 2026-05-18 — billing-health gate (see sendEmail for context).
-  if (!(await isCustomerBillingHealthy_BySubscriber(subscriberId))) {
-    console.log('Skipping reply email — merchant billing unhealthy:', subscriberId)
-    await logEvent({
-      name: 'send_skipped_billing_unhealthy',
-      properties: { subscriberId, emailType: 'reply' },
-    })
-    return { sent: false, reason: 'billing_unhealthy' }
-  }
-
-  // Spec 22a — per-subscriber AI pause
-  if (await isAiPaused(subscriberId)) {
-    console.log('Skipping reply email — AI paused for subscriber:', subscriberId)
-    return { sent: false, reason: 'ai_paused' }
-  }
-
-  // 1) AI-decided hand-off (replaces the old count-based trigger). If the
-  //    classifier judges the founder is the better spend, hand off now and
-  //    DO NOT send the AI follow-up this turn.
-  if (classification.handoff) {
-    console.log('AI decided hand-off on reply for subscriber:', subscriberId,
-      '— recoveryLikelihood:', classification.recoveryLikelihood)
-    await triggerFounderHandoff({
-      subscriberId,
-      classification,
-      fromName,
-      trigger: 'reply_classification',
-    })
-    return { sent: false, reason: 'ai_handoff' }
-  }
-
-  // 2) 3-email budget ceiling. Exit email + up to MAX_FOLLOWUPS follow-ups
-  //    is the hard cap. If the AI has already burned both follow-up slots
-  //    without deciding to hand off, silently close the subscriber as lost.
-  //    Notably: NO founder email — the point of AI judgment is that if the
-  //    AI never decided to escalate, the founder shouldn't be spammed either.
-  const [followupCount] = await db
-    .select({ total: count() })
-    .from(emailsSent)
-    .where(
-      and(
-        eq(emailsSent.subscriberId, subscriberId),
-        eq(emailsSent.type, 'followup'),
-      )
-    )
-
-  if ((followupCount?.total ?? 0) >= MAX_FOLLOWUPS) {
-    console.log(`Budget exhausted for subscriber ${subscriberId} without hand-off — closing as lost`)
-    await db
-      .update(churnedSubscribers)
-      .set({
-        status:             'lost',
-        handoffReasoning:   classification.handoffReasoning,
-        recoveryLikelihood: classification.recoveryLikelihood,
-        updatedAt:          new Date(),
-      })
-      .where(eq(churnedSubscribers.id, subscriberId))
-
-    logEvent({
-      name: 'subscriber_auto_lost',
-      properties: {
-        subscriberId,
-        reason: 'budget_exhausted_no_handoff',
-        recoveryLikelihood: classification.recoveryLikelihood,
-        reasoningExcerpt:   classification.handoffReasoning.slice(0, 200),
-      },
-    })
-
-    return { sent: false, reason: 'budget_exhausted' }
-  }
-
-  // Look up the original email to thread the reply
-  const [originalEmail] = await db
-    .select({ messageId: emailsSent.gmailMessageId })
-    .from(emailsSent)
-    .where(eq(emailsSent.subscriberId, subscriberId))
-    .orderBy(emailsSent.sentAt)
-    .limit(1)
-
-  const { subject, body } = classification.firstMessage
-  const resend = getResendClient()
-
-  // reply+{id}@reply.winbackflow.co — see comment in sendEmail for why the
-  // subdomain. Same regex parses the prefix in /api/email/inbound.
-  const from = `${fromName} <reply+${subscriberId}@reply.winbackflow.co>`
-  const fullBody = appendStandardFooter(body, subscriberId, fromName)
-  const html     = renderWinbackEmailHtml({
-    body,
-    reactivationUrl: reactivationUrl(subscriberId),
-    unsubscribeUrl:  unsubscribeUrl(subscriberId),
-  })
-
-  // Thread headers — if we have the original message ID, use it
-  const headers: Record<string, string> = {
-    ...listUnsubscribeHeaders(subscriberId),
-  }
-  if (originalEmail?.messageId) {
-    headers['In-Reply-To'] = `<${originalEmail.messageId}>`
-    headers['References'] = `<${originalEmail.messageId}>`
-  }
-
-  // Spec 28 — wrap the Resend call in callWithRetry. (Followup type is
-  // intentionally multi-send so no unique-index protection here; we keep
-  // the bare insert.)
-  const res = await callWithRetry(
-    () =>
-      resend.emails.send({
-        from,
-        to: email,
-        subject: subject.startsWith('Re:') ? subject : `Re: ${subject}`,
-        text: fullBody,
-        html,
-        headers,
-      }),
-    { ctx: 'sendFollowup' },
-  )
-
-  if (res.error) {
-    // Spec 26 — observability: emit BEFORE re-throwing.
-    await logEvent({
-      name: 'email_send_failed',
-      properties: {
-        subscriberId,
-        type: 'followup',
-        errorMessage: res.error.message,
-      },
-    })
-    throw new Error(`Resend error: ${res.error.message}`)
-  }
-
-  await db.insert(emailsSent).values({
-    subscriberId,
-    gmailMessageId: res.data?.id ?? '',
-    gmailThreadId: originalEmail?.messageId ?? null,
-    type: 'followup',
-    subject,
-    bodyText: fullBody,  // spec 27 — Inspector renders this
-  })
-
-  // Persist the AI's per-pass judgment for observability, even though we
-  // didn't hand off this turn. Lets the founder (and us) see the model's
-  // ongoing reasoning when spot-auditing.
-  await db
-    .update(churnedSubscribers)
-    .set({
-      handoffReasoning:   classification.handoffReasoning,
-      recoveryLikelihood: classification.recoveryLikelihood,
-      updatedAt:          new Date(),
-    })
-    .where(eq(churnedSubscribers.id, subscriberId))
-
-  logEvent({
-    name: 'email_sent',
-    properties: { subscriberId, emailType: 'followup', subject, messageId: res.data?.id ?? '' },
-  })
-
-  console.log('Sent follow-up reply email to subscriber:', subscriberId)
-  return { sent: true }
 }
 
 export async function sendDunningEmail(params: {

@@ -11,6 +11,7 @@ import {
   sendEmail,
   isCustomerPausedForWinback,
   isCustomerPausedForBillingByCustomerId,
+  buildFromDisplayName,
 } from './email'
 import {
   deriveTriggerNeedConfidence,
@@ -163,7 +164,7 @@ async function tryPromotionPath(
     .limit(1)
   if (prev) return null
 
-  const fromName = customer.founderName ?? 'The team'
+  const fromName = buildFromDisplayName({ founderName: customer.founderName, productName: customer.productName })
   const draft = await generatePromotionEmail({
     promotion:      best.promotionMetadata,
     triggerNeed:    sub.triggerNeed,
@@ -400,7 +401,7 @@ export async function processSubscriberForReengagement(
     }
 
     // 7. Generate + sanity check
-    const fromName = customer.founderName ?? 'The team'
+    const fromName = buildFromDisplayName({ founderName: customer.founderName, productName: customer.productName })
     const draft = await generateImprovementEmail({
       improvement:    best.improvement,
       triggerNeed,

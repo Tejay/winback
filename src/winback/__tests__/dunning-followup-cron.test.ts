@@ -42,7 +42,8 @@ vi.mock('drizzle-orm', () => ({
   ),
 }))
 
-vi.mock('../lib/email', () => ({
+vi.mock('../lib/email', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../lib/email')>()),
   sendDunningFollowupEmail: mockSendDunningT2T3,
 }))
 
@@ -132,7 +133,7 @@ describe('runDunningTouches — T2 pass', () => {
     expect(arg.isFinalRetry).toBe(false)
     expect(arg.subscriberId).toBe('s1')
     expect(arg.email).toBe('a@x.co')
-    expect(arg.fromName).toBe('Acme')   // productName takes precedence over founderName + userName
+    expect(arg.fromName).toBe('Founder Name from Acme')   // brand + founder so the subscriber recognises both
   })
 
   it('continues the loop when one row throws', async () => {

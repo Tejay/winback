@@ -125,10 +125,23 @@ export async function GET(req: NextRequest) {
         ]
       : cohort === 'winback' && filter === 'all'
         ? [
+            // Drawer redesign — sort priority for the "All" view:
+            //   1. High recovery + founder taking over (urgent, you're already engaged)
+            //   2. High recovery + AI handling (worth a personal look)
+            //   3. Anything else, ordered by most recent cancellation
             sql`case
-              when ${churnedSubscribers.founderHandoffAt} is not null
-                and ${churnedSubscribers.founderHandoffResolvedAt} is null
-              then 0 else 1 end`,
+              when ${churnedSubscribers.recoveryLikelihood} = 'high'
+                and (
+                  (${churnedSubscribers.founderHandoffAt} is not null
+                   and ${churnedSubscribers.founderHandoffResolvedAt} is null)
+                  or (${churnedSubscribers.aiPausedUntil} > now()
+                      and ${churnedSubscribers.aiPausedReason} = 'takeover')
+                )
+              then 0
+              when ${churnedSubscribers.recoveryLikelihood} = 'high'
+              then 1
+              else 2 end`,
+            // Tie-breaker: rows with at least one inbound reply bubble up.
             sql`case when exists (
               select 1 from ${emailsSent}
               where ${emailsSent.subscriberId} = ${churnedSubscribers.id}

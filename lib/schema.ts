@@ -162,11 +162,14 @@ export const churnedSubscribers = pgTable('wb_churned_subscribers', {
   aiPausedUntil:              timestamp('ai_paused_until'),
   aiPausedAt:                 timestamp('ai_paused_at'),
   aiPausedReason:             text('ai_paused_reason'),
-  // AI-decided hand-off judgment. Populated on every classification pass —
-  // not just when hand-off fires — so the founder (and us) can audit why the
-  // AI made its call. Migration 017.
+  // DEPRECATED — kept during the Phase 1–7 transition. Will be dropped in
+  // a later migration once all reader code is cleaned up. Migration 017.
   handoffReasoning:           text('handoff_reasoning'),
   recoveryLikelihood:         text('recovery_likelihood'),   // 'high'|'medium'|'low'
+  // Drawer insight (replaces handoff_reasoning as the founder-facing AI
+  // commentary). Populated on every classification pass. Migration 050.
+  drawerInsightRead:          text('drawer_insight_read').notNull().default(''),
+  drawerInsightWorthKnowing:  text('drawer_insight_worth_knowing').notNull().default(''),
   // Spec 33 — multi-touch dunning state machine. The webhook captures
   // Stripe's invoice.next_payment_attempt on every payment_failed event;
   // the daily cron picks up rows whose retry is in the next 12-36h window

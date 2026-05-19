@@ -72,9 +72,20 @@ export function aiStateFilterCondition(filter: AiStateFilter): SQL | undefined {
   }
 
   if (filter === 'handoff') {
-    return and(
-      isNotNull(churnedSubscribers.founderHandoffAt),
-      isNull(churnedSubscribers.founderHandoffResolvedAt),
+    // "You active" in the new model. Matches both:
+    //   - legacy handoff rows (founder_handoff_at set, not resolved)
+    //   - new take-over rows (ai_paused_until in the future, reason='takeover')
+    // Both states mean "founder is actively handling this conversation."
+    return or(
+      and(
+        isNotNull(churnedSubscribers.founderHandoffAt),
+        isNull(churnedSubscribers.founderHandoffResolvedAt),
+      ),
+      and(
+        isNotNull(churnedSubscribers.aiPausedUntil),
+        sql`${churnedSubscribers.aiPausedUntil} > now()`,
+        eq(churnedSubscribers.aiPausedReason, 'takeover'),
+      ),
     )
   }
 

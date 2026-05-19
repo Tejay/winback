@@ -22,7 +22,6 @@ const mockClassify = vi.hoisted(() => vi.fn())
 const mockScheduleExit = vi.hoisted(() => vi.fn().mockResolvedValue(undefined))
 const mockSendDunning = vi.hoisted(() => vi.fn().mockResolvedValue(undefined))
 const mockSendDunningFollowup = vi.hoisted(() => vi.fn().mockResolvedValue(undefined))
-const mockSendReply = vi.hoisted(() => vi.fn().mockResolvedValue({ sent: true }))
 
 vi.mock('@/lib/db', () => ({
   db: { select: mockSelect, update: mockUpdate },
@@ -58,7 +57,7 @@ vi.mock('../lib/email', () => ({
   scheduleExitEmail:        mockScheduleExit,
   sendDunningEmail:         mockSendDunning,
   sendDunningFollowupEmail: mockSendDunningFollowup,
-  sendReplyEmail:           mockSendReply,
+  buildFromDisplayName:     vi.fn(() => 'Test Founder'),
 }))
 vi.mock('../lib/events', () => ({ logEvent: mockLogEvent }))
 

@@ -340,7 +340,7 @@ describe('classifySubscriber', () => {
     expect(result.recoveryLikelihood).toBe('low')
   })
 
-  it('system prompt contains the HAND-OFF JUDGMENT section with all three factor headers', async () => {
+  it('system prompt contains the DRAWER INSIGHT section with both subfields', async () => {
     const signals = makeSignals()
     mockLLMResponse({
       tier: 3, tierReason: 't', cancellationReason: 'r', cancellationCategory: 'Other',
@@ -350,13 +350,14 @@ describe('classifySubscriber', () => {
     })
     await classifySubscriber(signals, {})
     const systemPrompt = mockCreate.mock.calls[0][0].system as string
-    expect(systemPrompt).toContain('HAND-OFF JUDGMENT')
-    expect(systemPrompt).toContain('CONVERTIBILITY')
-    expect(systemPrompt).toContain('ANTI-SPAM BIAS')
-    expect(systemPrompt).toContain('BUDGET AWARENESS')
-    expect(systemPrompt).toContain('handoffReasoning')
+    expect(systemPrompt).toContain('DRAWER INSIGHT')
+    expect(systemPrompt).toContain('drawerInsight.read')
+    expect(systemPrompt).toContain('drawerInsight.worthKnowing')
+    expect(systemPrompt).toContain('PURELY DESCRIPTIVE')
     expect(systemPrompt).toContain('recoveryLikelihood')
-    expect(systemPrompt).toMatch(/3 emails from us total/i)
+    // Handoff is gone — AI runs on every subscriber, founder takes over manually.
+    expect(systemPrompt).not.toContain('HAND-OFF JUDGMENT')
+    expect(systemPrompt).not.toContain('handoffReasoning')
   })
 
   it('buildPrompt renders emails_sent when signals.emailsSent is provided', async () => {
@@ -415,9 +416,9 @@ describe('classifySubscriber', () => {
     expect(ClassificationSchema.safeParse(result).success).toBe(true)
   })
 
-  // ─── Spec 72 — 250-char body cap ───────────────────────────────────────
+  // ─── Spec 72 — body length: prompt target 250, schema ceiling 350 ──────
 
-  it('system prompt includes the 250-character LENGTH CAP rule', async () => {
+  it('system prompt still instructs the LLM to keep bodies under 250 chars', async () => {
     const signals = makeSignals()
     mockLLMResponse({
       tier: 3, tierReason: 't', cancellationReason: 'r', cancellationCategory: 'Other',
@@ -431,8 +432,20 @@ describe('classifySubscriber', () => {
     expect(systemPrompt).toContain('250')
   })
 
-  it('schema rejects firstMessage.body > 250 chars (Spec 72)', () => {
-    const bodyTooLong = 'a'.repeat(251)
+  it('schema accepts firstMessage.body between 251 and 500 chars (drift window)', () => {
+    const bodyInDrift = 'a'.repeat(400)
+    const result = ClassificationSchema.safeParse({
+      tier: 1, tierReason: 't', cancellationReason: 'r', cancellationCategory: 'Price',
+      confidence: 0.9, suppress: false,
+      firstMessage: { subject: 's', body: bodyInDrift, sendDelaySecs: 60 },
+      triggerKeyword: null, triggerNeed: null,
+      winBackSubject: '', winBackBody: '',
+    })
+    expect(result.success).toBe(true)
+  })
+
+  it('schema rejects firstMessage.body > 500 chars (over ceiling)', () => {
+    const bodyTooLong = 'a'.repeat(501)
     const result = ClassificationSchema.safeParse({
       tier: 1, tierReason: 't', cancellationReason: 'r', cancellationCategory: 'Price',
       confidence: 0.9, suppress: false,
@@ -443,8 +456,8 @@ describe('classifySubscriber', () => {
     expect(result.success).toBe(false)
   })
 
-  it('schema rejects winBackBody > 250 chars (Spec 72)', () => {
-    const bodyTooLong = 'a'.repeat(251)
+  it('schema rejects winBackBody > 500 chars (over ceiling)', () => {
+    const bodyTooLong = 'a'.repeat(501)
     const result = ClassificationSchema.safeParse({
       tier: 1, tierReason: 't', cancellationReason: 'r', cancellationCategory: 'Price',
       confidence: 0.9, suppress: false,
@@ -455,15 +468,96 @@ describe('classifySubscriber', () => {
     expect(result.success).toBe(false)
   })
 
-  it('schema accepts firstMessage.body exactly at 250 chars (Spec 72)', () => {
-    const bodyAtCap = 'a'.repeat(250)
+  it('schema accepts firstMessage.body exactly at 500-char ceiling', () => {
+    const bodyAtCeiling = 'a'.repeat(500)
     const result = ClassificationSchema.safeParse({
       tier: 1, tierReason: 't', cancellationReason: 'r', cancellationCategory: 'Price',
       confidence: 0.9, suppress: false,
-      firstMessage: { subject: 's', body: bodyAtCap, sendDelaySecs: 60 },
+      firstMessage: { subject: 's', body: bodyAtCeiling, sendDelaySecs: 60 },
       triggerKeyword: null, triggerNeed: null,
       winBackSubject: '', winBackBody: '',
     })
     expect(result.success).toBe(true)
+  })
+
+  // ─── Forbidden-phrase detection (Phase 8 — listen-only exit emails) ────
+
+  it('rejects AI bodies that promise a future action ("I\'ll send a calendar link")', async () => {
+    const signals = makeSignals()
+    mockLLMResponse({
+      tier: 1, tierReason: 't', cancellationReason: 'r', cancellationCategory: 'Other',
+      confidence: 0.8, suppress: false,
+      firstMessage: { subject: 's', body: "Hi A,\n\nFair call. I'll send a calendar link.\n\n— B", sendDelaySecs: 60 },
+      triggerKeyword: null, winBackSubject: 'w', winBackBody: 'b',
+      drawerInsight: { read: 'r', worthKnowing: '' },
+    })
+    await expect(classifySubscriber(signals, {})).rejects.toThrow(/forbidden phrase/i)
+  })
+
+  it('rejects AI bodies that claim a fix shipped ("we shipped native Slack")', async () => {
+    const signals = makeSignals()
+    mockLLMResponse({
+      tier: 1, tierReason: 't', cancellationReason: 'r', cancellationCategory: 'Feature',
+      confidence: 0.8, suppress: false,
+      firstMessage: { subject: 's', body: 'Hi A,\n\nWe shipped native Slack last week — worth a look.\n\n— B', sendDelaySecs: 60 },
+      triggerKeyword: null, winBackSubject: 'w', winBackBody: 'b',
+      drawerInsight: { read: 'r', worthKnowing: '' },
+    })
+    await expect(classifySubscriber(signals, {})).rejects.toThrow(/forbidden phrase/i)
+  })
+
+  it('rejects AI bodies that offer a discount ("20% off")', async () => {
+    const signals = makeSignals()
+    mockLLMResponse({
+      tier: 1, tierReason: 't', cancellationReason: 'r', cancellationCategory: 'Price',
+      confidence: 0.8, suppress: false,
+      firstMessage: { subject: 's', body: 'Hi A,\n\nFair point. Annual at 20% off would shift the math.\n\n— B', sendDelaySecs: 60 },
+      triggerKeyword: null, winBackSubject: 'w', winBackBody: 'b',
+      drawerInsight: { read: 'r', worthKnowing: '' },
+    })
+    await expect(classifySubscriber(signals, {})).rejects.toThrow(/forbidden phrase/i)
+  })
+
+  it('rejects AI bodies that reference the roadmap ("on the roadmap")', async () => {
+    const signals = makeSignals()
+    mockLLMResponse({
+      tier: 1, tierReason: 't', cancellationReason: 'r', cancellationCategory: 'Feature',
+      confidence: 0.8, suppress: false,
+      firstMessage: { subject: 's', body: "Hi A,\n\nThat's on the roadmap and I'll flag you when it ships.\n\n— B", sendDelaySecs: 60 },
+      triggerKeyword: null, winBackSubject: 'w', winBackBody: 'b',
+      drawerInsight: { read: 'r', worthKnowing: '' },
+    })
+    await expect(classifySubscriber(signals, {})).rejects.toThrow(/forbidden phrase/i)
+  })
+
+  it('accepts a pure listen-only body that asks a question', async () => {
+    const signals = makeSignals()
+    mockLLMResponse({
+      tier: 1, tierReason: 't', cancellationReason: 'r', cancellationCategory: 'Price',
+      confidence: 0.8, suppress: false,
+      firstMessage: { subject: 's', body: 'Hi A,\n\nFair point on the price. What would have actually worked for your team?\n\n— B', sendDelaySecs: 60 },
+      triggerKeyword: null, winBackSubject: 'w', winBackBody: 'b',
+      drawerInsight: { read: 'r', worthKnowing: '' },
+    })
+    const result = await classifySubscriber(signals, {})
+    expect(result.firstMessage?.body).toContain('What would have actually worked')
+  })
+
+  it('system prompt forbids commitments + claims of shipped fixes', async () => {
+    const signals = makeSignals()
+    mockLLMResponse({
+      tier: 3, tierReason: 't', cancellationReason: 'r', cancellationCategory: 'Other',
+      confidence: 0.5, suppress: false,
+      firstMessage: { subject: 's', body: 'b', sendDelaySecs: 60 },
+      triggerKeyword: null, winBackSubject: 'w', winBackBody: 'b',
+    })
+    await classifySubscriber(signals, {})
+    const systemPrompt = mockCreate.mock.calls[0][0].system as string
+    expect(systemPrompt).toContain('YOUR ROLE')
+    expect(systemPrompt).toContain('NOT authorized')
+    expect(systemPrompt).toContain('COMMITMENT LIES')
+    expect(systemPrompt).toContain('FALSE-FIX CLAIMS')
+    // The deprecated "matching fix shipped" branch is gone.
+    expect(systemPrompt).not.toContain('matching fix shipped')
   })
 })

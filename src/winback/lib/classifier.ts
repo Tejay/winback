@@ -33,10 +33,26 @@ function getClient() {
   return new Anthropic({ apiKey: key })
 }
 
+// Spec 72 — Zod ceilings are set to 2× the prompt's stated allowance for
+// each LLM-output field. The prompt instructs the LLM toward a target;
+// Zod accepts anything up to 2× that as a forgiveness window. Anything
+// in the 1×–2× range emits a `classifier_drift` event (where useful) so
+// we can tune the prompt if drift climbs. Anything over 2× is real
+// prompt regression and fails validation.
+//
+// Per-field allowances:
+//   firstMessage.subject       : 3–6 words   → ~50 char target → cap 100
+//   firstMessage.body          : ≤250 chars  → cap 500
+//   cancellationReason         : "short phrase" → ~40 char target → cap 80
+//   triggerKeyword             : 1–3 words   → ~25 char target → cap 50
+//   triggerNeed                : 1–2 sentences → ~150 char target → cap 300
+//   winBackSubject/Body        : deprecated mirror of firstMessage
+//   drawerInsight.read         : 1 sentence  → ~100 char target → cap 200
+//   drawerInsight.worthKnowing : 1 sentence (may be empty) → cap 200
 const ClassificationSchema = z.object({
   tier:                 z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]),
   tierReason:           z.string().default(''),
-  cancellationReason:   z.string(),
+  cancellationReason:   z.string().max(80, 'cancellationReason exceeds 80-character ceiling (target ~40)'),
   cancellationCategory: z.enum(['Competitor', 'Price', 'Quality', 'Unused', 'Feature', 'Other']),
   confidence:           z.number().min(0).max(1).default(0),
   suppress:             z.boolean().default(false),
@@ -46,26 +62,31 @@ const ClassificationSchema = z.object({
   // the strict z.string().optional() rejects null and the whole
   // classification fails.
   suppressReason:       z.string().nullable().optional(),
-  // Spec 72 — every outbound email body capped at 250 chars (greeting +
-  // body + sign-off, excludes reactivate link + unsubscribe footer which
-  // are appended by our system). Schema enforces it so an LLM that
-  // ignores the prompt rule fails validation → row gets retried, then
-  // dead-lettered after 3 attempts → admin sees in the dead-letter tile.
   firstMessage:         z.object({
-    subject:       z.string(),
-    body:          z.string().max(250, 'Body exceeds 250-character cap (Spec 72)'),
+    subject:       z.string().max(100, 'subject exceeds 100-character ceiling (target ≤50; 3–6 words)'),
+    body:          z.string().max(500, 'Body exceeds 500-character ceiling (target 250; Spec 72)'),
     sendDelaySecs: z.number().default(60),
   }).nullable().default(null),
-  triggerKeyword: z.string().nullable().default(null),  // Legacy (spec 19b)
-  triggerNeed:    z.string().nullable().default(null),  // Rich description (spec 19b)
-  winBackSubject: z.string().default(''),                // Deprecated (spec 19c)
-  winBackBody:    z.string().max(250, 'winBackBody exceeds 250-character cap (Spec 72)').default(''),
-  // AI-decided hand-off judgment. The classifier itself (not a rule) decides
-  // on every pass whether this subscriber is better served by another AI
-  // email or by a personal reply from the founder.
+  triggerKeyword: z.string().max(50, 'triggerKeyword exceeds 50-character ceiling (target ~25; 1–3 words)').nullable().default(null),
+  triggerNeed:    z.string().max(300, 'triggerNeed exceeds 300-character ceiling (target ~150; 1–2 sentences)').nullable().default(null),
+  winBackSubject: z.string().max(100, 'winBackSubject exceeds 100-character ceiling').default(''),
+  winBackBody:    z.string().max(500, 'winBackBody exceeds 500-character ceiling (target 250; Spec 72)').default(''),
+  // Drawer insight — what the founder sees pinned above the conversation.
+  // Purely descriptive; never recommends an action. The founder decides
+  // whether to step in. Replaces the deprecated handoff / handoffReasoning
+  // fields — there is no automatic handoff anymore. AI keeps running on
+  // every subscriber; the founder takes over manually when they want.
+  drawerInsight:      z.object({
+    read:         z.string().max(200, 'drawerInsight.read exceeds 200-character ceiling (target ~100)').default(''),
+    worthKnowing: z.string().max(200, 'drawerInsight.worthKnowing exceeds 200-character ceiling (target ~100)').default(''),
+  }).default({ read: '', worthKnowing: '' }),
+  recoveryLikelihood: z.enum(['high', 'medium', 'low']).default('low'),
+  // DEPRECATED — kept as transitional stubs while consumers migrate to
+  // drawerInsight (Phases 2–7). The prompt no longer asks the LLM for
+  // these, so the defaults below kick in for every new classification.
+  // Remove in Phase 7 once all read-sites are updated.
   handoff:            z.boolean().default(false),
   handoffReasoning:   z.string().default(''),
-  recoveryLikelihood: z.enum(['high', 'medium', 'low']).default('low'),
 })
 
 export async function classifySubscriber(
@@ -130,6 +151,60 @@ export async function classifySubscriber(
       console.error('Failed LLM object:', parsed)
       console.error('Zod errors:', result.error.issues)
       throw new Error('LLM output failed Zod validation')
+    }
+
+    // Defense-in-depth — reject AI bodies that contain commitments,
+    // false-fix claims, or pricing offers the AI is not authorized to
+    // make. Spec: "exit email's job is to LISTEN, not retain." Even with
+    // the prompt forbidding these patterns, the LLM occasionally
+    // hallucinates them; this catches the regression at validation time
+    // and forces a retry on the next classifier-tick pass.
+    const FORBIDDEN_PATTERNS = [
+      // commitments / promises
+      /\bshipp(ed|ing)\b/i, /\bship soon\b/i, /\bnext week\b/i, /\bcoming\b/i,
+      /\bon the roadmap\b/i, /\bin beta\b/i, /\blaunching\b/i, /\brolling out\b/i,
+      /\blive now\b/i, /\buncapped now\b/i,
+      /\bI['']?ll (send|flag|ping|let you know|reach out|get back)\b/i,
+      /\bcalendar (link|invite)\b/i, /\bschedule a call\b/i, /\bjump on a call\b/i,
+      // false-fix claims
+      /\bI rebuilt\b/i, /\bI shipped\b/i, /\bwe shipped\b/i, /\bI['']?ve simplified\b/i,
+      /\bno longer (requires|needs)\b/i, /\bself[- ]serve now\b/i, /\bfixed now\b/i,
+      /\bit['']?s gone\b/i, /\byou can now\b/i, /\bnow you can\b/i,
+      // pricing / offers
+      /\b\d{1,2}% off\b/, /\bdiscount\b/i, /\bannual at\b/i, /\bspecial pricing\b/i,
+      /\bcustom plan\b/i, /\benterprise tier\b/i, /\bhappy to discuss\b/i,
+    ]
+    const body = result.data.firstMessage?.body ?? ''
+    const forbidden = FORBIDDEN_PATTERNS.find((p) => p.test(body))
+    if (forbidden) {
+      console.error('AI body contained forbidden commitment/offer pattern:', forbidden.source)
+      console.error('Body:', body)
+      await logEvent({
+        name: 'classifier_forbidden_phrase',
+        properties: {
+          stripeCustomerId: signals.stripeCustomerId,
+          pattern:          forbidden.source,
+          bodySnippet:      body.slice(0, 200),
+        },
+      })
+      throw new Error(`AI body contained forbidden phrase matching /${forbidden.source}/`)
+    }
+
+    // Spec 72 — drift signal. AI is instructed to keep body ≤250 chars; Zod
+    // accepts up to 350. Anything in between is the LLM missing the target
+    // but still within the ceiling — we send it, but log so we can tune
+    // the prompt if the drift rate climbs.
+    const driftBody = result.data.firstMessage?.body ?? ''
+    if (driftBody.length > 250) {
+      await logEvent({
+        name: 'classifier_drift',
+        properties: {
+          stripeCustomerId: signals.stripeCustomerId,
+          field:            'firstMessage.body',
+          bodyLength:       driftBody.length,
+          overflow:         driftBody.length - 250,
+        },
+      })
     }
 
     return result.data

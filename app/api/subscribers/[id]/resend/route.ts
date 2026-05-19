@@ -3,7 +3,7 @@ import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { customers, churnedSubscribers, emailsSent } from '@/lib/schema'
 import { eq, and } from 'drizzle-orm'
-import { sendEmail } from '@/src/winback/lib/email'
+import { sendEmail, buildFromDisplayName } from '@/src/winback/lib/email'
 
 export async function POST(
   req: NextRequest,
@@ -41,7 +41,10 @@ export async function POST(
     return NextResponse.json({ error: 'Subscriber not found' }, { status: 404 })
   }
 
-  const fromName = customer.founderName ?? session.user.name ?? 'The team'
+  const fromName = buildFromDisplayName({
+    founderName: customer.founderName ?? session.user.name,
+    productName: customer.productName,
+  })
   const { messageId } = await sendEmail({
     to: subscriber.email,
     subject: subscriber.winBackSubject ?? 'Following up',

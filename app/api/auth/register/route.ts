@@ -114,7 +114,7 @@ export async function POST(req: Request) {
 
   const [newCustomer] = await db
     .insert(customers)
-    .values({ userId: newUser.id })
+    .values({ userId: newUser.id, founderName: name })
     .returning({ id: customers.id })
 
   const ipAddress =

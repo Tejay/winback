@@ -2,7 +2,7 @@ import { db } from '@/lib/db'
 import { churnedSubscribers, customers } from '@/lib/schema'
 import { and, eq, isNull, asc, lt, sql, count } from 'drizzle-orm'
 import { classifySubscriber } from './classifier'
-import { scheduleExitEmail } from './email'
+import { scheduleExitEmail, buildFromDisplayName } from './email'
 import { logEvent } from './events'
 import type { ClassificationResult, SubscriberSignals } from './types'
 import { buildConversationThread } from './conversation'
@@ -199,6 +199,8 @@ export async function runClassifierTick(): Promise<ClassifierTickStats> {
         winBackBody:          classification.winBackBody,
         handoffReasoning:     classification.handoffReasoning,
         recoveryLikelihood:   classification.recoveryLikelihood,
+        drawerInsightRead:         classification.drawerInsight?.read ?? '',
+        drawerInsightWorthKnowing: classification.drawerInsight?.worthKnowing ?? '',
         status:               classification.tier === 4 ? 'skipped' : (sub.status ?? 'pending'),
         classifiedAt:         new Date(),
         updatedAt:            new Date(),
@@ -237,7 +239,10 @@ export async function runClassifierTick(): Promise<ClassifierTickStats> {
             subscriberId: sub.id,
             email: sub.email!,
             classification,
-            fromName: customer.founderName ?? 'The team',
+            fromName: buildFromDisplayName({
+              founderName: customer.founderName,
+              productName: customer.productName,
+            }),
           })
           stats.exitEmailsSent++
         } catch (emailErr) {

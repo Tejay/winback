@@ -1,12 +1,9 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { emailsSent, churnedSubscribers, customers, users, inboundEvents, subscriberReplies } from '@/lib/schema'
+import { emailsSent, churnedSubscribers, customers, inboundEvents, subscriberReplies } from '@/lib/schema'
 import { eq, count, desc, and } from 'drizzle-orm'
 import { Webhook } from 'svix'
 import { classifySubscriber } from '@/src/winback/lib/classifier'
-import { sendReplyEmail, resolveFounderNotificationEmail } from '@/src/winback/lib/email'
-import { buildReplyAfterHandoffNotification } from '@/src/winback/lib/founder-handoff-email'
-import { Resend } from 'resend'
 import { SubscriberSignals } from '@/src/winback/lib/types'
 import { logEvent } from '@/src/winback/lib/events'
 import { buildConversationThread } from '@/src/winback/lib/conversation'
@@ -392,6 +389,18 @@ export async function POST(req: Request) {
     // unlock: a previously low-confidence row whose reply now contains
     // a real reason flips to 'high', and V2 cron picks them up on the
     // next pass for re-engagement matching.
+    // Drawer redesign — AI does NOT send follow-up emails. The reply is
+    // re-classified purely to refresh the founder-facing analysis
+    // (drawerInsight + recoveryLikelihood + triggerNeed). The AI's job is
+    // to understand why they left and estimate recovery — not to keep
+    // emailing. Any reply to the subscriber is the founder's, via the
+    // take-over composer.
+    //
+    // Why no AI follow-up: every commitment/false-promise the classifier
+    // produced in testing happened in follow-ups, where "ask one more
+    // question" runs out of road and the LLM fills the vacuum with
+    // invented offers. Exit emails are bounded and clean; follow-ups
+    // aren't. So we removed them.
     await db
       .update(churnedSubscribers)
       .set({
@@ -400,136 +409,16 @@ export async function POST(req: Request) {
         triggerKeyword: classification.triggerKeyword,
         triggerNeed: classification.triggerNeed,
         triggerNeedConfidence: deriveTriggerNeedConfidence(classification),
-        winBackSubject: classification.winBackSubject,
-        winBackBody: classification.winBackBody,
         cancellationReason: classification.cancellationReason,
         cancellationCategory: classification.cancellationCategory,
-        handoffReasoning:   classification.handoffReasoning,
+        drawerInsightRead:         classification.drawerInsight?.read ?? '',
+        drawerInsightWorthKnowing: classification.drawerInsight?.worthKnowing ?? '',
         recoveryLikelihood: classification.recoveryLikelihood,
         updatedAt: new Date(),
       })
       .where(eq(churnedSubscribers.id, subscriberId))
 
-    console.log('Re-classified subscriber after reply:', subscriberId, 'tier:', classification.tier, 'firstMessage:', !!classification.firstMessage, 'winBackBody:', !!classification.winBackBody)
-
-    // The LLM may put re-classification content in firstMessage OR in
-    // winBackSubject/winBackBody. Build the message from whichever is present.
-    const replyMessage = classification.firstMessage
-      ?? (classification.winBackBody
-        ? { subject: classification.winBackSubject, body: classification.winBackBody, sendDelaySecs: 0 }
-        : null)
-
-    // Spec 22a — if subscriber is handed off OR has AI paused, route this reply
-    // to the founder (not the AI). Notification rules:
-    //   • Handed off + active pause (snooze) → muted (no notification)
-    //   • Handed off + no active pause → notify (reply-after-handoff)
-    //   • Proactive pause (not handed off) → notify (reply-during-pause)
-    const isHandedOff = subscriber.founderHandoffAt && !subscriber.founderHandoffResolvedAt
-    const isPaused = subscriber.aiPausedUntil && subscriber.aiPausedUntil.getTime() > Date.now()
-
-    if (isHandedOff || isPaused) {
-      // Handoff-snooze mutes notifications; any other combination notifies.
-      const shouldNotify = !(isHandedOff && isPaused)
-
-      if (!shouldNotify) {
-        console.log('Reply received while handoff is snoozed — saved but no notification:', subscriberId)
-      } else {
-        try {
-          const recipient = customer ? await resolveFounderNotificationEmail(customer.id) : null
-          if (recipient) {
-            const { subject, body } = await buildReplyAfterHandoffNotification({
-              subscriber: {
-                id: subscriber.id,
-                email: subscriber.email,
-                name: subscriber.name,
-                planName: subscriber.planName,
-                mrrCents: subscriber.mrrCents,
-                cancellationReason: subscriber.cancellationReason,
-                triggerNeed: subscriber.triggerNeed,
-                cancelledAt: subscriber.cancelledAt,
-                stripeComment: subscriber.stripeComment,
-                replyText: replyBody,  // the body we just inserted
-              },
-              founderName: customer?.founderName ?? 'there',
-              newReplyText: replyBody,
-            })
-            const resend = new Resend(process.env.RESEND_API_KEY!)
-            await resend.emails.send({
-              from: `Winback <noreply@winbackflow.co>`,
-              to: recipient,
-              subject,
-              text: body,
-            })
-            console.log('Reply-under-pause-or-handoff notification sent to founder:', recipient)
-          }
-        } catch (notifyErr) {
-          console.error('Failed to notify founder of reply under pause/handoff:', notifyErr)
-        }
-      }
-      // Don't auto-reply while under pause or handoff
-      await finalizeInboundEvent(emailId, 'processed', subscriberId)
-      return NextResponse.json({ received: true, processed: true, handedOff: isHandedOff, paused: isPaused })
-    }
-
-    // Spec 65 — if this reply is to a re-engagement email, the conversation
-    // ends with the original outbound. We still re-classify (already done
-    // above) and persist the reply for data quality, but skip the auto-reply
-    // so a "thanks but no" doesn't trigger a chatty AI follow-up that
-    // undercuts the "one shot per improvement" design.
-    const [lastEmail] = await db
-      .select({ type: emailsSent.type, improvementId: emailsSent.improvementId })
-      .from(emailsSent)
-      .where(eq(emailsSent.subscriberId, subscriberId))
-      .orderBy(desc(emailsSent.sentAt))
-      .limit(1)
-
-    if (lastEmail?.type === 'reengagement') {
-      logEvent({
-        name: 'reengagement_reply',
-        properties: {
-          subscriberId,
-          improvementId: lastEmail.improvementId,
-          replyTextLength: replyBody.length,
-        },
-      })
-      console.log('Reply to re-engagement email — silent re-classify, no auto-reply:', subscriberId)
-      await finalizeInboundEvent(emailId, 'processed', subscriberId)
-      return NextResponse.json({ received: true, processed: true, silent: true, reason: 'reply_to_reengagement' })
-    }
-
-    // Send follow-up email in the same thread with the re-classified content.
-    // Respects a max of 2 follow-ups per subscriber — after that, flags the founder.
-    if (classification.tier !== 4 && replyMessage && subscriber.email) {
-      const replyClassification = { ...classification, firstMessage: replyMessage }
-
-      // Look up the founder's email to notify them if the follow-up limit is hit
-      let founderEmail: string | undefined
-      if (customer?.userId) {
-        const [user] = await db
-          .select({ email: users.email })
-          .from(users)
-          .where(eq(users.id, customer.userId))
-          .limit(1)
-        founderEmail = user?.email
-      }
-
-      try {
-        const result = await sendReplyEmail({
-          subscriberId,
-          email: subscriber.email,
-          classification: replyClassification,
-          fromName: customer?.founderName ?? 'The team',
-          founderEmail,
-        })
-        if (!result.sent) {
-          console.log('Reply email not sent:', result.reason)
-        }
-      } catch (emailErr) {
-        console.error('Failed to send reply email:', emailErr)
-      }
-    } else {
-      console.log('Skipping reply email — tier:', classification.tier, 'replyMessage:', !!replyMessage, 'email:', !!subscriber.email)
-    }
+    console.log('Re-classified subscriber after reply (analysis only, no auto-reply):', subscriberId, 'tier:', classification.tier, 'recovery:', classification.recoveryLikelihood)
   } catch (err) {
     console.error('Re-classification after reply failed:', err)
   }

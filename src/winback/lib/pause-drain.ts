@@ -28,7 +28,7 @@ import {
   scheduleExitEmail,
   sendDunningEmail,
   sendDunningFollowupEmail,
-  sendReplyEmail,
+  buildFromDisplayName,
 } from './email'
 import { logEvent } from './events'
 import type { SubscriberSignals } from './types'
@@ -349,6 +349,8 @@ async function processCancellationItem(sub: SubscriberRow): Promise<DrainItem> {
       winBackBody: classification.winBackBody,
       handoffReasoning: classification.handoffReasoning,
       recoveryLikelihood: classification.recoveryLikelihood,
+      drawerInsightRead:         classification.drawerInsight?.read ?? '',
+      drawerInsightWorthKnowing: classification.drawerInsight?.worthKnowing ?? '',
       updatedAt: new Date(),
     })
     .where(eq(churnedSubscribers.id, sub.id))
@@ -360,29 +362,15 @@ async function processCancellationItem(sub: SubscriberRow): Promise<DrainItem> {
       customerId: sub.customerId,
       category: 'cancellation',
       action: 'skipped_classifier',
-      reasoning: classification.suppressReason ?? classification.handoffReasoning,
+      reasoning: classification.suppressReason ?? classification.drawerInsight?.read ?? '',
     }
-  }
-
-  if (classification.handoff) {
-    // scheduleExitEmail handles the handoff path internally (calls
-    // triggerFounderHandoff). After it returns, founderHandoffAt is set
-    // on the row, so we can mark drain-processed.
-    await scheduleExitEmail({
-      subscriberId: sub.id,
-      email: sub.email!,
-      classification,
-      fromName: customer.founderName ?? 'The team',
-    })
-    await markProcessed(sub.id)
-    return { subscriberId: sub.id, customerId: sub.customerId, category: 'cancellation', action: 'handoff' }
   }
 
   await scheduleExitEmail({
     subscriberId: sub.id,
     email: sub.email!,
     classification,
-    fromName: customer.founderName ?? 'The team',
+    fromName: buildFromDisplayName({ founderName: customer.founderName, productName: customer.productName }),
   })
   await markProcessed(sub.id)
   return { subscriberId: sub.id, customerId: sub.customerId, category: 'cancellation', action: 'sent' }
@@ -395,7 +383,7 @@ async function processDunningItem(sub: SubscriberRow): Promise<DrainItem> {
   // dunning emails use template based on dunningState/touchCount; no
   // classifier judgement applies.
   const touchCount = sub.dunningTouchCount ?? 0
-  const fromName = customer.founderName ?? 'The team'
+  const fromName = buildFromDisplayName({ founderName: customer.founderName, productName: customer.productName })
   const planName = sub.planName ?? 'your plan'
   const amountDue = sub.mrrCents
   const currency = 'usd' // wb_churned_subscribers doesn't track per-sub currency yet; safe default
@@ -468,42 +456,31 @@ async function processReplyItem(sub: SubscriberRow): Promise<DrainItem> {
     productName: customer.productName ?? undefined,
   })
 
-  // Persist refreshed classification for visibility
+  // Drawer redesign — AI does NOT send follow-up emails. A reply that
+  // queued during a pause gets re-classified to refresh the founder-facing
+  // analysis (drawerInsight + recovery), then the row is marked processed.
+  // No auto-reply. The founder owns any reply via the take-over composer —
+  // they'll see the queued reply in the drawer when they open it.
   await db
     .update(churnedSubscribers)
     .set({
       tier: classification.tier,
       confidence: String(classification.confidence),
-      handoffReasoning: classification.handoffReasoning,
       recoveryLikelihood: classification.recoveryLikelihood,
+      drawerInsightRead:         classification.drawerInsight?.read ?? '',
+      drawerInsightWorthKnowing: classification.drawerInsight?.worthKnowing ?? '',
       updatedAt: new Date(),
     })
     .where(eq(churnedSubscribers.id, sub.id))
 
-  // sendReplyEmail handles classification.handoff and classification.suppress
-  // internally and returns { sent, reason }. Whatever it returns, the row
-  // has reached a terminal decision and should be marked drain-processed.
-  const result = await sendReplyEmail({
-    subscriberId: sub.id,
-    email: sub.email!,
-    classification,
-    fromName: customer.founderName ?? 'The team',
-  })
-
   await markProcessed(sub.id)
 
-  if (result.sent) {
-    return { subscriberId: sub.id, customerId: sub.customerId, category: 'reply', action: 'sent' }
-  }
-  if (result.reason === 'ai_handoff') {
-    return { subscriberId: sub.id, customerId: sub.customerId, category: 'reply', action: 'handoff' }
-  }
   return {
     subscriberId: sub.id,
     customerId: sub.customerId,
     category: 'reply',
     action: 'skipped_classifier',
-    reasoning: result.reason,
+    reasoning: 'reply re-classified (analysis only); AI follow-ups removed',
   }
 }
 

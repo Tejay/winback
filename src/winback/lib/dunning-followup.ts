@@ -15,7 +15,7 @@
 import { db } from '@/lib/db'
 import { churnedSubscribers, customers, users } from '@/lib/schema'
 import { and, eq, isNotNull, sql } from 'drizzle-orm'
-import { sendDunningFollowupEmail } from './email'
+import { sendDunningFollowupEmail, buildFromDisplayName } from './email'
 import { logEvent } from './events'
 
 export type DunningRunResult = { processed: number; sent: number; errors: number }
@@ -92,8 +92,12 @@ async function processOnePass(opts: {
         continue
       }
 
-      // Prefer product name so the subscriber sees the brand they signed up to.
-      const fromName = row.productName ?? row.founderName ?? row.userName ?? 'The team'
+      // Brand + founder so the subscriber recognises both. Falls back to
+      // userName when the merchant hasn't filled in founderName.
+      const fromName = buildFromDisplayName({
+        founderName: row.founderName ?? row.userName,
+        productName: row.productName,
+      })
 
       await sendDunningFollowupEmail({
         subscriberId: row.subscriberId,

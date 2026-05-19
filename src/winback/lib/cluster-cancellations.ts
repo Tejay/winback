@@ -85,13 +85,19 @@ function getClient(): Anthropic {
 // case loses good clusters too. Instead, the post-validation filter
 // (see filterValidSubscriberIds further down) drops sub-threshold
 // clusters after we've also stripped hallucinated subscriber IDs.
+// Spec 72 — Zod ceilings set to 2× the prompt's stated allowance.
+// Per-field allowances (see prompts/cluster-system.md):
+//   title:       4–6 word noun phrase → ~50 char target → cap 100
+//   description: ONE sentence         → ~140 char target → cap 280
+//   emoji:       single emoji         → ~4 byte target  → cap 8
+//   sampleQuotes: 2–3 quotes          → 3 array target  → cap 6
 const ThemeSchema = z.object({
-  title:                  z.string().min(1).max(80),
+  title:                  z.string().min(1).max(100),
   description:            z.string().min(1).max(280),
   category:               z.enum(['Price', 'Feature', 'Other']).nullable(),
   emoji:                  z.string().min(1).max(8),
   subscriberIds:          z.array(z.string().uuid()).min(1),
-  sampleQuotes:           z.array(z.string().min(1)).min(1).max(5),
+  sampleQuotes:           z.array(z.string().min(1)).min(1).max(6),
   addressesImprovementId: z.string().uuid().nullable(),
 })
 export type ClusteredTheme = z.infer<typeof ThemeSchema>
