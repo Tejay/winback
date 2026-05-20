@@ -62,15 +62,23 @@ export function aiState(sub: AiStateInputs, now: Date = new Date()): AiState {
  * condition, and inside a `count(*) filter (...)` aggregate.
  */
 export function awaitingReplyExpr(): SQL<boolean> {
+  // The outer correlation MUST be fully qualified as
+  // "wb_churned_subscribers"."id". Drizzle renders ${churnedSubscribers.id}
+  // as the bare "id" when the enclosing SELECT lists the table's own
+  // columns (getTableColumns), and inside `from wb_subscriber_replies sr`
+  // / `wb_emails_sent es` a bare "id" silently binds to sr.id / es.id —
+  // making the correlation always-false. ${churnedSubscribers} renders the
+  // table name, so ${churnedSubscribers}."id" is unambiguous in every
+  // context (SELECT column, WHERE, count-filter).
   return sql<boolean>`(
     ${churnedSubscribers.status} not in ('recovered', 'lost', 'skipped')
     and ${churnedSubscribers.doNotContact} = false
     and exists (
       select 1 from ${subscriberReplies} sr
-      where sr.subscriber_id = ${churnedSubscribers.id}
+      where sr.subscriber_id = ${churnedSubscribers}."id"
         and sr.received_at > coalesce(
           (select max(es.sent_at) from ${emailsSent} es
-            where es.subscriber_id = ${churnedSubscribers.id}
+            where es.subscriber_id = ${churnedSubscribers}."id"
               and es.type = 'founder_reply'),
           '1970-01-01'::timestamptz
         )

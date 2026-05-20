@@ -160,9 +160,11 @@ export async function GET(req: NextRequest) {
       // list can show the subscriber's own words on "awaiting" rows, and
       // a flag so the row can be visually marked as needing a reply. Both
       // are correlated subqueries on the same scan — no extra round-trip.
+      // Outer id MUST be qualified — see awaitingReplyExpr() for why a bare
+      // ${churnedSubscribers.id} silently binds to sr.id here.
       latestReplySnippet: sql<string | null>`(
         select sr.body from ${subscriberReplies} sr
-        where sr.subscriber_id = ${churnedSubscribers.id}
+        where sr.subscriber_id = ${churnedSubscribers}."id"
         order by sr.received_at desc
         limit 1
       )`.as('latest_reply_snippet'),
