@@ -1008,11 +1008,17 @@ export function DashboardClient({
                   onClick={() => setSelected(sub)}
                   className="hover:bg-slate-50/70 cursor-pointer transition-colors"
                 >
-                  <td className="py-3.5 pl-5 pr-4">
-                    <div className="flex items-center gap-3">
+                  <td className="py-3.5 pl-3 pr-4">
+                    <div className="flex items-center gap-2.5">
+                      {/* Unread-style dot — marks "the ball's in your court"
+                          before you even read the snippet. Reserved slot keeps
+                          avatars aligned whether or not the dot shows. */}
+                      <span className="w-2 flex justify-center shrink-0">
+                        {showSnippet && <span className="w-2 h-2 rounded-full bg-amber-400" title="Awaiting your reply" />}
+                      </span>
                       <div className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-semibold shrink-0 ${avatarClass}`}>{initial}</div>
                       <div className="min-w-0">
-                        <div className="font-medium text-sm text-slate-900 leading-tight">{sub.name ?? 'Unknown'}</div>
+                        <div className={`text-sm text-slate-900 leading-tight ${showSnippet ? 'font-bold' : 'font-medium'}`}>{sub.name ?? 'Unknown'}</div>
                         {showSnippet ? (
                           <div className="text-xs text-amber-700 flex items-center gap-1 mt-0.5 truncate max-w-[220px]">
                             <MessageSquare className="w-3 h-3 shrink-0" />

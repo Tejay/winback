@@ -126,7 +126,7 @@ export async function GET(req: NextRequest) {
 
   // Spec 40 — sort policy:
   //   payment-recovery cohort: most-urgent retry first (next_payment_attempt ASC NULLS LAST)
-  //   winback cohort, filter='all': handoffs → replies → recency
+  //   winback cohort, filter='all': awaiting-you → high recovery → recency
   //   anything else: cancelledAt DESC (legacy)
   const orderBy =
     cohort === 'payment-recovery'
@@ -136,28 +136,15 @@ export async function GET(req: NextRequest) {
         ]
       : cohort === 'winback' && filter === 'all'
         ? [
-            // Drawer redesign — sort priority for the "All" view:
-            //   1. High recovery + founder taking over (urgent, you're already engaged)
-            //   2. High recovery + AI handling (worth a personal look)
-            //   3. Anything else, ordered by most recent cancellation
+            // Drawer redesign — "All" view priority, matching the dashboard
+            // model (the founder skims and acts):
+            //   1. Awaiting your reply — the ball is in your court, top.
+            //   2. High recovery likelihood — worth a personal look.
+            //   3. Everything else, most recent cancellation first.
             sql`case
-              when ${churnedSubscribers.recoveryLikelihood} = 'high'
-                and (
-                  (${churnedSubscribers.founderHandoffAt} is not null
-                   and ${churnedSubscribers.founderHandoffResolvedAt} is null)
-                  or (${churnedSubscribers.aiPausedUntil} > now()
-                      and ${churnedSubscribers.aiPausedReason} = 'takeover')
-                )
-              then 0
-              when ${churnedSubscribers.recoveryLikelihood} = 'high'
-              then 1
+              when ${awaitingReplyExpr()} then 0
+              when ${churnedSubscribers.recoveryLikelihood} = 'high' then 1
               else 2 end`,
-            // Tie-breaker: rows with at least one inbound reply bubble up.
-            sql`case when exists (
-              select 1 from ${emailsSent}
-              where ${emailsSent.subscriberId} = ${churnedSubscribers.id}
-                and ${emailsSent.repliedAt} is not null
-            ) then 0 else 1 end`,
             desc(churnedSubscribers.cancelledAt),
           ]
         : [desc(churnedSubscribers.cancelledAt)]
