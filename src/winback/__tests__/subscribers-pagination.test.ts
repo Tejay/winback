@@ -40,6 +40,11 @@ vi.mock('@/lib/schema', () => ({
     subscriberId: 'subscriber_id',
     repliedAt:    'replied_at',
   },
+  subscriberReplies: {
+    subscriberId: 'subscriber_id',
+    body:         'body',
+    receivedAt:   'received_at',
+  },
   // Spec 78 — referenced by the applied-promotion-chip lookup added
   // after the main SELECT/COUNT. The test mock just needs symbolic
   // identifiers; the chain is fully mocked via selectChain.
@@ -64,8 +69,9 @@ vi.mock('drizzle-orm', () => ({
   ilike:     vi.fn((a, b) => ({ op: 'ilike', a, b })),
   desc:      vi.fn((c) => ({ op: 'desc', c })),
   count:     vi.fn(() => 'count_marker'),
+  getTableColumns: vi.fn(() => ({})),
   sql:       Object.assign(
-    (..._args: unknown[]) => ({ op: 'sql' }),
+    (..._args: unknown[]) => ({ op: 'sql', as: (_n?: string) => ({ op: 'sql' }) }),
     { raw: (s: string) => s },
   ),
 }))
@@ -74,6 +80,7 @@ vi.mock('@/lib/auth', () => ({ auth: mockAuth }))
 vi.mock('@/lib/ai-state', () => ({
   aiStateFilterCondition: vi.fn(() => null),
   isValidAiStateFilter:   vi.fn(() => false),
+  awaitingReplyExpr:      vi.fn(() => ({ as: (_n?: string) => ({ op: 'sql' }) })),
 }))
 vi.mock('next/server', () => ({
   NextResponse: {

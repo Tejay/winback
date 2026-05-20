@@ -1,5 +1,5 @@
 import { sql, and, or, eq, isNotNull, isNull, SQL } from 'drizzle-orm'
-import { churnedSubscribers } from './schema'
+import { churnedSubscribers, subscriberReplies, emailsSent } from './schema'
 
 /**
  * Spec 22b — Derived "AI state" for a subscriber.
@@ -43,6 +43,39 @@ export function aiState(sub: AiStateInputs, now: Date = new Date()): AiState {
   if (pausedUntil && pausedUntil.getTime() > now.getTime()) return 'paused'
 
   return 'active'
+}
+
+/**
+ * Drawer-redesign — "the ball is in the founder's court."
+ *
+ * True when the subscriber's most-recent inbound reply is newer than the
+ * founder's most-recent personal reply (or the founder hasn't replied at
+ * all), and the row is still open (not recovered/lost/skipped/DNC).
+ *
+ * After the AI's listen-only exit email the subscriber may reply; that
+ * flips this on. When the founder replies (a `founder_reply` outbound),
+ * the ball is back with the subscriber and this goes off — until they
+ * reply again. Used for the "Awaiting reply" filter, the per-row flag,
+ * and the dashboard count.
+ *
+ * Returned as a SQL<boolean> so it can be used as a SELECT column, a WHERE
+ * condition, and inside a `count(*) filter (...)` aggregate.
+ */
+export function awaitingReplyExpr(): SQL<boolean> {
+  return sql<boolean>`(
+    ${churnedSubscribers.status} not in ('recovered', 'lost', 'skipped')
+    and ${churnedSubscribers.doNotContact} = false
+    and exists (
+      select 1 from ${subscriberReplies} sr
+      where sr.subscriber_id = ${churnedSubscribers.id}
+        and sr.received_at > coalesce(
+          (select max(es.sent_at) from ${emailsSent} es
+            where es.subscriber_id = ${churnedSubscribers.id}
+              and es.type = 'founder_reply'),
+          '1970-01-01'::timestamptz
+        )
+    )
+  )`
 }
 
 export const AI_STATE_FILTERS = ['all', 'active', 'handoff', 'paused', 'recovered', 'done'] as const

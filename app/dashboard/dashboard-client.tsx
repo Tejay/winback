@@ -62,6 +62,10 @@ interface Subscriber {
   // in /api/subscribers from recoveries.appliedPromotionCodeId joined
   // to the promotion's wb_improvements row.
   appliedPromotionChip?: string | null
+  // Drawer redesign — the subscriber's most-recent inbound reply (shown
+  // inline on awaiting rows) + whether the ball is in the founder's court.
+  latestReplySnippet?: string | null
+  awaitingReply?: boolean
 }
 
 type ConversationMessage =
@@ -96,9 +100,8 @@ interface LabelPct {
 }
 interface WinBackFilterCounts {
   all: number
-  handoff: number
-  'has-reply': number
-  paused: number
+  awaiting: number
+  high: number
   recovered: number
   done: number
 }
@@ -160,7 +163,7 @@ const EMPTY_STATS: Stats = {
     inProgress: 0,
     handoffsNeedingAttention: 0,
     topReasons: [],
-    filterCounts: { all: 0, handoff: 0, 'has-reply': 0, paused: 0, recovered: 0, done: 0 },
+    filterCounts: { all: 0, awaiting: 0, high: 0, recovered: 0, done: 0 },
     dailyRecovered: [],
     pipeline30d: EMPTY_PIPELINE,
   },
@@ -409,13 +412,10 @@ export function DashboardClient({
         setStatsLoaded(true) // unblock UI so KPIs show "—" rather than spinning
       })
     const params = new URLSearchParams()
-    // Spec 40 — partition by cohort. The "Has reply" chip is win-back-only
-    // and serialised to ?hasReply=true rather than the filter slot so the
-    // existing AI-state filter pipeline stays clean.
+    // Spec 40 — partition by cohort. Filters (awaiting / high / recovered /
+    // done for win-back; dunning states for payment) go in the filter slot.
     params.set('cohort', tab === 'winback' ? 'winback' : 'payment-recovery')
-    if (filter === 'has-reply') {
-      params.set('hasReply', 'true')
-    } else if (filter !== 'all') {
+    if (filter !== 'all') {
       params.set('filter', filter)
     }
     if (search) params.set('search', search)
@@ -590,9 +590,8 @@ export function DashboardClient({
   // filter state so switching tabs doesn't lose context.
   const winbackFilters: Array<{ key: string; label: string }> = [
     { key: 'all',       label: 'All' },
-    { key: 'handoff',   label: 'You active' },
-    { key: 'has-reply', label: 'Has reply' },
-    { key: 'paused',    label: 'Paused' },
+    { key: 'awaiting',  label: 'Awaiting reply' },
+    { key: 'high',      label: 'High recovery' },
     { key: 'recovered', label: 'Recovered' },
     { key: 'done',      label: 'Done' },
   ]
@@ -815,32 +814,17 @@ export function DashboardClient({
         </button>
       </div>
 
-      {/* Spec 40/43 — Win-back tab. Reading order top→bottom:
-          handoff alert (act now) → pipeline strip (loss framing) →
-          KPI band → pattern strip → subscriber table. */}
+      {/* Win-back tab. Reading order top→bottom:
+          pipeline strip (loss framing) → KPI cards → pattern strip →
+          subscriber table. The legacy "needs your attention" handoff
+          alert was removed — the AI no longer escalates a queue; the
+          "Awaiting reply" filter + inline reply snippets surface what
+          needs the founder now. */}
       {tab === 'winback' && (
         <>
-          {stats.winBack.handoffsNeedingAttention > 0 && (
-            <div className="mb-4 flex items-center justify-between gap-3 bg-amber-50 border border-amber-200 rounded-2xl px-5 py-3">
-              <div className="flex items-center gap-2 text-sm">
-                <span className="bg-amber-100 text-amber-700 rounded-full w-6 h-6 flex items-center justify-center text-xs font-bold">
-                  !
-                </span>
-                <span className="font-medium text-amber-900">
-                  {stats.winBack.handoffsNeedingAttention} subscriber{stats.winBack.handoffsNeedingAttention === 1 ? '' : 's'} need{stats.winBack.handoffsNeedingAttention === 1 ? 's' : ''} your attention
-                </span>
-              </div>
-              <button
-                onClick={() => setWinbackFilter('handoff')}
-                className="text-sm font-medium text-amber-900 hover:text-amber-700"
-              >
-                Resolve queue →
-              </button>
-            </div>
-          )}
           <PipelineStrip pipeline={stats.winBack.pipeline30d} />
-          {/* KPI row — blue tint background */}
-          <section className="rounded-3xl bg-blue-100 border border-blue-200 p-3 mb-7">
+          {/* KPI cards — clean white cards on the page background */}
+          <section className="mb-7">
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
               <StatCard
                 loading={!statsLoaded}
@@ -996,34 +980,55 @@ export function DashboardClient({
 
       {/* Subscriber table — per-tab columns + interaction model */}
       {tab === 'winback' ? (
-        <div className="bg-white rounded-2xl border border-slate-100 overflow-x-auto">
+        <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
           <table className="w-full">
             <thead>
-              <tr className="border-b border-slate-100">
-                <th className="text-left text-xs font-semibold uppercase tracking-wide text-slate-400 py-3 px-4">Subscriber</th>
-                <th className="hidden lg:table-cell text-left text-xs font-semibold uppercase tracking-wide text-slate-400 py-3 px-4">Plan</th>
-                <th className="hidden sm:table-cell text-left text-xs font-semibold uppercase tracking-wide text-slate-400 py-3 px-4">Cancelled</th>
-                <th className="hidden md:table-cell text-left text-xs font-semibold uppercase tracking-wide text-slate-400 py-3 px-4">Reason</th>
-                <th className="text-left text-xs font-semibold uppercase tracking-wide text-slate-400 py-3 px-4">Status</th>
-                <th className="text-right text-xs font-semibold uppercase tracking-wide text-slate-400 py-3 px-4">MRR</th>
+              <tr className="bg-slate-50/60 border-b border-slate-100">
+                <th className="text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400 py-3 pl-5 pr-4">Subscriber</th>
+                <th className="hidden lg:table-cell text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400 py-3 px-4">Plan</th>
+                <th className="hidden sm:table-cell text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400 py-3 px-4">Cancelled</th>
+                <th className="hidden md:table-cell text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400 py-3 px-4">Reason</th>
+                <th className="text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400 py-3 px-4">Status</th>
+                <th className="text-right text-[11px] font-semibold uppercase tracking-wider text-slate-400 py-3 pr-5">MRR</th>
               </tr>
             </thead>
-            <tbody>
-              {(subscribers ?? []).map((sub) => (
+            <tbody className="divide-y divide-slate-50">
+              {(subscribers ?? []).map((sub) => {
+                const isClosed = sub.status === 'recovered' || sub.status === 'lost' || sub.status === 'skipped' || !!sub.doNotContact
+                const initial = (sub.name?.trim()?.[0] ?? sub.email?.trim()?.[0] ?? '?').toUpperCase()
+                const showSnippet = !!(sub.awaitingReply && sub.latestReplySnippet)
+                const avatarClass =
+                  sub.status === 'recovered' ? 'bg-emerald-50 text-emerald-700'
+                  : sub.recoveryLikelihood === 'high' ? 'bg-gradient-to-br from-amber-200 to-amber-300 text-amber-900'
+                  : 'bg-slate-100 text-slate-500'
+                const snippet = (sub.latestReplySnippet ?? '').replace(/\s+/g, ' ').trim().slice(0, 80)
+                return (
                 <tr
                   key={sub.id}
                   onClick={() => setSelected(sub)}
-                  className="hover:bg-slate-50 cursor-pointer border-b border-slate-50 transition-colors"
+                  className="hover:bg-slate-50/70 cursor-pointer transition-colors"
                 >
-                  <td className="py-4 pr-4 px-4">
-                    <div className="text-sm font-medium text-slate-900">{sub.name ?? 'Unknown'}</div>
-                    <div className="text-xs text-slate-400 mt-0.5 truncate max-w-[160px] sm:max-w-none">{sub.email ?? ''}</div>
+                  <td className="py-3.5 pl-5 pr-4">
+                    <div className="flex items-center gap-3">
+                      <div className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-semibold shrink-0 ${avatarClass}`}>{initial}</div>
+                      <div className="min-w-0">
+                        <div className="font-medium text-sm text-slate-900 leading-tight">{sub.name ?? 'Unknown'}</div>
+                        {showSnippet ? (
+                          <div className="text-xs text-amber-700 flex items-center gap-1 mt-0.5 truncate max-w-[220px]">
+                            <MessageSquare className="w-3 h-3 shrink-0" />
+                            <span className="truncate">“{snippet}”</span>
+                          </div>
+                        ) : (
+                          <div className="text-xs text-slate-400 mt-0.5 truncate max-w-[200px] sm:max-w-none">{sub.email ?? ''}</div>
+                        )}
+                      </div>
+                    </div>
                   </td>
-                  <td className="hidden lg:table-cell text-sm text-slate-600 py-4 px-4">{sub.planName ?? '—'}</td>
-                  <td className="hidden sm:table-cell text-sm text-slate-600 py-4 px-4">
+                  <td className="hidden lg:table-cell text-sm text-slate-600 py-3.5 px-4">{sub.planName ?? '—'}</td>
+                  <td className="hidden sm:table-cell text-sm text-slate-500 py-3.5 px-4">
                     {sub.cancelledAt ? new Date(sub.cancelledAt).toISOString().split('T')[0] : '—'}
                   </td>
-                  <td className="hidden md:table-cell text-sm text-slate-600 py-4 px-4 align-top">
+                  <td className="hidden md:table-cell text-sm text-slate-600 py-3.5 px-4 align-top">
                     <div>
                       {sub.cancellationReason
                         ? sub.cancellationReason.length > 45
@@ -1033,61 +1038,53 @@ export function DashboardClient({
                     </div>
                     {sub.appliedPromotionChip && (
                       <div className="mt-1">
-                        {/* Spec 78 — promo chip rendered on its own line under
-                            the cancellation reason; long reasons wrap cleanly
-                            instead of fighting the chip inline. */}
+                        {/* Spec 78 — promo chip on its own line under the reason. */}
                         <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 text-[11px] font-medium">
                           {sub.appliedPromotionChip}
                         </span>
                       </div>
                     )}
                   </td>
-                  <td className="py-4 px-4">
+                  <td className="py-3.5 px-4">
                     {(() => {
-                      // Closed states (recovered / lost / skipped / opted-out)
-                      // get a single neutral chip — recovery + ownership are
-                      // irrelevant once the conversation is done.
-                      const isClosed = sub.status === 'recovered' || sub.status === 'lost' || sub.status === 'skipped' || sub.doNotContact
+                      // Closed states get a single neutral chip (recovered is
+                      // emerald). Recovery + ownership are irrelevant once done.
                       if (isClosed) {
-                        const closedLabel =
-                          sub.status === 'recovered' ? 'Recovered'
-                          : sub.doNotContact ? 'Unsubscribed'
-                          : sub.status === 'lost' ? 'Lost'
-                          : 'Skipped'
+                        if (sub.status === 'recovered') {
+                          return (
+                            <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">✓ Recovered</span>
+                          )
+                        }
+                        const closedLabel = sub.doNotContact ? 'Unsubscribed' : sub.status === 'lost' ? 'Lost' : 'Skipped'
                         return (
-                          <span className="inline-flex items-center text-[10px] uppercase tracking-wider font-medium text-slate-500 bg-slate-50 border border-slate-200 px-2 py-0.5 rounded-full">
+                          <span className="inline-flex items-center text-[11px] font-medium text-slate-500 bg-slate-50 border border-slate-200 px-2 py-0.5 rounded-full">
                             {closedLabel}
                           </span>
                         )
                       }
-                      // Active states: optional amber "High" recovery chip
-                      // + slate "AI" / dark "You" ownership chip.
-                      const isFounderActive = !!(sub.aiPausedUntil && new Date(sub.aiPausedUntil).getTime() > Date.now())
+                      // Open states: recovery-likelihood chip (paint, not gate).
+                      // "Awaiting reply" is conveyed by the reply snippet under
+                      // the name, not a second chip.
+                      const rl = sub.recoveryLikelihood
+                      if (!rl) return <span className="text-xs text-slate-300">—</span>
+                      const chip =
+                        rl === 'high'   ? { dot: 'bg-emerald-500', cls: 'text-emerald-700 bg-emerald-50 border-emerald-200', label: 'High' }
+                        : rl === 'medium' ? { dot: 'bg-amber-400',   cls: 'text-amber-700 bg-amber-50 border-amber-200',     label: 'Medium' }
+                        :                   { dot: 'bg-slate-300',   cls: 'text-slate-500 bg-slate-50 border-slate-200',     label: 'Low' }
                       return (
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          {sub.recoveryLikelihood === 'high' && (
-                            <span className="inline-flex items-center text-[10px] uppercase tracking-wider font-semibold text-amber-900 bg-amber-100 border border-amber-200 px-2 py-0.5 rounded-full">
-                              High
-                            </span>
-                          )}
-                          <span
-                            className={
-                              isFounderActive
-                                ? 'inline-flex items-center text-[10px] uppercase tracking-wider font-semibold text-white bg-slate-900 px-2 py-0.5 rounded-full'
-                                : 'inline-flex items-center text-[10px] uppercase tracking-wider font-semibold text-slate-600 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-full'
-                            }
-                          >
-                            {isFounderActive ? 'You' : 'AI'}
-                          </span>
-                        </div>
+                        <span className={`inline-flex items-center gap-1 text-[11px] font-semibold border px-2 py-0.5 rounded-full ${chip.cls}`}>
+                          <span className={`w-1.5 h-1.5 rounded-full ${chip.dot}`} />
+                          {chip.label}
+                        </span>
                       )
                     })()}
                   </td>
-                  <td className="text-sm font-medium text-slate-900 py-4 px-4 text-right">
+                  <td className={`text-sm font-semibold tabular-nums py-3.5 pr-5 text-right ${sub.status === 'recovered' ? 'text-emerald-700' : 'text-slate-900'}`}>
                     ${(sub.mrrCents / 100).toFixed(2)}
                   </td>
                 </tr>
-              ))}
+                )
+              })}
               {subscribers !== null && subscribers.length === 0 && (
                 <tr>
                   <td colSpan={6} className="text-center py-12 text-sm text-slate-400">
@@ -1932,27 +1929,24 @@ function StatCard({
       : 'text-slate-400'
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-100 px-4 py-4">
+    <div className="bg-white rounded-2xl border border-slate-100 p-5 transition-shadow hover:shadow-[0_8px_26px_-10px_rgba(15,23,42,0.14)]">
       <div className="flex items-start justify-between">
-        <div className={`${accentClass} rounded-lg w-7 h-7 flex items-center justify-center`}>
+        <div className={`${accentClass} rounded-xl w-8 h-8 flex items-center justify-center`}>
           {icon}
         </div>
         {sparkline && sparkline.length > 0 && (
           <Sparkline data={sparkline} accent={accent} />
         )}
+        {!sparkline && delta && (
+          <span className={`text-[11px] font-semibold tabular-nums ${deltaClass}`}>
+            {delta.direction === 'up' ? '▲' : delta.direction === 'down' ? '▼' : ''} {delta.text}
+          </span>
+        )}
       </div>
-      <div className="text-2xl sm:text-3xl font-bold text-slate-900 mt-2.5 tabular-nums">{value}</div>
-      <div className="text-[11px] font-semibold uppercase tracking-widest text-slate-400 mt-1">
-        {label}
-      </div>
+      <div className="text-3xl font-bold tracking-tight text-slate-900 mt-3 tabular-nums">{value}</div>
+      <div className="text-[13px] text-slate-400 mt-1">{label}</div>
       {subValue && (
         <div className="text-xs text-slate-500 tabular-nums mt-1.5">{subValue}</div>
-      )}
-      {delta && (
-        <div className={`text-[11px] font-medium tabular-nums mt-1.5 ${deltaClass}`}>
-          {delta.text}
-          <span className="text-slate-400 font-normal"> vs last month</span>
-        </div>
       )}
     </div>
   )

@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
-import { customers, churnedSubscribers, emailsSent, recoveries } from '@/lib/schema'
+import { customers, churnedSubscribers, recoveries } from '@/lib/schema'
 import { and, eq, gte, isNotNull, isNull, lt, ne, or, sql } from 'drizzle-orm'
+import { awaitingReplyExpr } from '@/lib/ai-state'
 import {
   buildDailySeries,
   recoveryRatePct,
@@ -40,9 +41,8 @@ const ACTIVE_DUNNING_STATES = ['awaiting_retry', 'final_retry_pending'] as const
 type Bucket = { recovered: number; mrrRecoveredCents: number }
 type WinBackFilterCounts = {
   all: number
-  handoff: number
-  'has-reply': number
-  paused: number
+  awaiting: number
+  high: number
   recovered: number
   done: number
 }
@@ -313,13 +313,11 @@ export async function GET() {
   const [wbCounts] = await db
     .select({
       all: sql<number>`count(*)::int`.as('all'),
-      handoff: sql<number>`count(*) filter (where ${churnedSubscribers.founderHandoffAt} is not null and ${churnedSubscribers.founderHandoffResolvedAt} is null)::int`.as('handoff'),
-      hasReply: sql<number>`count(*) filter (where exists (
-        select 1 from ${emailsSent}
-        where ${emailsSent.subscriberId} = ${churnedSubscribers.id}
-          and ${emailsSent.repliedAt} is not null
-      ))::int`.as('has_reply'),
-      paused: sql<number>`count(*) filter (where ${churnedSubscribers.aiPausedUntil} is not null and ${churnedSubscribers.aiPausedUntil} > now())::int`.as('paused'),
+      // Drawer redesign — "Awaiting reply": subscriber replied more recently
+      // than the founder did, row still open. The headline triage number.
+      awaiting: sql<number>`count(*) filter (where ${awaitingReplyExpr()})::int`.as('awaiting'),
+      // High recovery-likelihood, still open.
+      high: sql<number>`count(*) filter (where ${churnedSubscribers.recoveryLikelihood} = 'high' and ${churnedSubscribers.status} not in ('recovered','lost','skipped'))::int`.as('high'),
       recovered: sql<number>`count(*) filter (where ${churnedSubscribers.status} = 'recovered')::int`.as('recovered'),
       done: sql<number>`count(*) filter (where ${churnedSubscribers.status} in ('lost','skipped') or ${churnedSubscribers.doNotContact} = true)::int`.as('done'),
       // Spec 39 amendment — denominator + numerator for the rolling
@@ -366,9 +364,8 @@ export async function GET() {
 
   const winBackFilterCounts: WinBackFilterCounts = {
     all: Number(wbCounts.all),
-    handoff: Number(wbCounts.handoff),
-    'has-reply': Number(wbCounts.hasReply),
-    paused: Number(wbCounts.paused),
+    awaiting: Number(wbCounts.awaiting),
+    high: Number(wbCounts.high),
     recovered: Number(wbCounts.recovered),
     done: Number(wbCounts.done),
   }

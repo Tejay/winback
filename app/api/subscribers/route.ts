@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
-import { customers, churnedSubscribers, emailsSent, recoveries, improvements } from '@/lib/schema'
-import { eq, and, or, ilike, desc, isNull, ne, sql, count, inArray, isNotNull } from 'drizzle-orm'
-import { aiStateFilterCondition, isValidAiStateFilter } from '@/lib/ai-state'
+import { customers, churnedSubscribers, emailsSent, recoveries, improvements, subscriberReplies } from '@/lib/schema'
+import { eq, and, or, ilike, desc, isNull, ne, sql, count, inArray, isNotNull, getTableColumns } from 'drizzle-orm'
+import { aiStateFilterCondition, isValidAiStateFilter, awaitingReplyExpr } from '@/lib/ai-state'
 import { WbPromotionMetadataSchema, formatPromotionChip } from '@/src/winback/lib/promotions'
 
 const DUNNING_REASON = 'Payment failed'
@@ -83,6 +83,17 @@ export async function GET(req: NextRequest) {
           )!,
         )
       }
+    } else if (filter === 'awaiting') {
+      // Drawer redesign — "the ball's in your court": subscriber replied
+      // more recently than the founder did, and the row is still open.
+      conditions.push(awaitingReplyExpr())
+    } else if (filter === 'high') {
+      conditions.push(
+        and(
+          eq(churnedSubscribers.recoveryLikelihood, 'high'),
+          sql`${churnedSubscribers.status} not in ('recovered', 'lost', 'skipped')`,
+        )!,
+      )
     } else if (isValidAiStateFilter(filter)) {
       const cond = aiStateFilterCondition(filter)
       if (cond) conditions.push(cond)
@@ -156,7 +167,20 @@ export async function GET(req: NextRequest) {
   // cheap on indexed columns and the SELECT is bounded by pageSize.
   const where = and(...conditions)
   const [rows, [totalRow]] = await Promise.all([
-    db.select()
+    db.select({
+      ...getTableColumns(churnedSubscribers),
+      // Drawer redesign — surface the latest inbound reply inline so the
+      // list can show the subscriber's own words on "awaiting" rows, and
+      // a flag so the row can be visually marked as needing a reply. Both
+      // are correlated subqueries on the same scan — no extra round-trip.
+      latestReplySnippet: sql<string | null>`(
+        select sr.body from ${subscriberReplies} sr
+        where sr.subscriber_id = ${churnedSubscribers.id}
+        order by sr.received_at desc
+        limit 1
+      )`.as('latest_reply_snippet'),
+      awaitingReply: awaitingReplyExpr().as('awaiting_reply'),
+    })
       .from(churnedSubscribers)
       .where(where)
       .orderBy(...orderBy)
