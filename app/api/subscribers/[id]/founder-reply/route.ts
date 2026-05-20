@@ -36,9 +36,9 @@ import { logEvent } from '@/src/winback/lib/events'
  *   - subscriber.updatedAt is bumped
  *
  * Pre-flight:
- *   - subscriber must be in take-over (ai_paused_until in the future)
  *   - subscriber must not be on the do-not-contact list
  *   - subscriber must have an email address
+ *   (No take-over precondition — the founder can reply any time.)
  *
  * Auth: session + ownership check.
  */
@@ -105,15 +105,9 @@ export async function POST(
     return NextResponse.json({ error: 'Subscriber is on the do-not-contact list' }, { status: 409 })
   }
 
-  // Require take-over before allowing a founder reply. The UI gates the
-  // composer behind the toggle; this is the server-side enforcement.
-  const isInTakeover = sub.aiPausedUntil && sub.aiPausedUntil.getTime() > Date.now()
-  if (!isInTakeover) {
-    return NextResponse.json(
-      { error: 'Take over the conversation before replying (POST /take-over first)' },
-      { status: 409 },
-    )
-  }
+  // No take-over precondition — the founder can reply at any time. The AI
+  // sends one listen-only exit email then stays quiet, so there's no active
+  // AI conversation to "take over" from. (Drawer redesign.)
 
   // Look up the most-recent outbound email so we can thread our reply
   // under it. References stays equivalent to In-Reply-To since the

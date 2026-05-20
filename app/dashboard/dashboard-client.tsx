@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { StatusBadge } from '@/components/status-badge'
 import { Pagination } from '@/components/pagination'
-import { TrendingUp, CheckCircle, DollarSign, Users, Search, Zap, X, RotateCcw, Check, Loader2, Sparkles, MessageSquare, CreditCard, ChevronRight, ChevronDown, Copy, Mail, Send, ArrowLeft } from 'lucide-react'
+import { TrendingUp, CheckCircle, DollarSign, Users, Search, Zap, X, RotateCcw, Check, Loader2, Sparkles, MessageSquare, CreditCard, ChevronRight, ChevronDown, Copy, Mail, Send } from 'lucide-react'
 
 interface Subscriber {
   id: string
@@ -501,34 +501,6 @@ export function DashboardClient({
       setSubscribeError(e instanceof Error ? e.message : String(e))
       setSubscribing(false)
     }
-  }
-
-  // Drawer redesign — take-over toggle. Sets ai_paused_until to a far-
-  // future sentinel + ai_paused_reason='takeover'. AI stops auto-replying
-  // for this subscriber until handleHandBack flips it back.
-  async function handleTakeOver(id: string) {
-    const res = await fetch(`/api/subscribers/${id}/take-over`, { method: 'POST' })
-    if (!res.ok) {
-      console.error('[dashboard] take-over failed:', res.status)
-      return
-    }
-    // Optimistic update so the toggle flips immediately without a refetch.
-    setSelected((prev) => prev && prev.id === id
-      ? { ...prev, aiPausedUntil: new Date('9999-12-31T00:00:00Z').toISOString(), aiPausedReason: 'takeover' }
-      : prev)
-    fetchData()
-  }
-
-  async function handleHandBack(id: string) {
-    const res = await fetch(`/api/subscribers/${id}/hand-back`, { method: 'POST' })
-    if (!res.ok) {
-      console.error('[dashboard] hand-back failed:', res.status)
-      return
-    }
-    setSelected((prev) => prev && prev.id === id
-      ? { ...prev, aiPausedUntil: null, aiPausedReason: null, aiPausedAt: null }
-      : prev)
-    fetchData()
   }
 
   // Drawer redesign — founder reply composer. 500-char Zod-enforced on
@@ -1125,12 +1097,11 @@ export function DashboardClient({
       />
 
       {/* Subscriber detail panel — block layout (drawer redesign Phase 5).
-          Six discrete blocks separated by hairline dividers: identity ·
-          take-over toggle · AI insight · conversation · reply composer ·
-          footer. Founder takes over via the toggle; AI is paused for
-          this subscriber until they explicitly hand back. */}
+          Blocks separated by hairline dividers: identity · AI insight ·
+          conversation · reply composer · footer. The AI sends one listen-
+          only exit email then stays quiet; the founder can reply at any
+          time from the composer below (no take-over step). */}
       {selected && (() => {
-        const isFounderHandling = !!(selected.aiPausedUntil && new Date(selected.aiPausedUntil).getTime() > Date.now())
         const hasInsight = !!(selected.drawerInsightRead || selected.drawerInsightWorthKnowing)
         const replyOver = replyDraft.length > 500
         const firstInitial = (selected.name?.trim()?.[0] ?? selected.email?.trim()?.[0] ?? '?').toUpperCase()
@@ -1171,38 +1142,6 @@ export function DashboardClient({
                   )}
                 </div>
               </div>
-            </div>
-
-            {/* Block 2: state toggle — take-over / hand-back */}
-            <div className="px-5 py-3 border-t border-slate-100">
-              {isFounderHandling ? (
-                <div className="bg-slate-900 rounded-xl px-3.5 py-2.5 flex items-center justify-between">
-                  <div>
-                    <div className="text-[13px] font-semibold text-white leading-tight">You're handling this</div>
-                    <div className="text-[11px] text-slate-300 leading-tight mt-0.5">AI is paused on this conversation</div>
-                  </div>
-                  <button
-                    onClick={() => handleHandBack(selected.id)}
-                    className="text-xs font-medium text-slate-900 bg-white hover:bg-slate-100 rounded-full px-3 py-1.5 flex items-center gap-1 shadow-sm"
-                  >
-                    <ArrowLeft className="w-3 h-3" />
-                    Hand back
-                  </button>
-                </div>
-              ) : (
-                <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-3.5 py-2.5 flex items-center justify-between">
-                  <div>
-                    <div className="text-[13px] font-semibold text-emerald-900 leading-tight">AI handling this conversation</div>
-                    <div className="text-[11px] text-emerald-700/80 leading-tight mt-0.5">Replies are auto-answered</div>
-                  </div>
-                  <button
-                    onClick={() => handleTakeOver(selected.id)}
-                    className="text-xs font-medium text-slate-900 bg-white hover:bg-slate-50 border border-slate-200 rounded-full px-3 py-1.5"
-                  >
-                    Take over →
-                  </button>
-                </div>
-              )}
             </div>
 
             {/* Block 3: AI insight — Read + Worth knowing */}
@@ -1327,9 +1266,7 @@ export function DashboardClient({
               <div className="px-5 py-3 border-t border-slate-100">
                 <div className="bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 flex items-center justify-between text-[11px]">
                   <span className="text-slate-600">
-                    {isFounderHandling
-                      ? <><span className="font-semibold text-slate-900">You're handling.</span>{' '}AI paused.</>
-                      : <><span className="font-semibold text-slate-900">AI handling.</span>{' '}Responses auto-sent.</>}
+                    <span className="font-semibold text-slate-900">Conversation</span>
                     {conversation && conversation.length > 0 && (
                       <> · {conversation.length} message{conversation.length === 1 ? '' : 's'}</>
                     )}
@@ -1411,8 +1348,10 @@ export function DashboardClient({
               </>
             )}
 
-            {/* Block 5: reply composer — only when founder has taken over AND Details is closed */}
-            {!detailsOpen && isFounderHandling && selected.email && (
+            {/* Block 5: reply composer — always available (no take-over step).
+                Hidden only when Details is open, or there's no email / the
+                subscriber unsubscribed (server rejects those anyway). */}
+            {!detailsOpen && selected.email && !selected.doNotContact && (
               <div className="px-5 py-4 border-t border-slate-100">
                 <div className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold mb-2">Your reply</div>
                 <div className="border border-slate-200 rounded-xl bg-white overflow-hidden focus-within:border-slate-300">
