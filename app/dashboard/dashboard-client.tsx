@@ -952,7 +952,7 @@ export function DashboardClient({
 
       {/* Subscriber table — per-tab columns + interaction model */}
       {tab === 'winback' ? (
-        <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
+        <div className="bg-white rounded-2xl border border-slate-100 overflow-x-auto shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
           <table className="w-full">
             <thead>
               <tr className="bg-slate-50/60 border-b border-slate-100">
@@ -992,12 +992,15 @@ export function DashboardClient({
                       <div className="min-w-0">
                         <div className={`text-sm text-slate-900 leading-tight ${showSnippet ? 'font-bold' : 'font-medium'}`}>{sub.name ?? 'Unknown'}</div>
                         {showSnippet ? (
-                          <div className="text-xs text-amber-700 flex items-center gap-1 mt-0.5 truncate max-w-[220px]">
-                            <MessageSquare className="w-3 h-3 shrink-0" />
-                            <span className="truncate">“{snippet}”</span>
+                          // Block + truncate (not flex) so a long reply — which may
+                          // include quoted thread text — clips with an ellipsis
+                          // instead of stretching the column and pushing MRR off-screen.
+                          <div className="text-xs text-amber-700 mt-0.5 truncate max-w-[240px]">
+                            <MessageSquare className="w-3 h-3 inline-block align-[-2px] mr-1" />
+                            “{snippet}”
                           </div>
                         ) : (
-                          <div className="text-xs text-slate-400 mt-0.5 truncate max-w-[200px] sm:max-w-none">{sub.email ?? ''}</div>
+                          <div className="text-xs text-slate-400 mt-0.5 truncate max-w-[240px]">{sub.email ?? ''}</div>
                         )}
                       </div>
                     </div>
