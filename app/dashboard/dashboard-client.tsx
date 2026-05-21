@@ -1040,12 +1040,12 @@ export function DashboardClient({
                           // Block + truncate (not flex) so a long reply — which may
                           // include quoted thread text — clips with an ellipsis
                           // instead of stretching the column and pushing MRR off-screen.
-                          <div className="text-xs text-amber-700 mt-0.5 truncate max-w-[240px]">
+                          <div className="text-xs text-amber-700 mt-0.5 truncate max-w-[200px]">
                             <MessageSquare className="w-3 h-3 inline-block align-[-2px] mr-1" />
                             “{snippet}”
                           </div>
                         ) : (
-                          <div className="text-xs text-slate-400 mt-0.5 truncate max-w-[240px]">{sub.email ?? ''}</div>
+                          <div className="text-xs text-slate-400 mt-0.5 truncate max-w-[200px]">{sub.email ?? ''}</div>
                         )}
                       </div>
                     </div>
@@ -1055,7 +1055,7 @@ export function DashboardClient({
                     {sub.cancelledAt ? new Date(sub.cancelledAt).toISOString().split('T')[0] : '—'}
                   </td>
                   <td className="hidden md:table-cell text-sm text-slate-600 py-3.5 px-4 align-top">
-                    <div>
+                    <div className="max-w-[180px]">
                       {sub.cancellationReason
                         ? sub.cancellationReason.length > 45
                           ? sub.cancellationReason.slice(0, 45) + '…'
