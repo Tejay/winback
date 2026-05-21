@@ -317,6 +317,34 @@ export function DashboardClient({
       cancelled = true
     }
   }, [selected?.id])
+
+  // While a drawer is open, silently re-poll its conversation so a new
+  // inbound reply (or AI re-classification) appears without reopening it.
+  // Silent = no loading spinner, no blanking on error — just swap in fresh
+  // messages. Visibility-gated; also fires immediately on tab focus.
+  useEffect(() => {
+    if (!selected?.id) return
+    const id = selected.id
+    let stopped = false
+    const poll = () => {
+      if (document.visibilityState !== 'visible') return
+      fetch(`/api/subscribers/${id}/conversation`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          if (!stopped && data && Array.isArray(data.messages)) setConversation(data.messages)
+        })
+        .catch(() => {})
+    }
+    const interval = setInterval(poll, 12000)
+    window.addEventListener('focus', poll)
+    document.addEventListener('visibilitychange', poll)
+    return () => {
+      stopped = true
+      clearInterval(interval)
+      window.removeEventListener('focus', poll)
+      document.removeEventListener('visibilitychange', poll)
+    }
+  }, [selected?.id])
   // Spec 51 — bannerDismissed removed. Banner visibility is now derived
   // purely from server state (activatedAt + stripeSubscriptionId). No more
   // localStorage-driven indefinite dismissal.
@@ -442,6 +470,23 @@ export function DashboardClient({
   }, [tab, filter, search, page])
 
   useEffect(() => { fetchData() }, [fetchData])
+
+  // Keep the list + KPIs live: refresh on a gentle interval and immediately
+  // when the tab regains focus. This is what surfaces a brand-new inbound
+  // reply (the "awaiting reply" state) without a manual reload — the common
+  // flow is: founder replies in their email client, switches back here.
+  // Visibility-gated so a backgrounded tab doesn't poll Neon for nothing.
+  useEffect(() => {
+    const refresh = () => { if (document.visibilityState === 'visible') fetchData() }
+    const interval = setInterval(refresh, 15000)
+    window.addEventListener('focus', fetchData)
+    document.addEventListener('visibilitychange', refresh)
+    return () => {
+      clearInterval(interval)
+      window.removeEventListener('focus', fetchData)
+      document.removeEventListener('visibilitychange', refresh)
+    }
+  }, [fetchData])
 
   // Spec 73 — reset to page 1 when filter / search / cohort changes. Skips
   // the first render so we don't overwrite a URL-hydrated `?page=N` on mount.
