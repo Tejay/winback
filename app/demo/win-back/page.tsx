@@ -6,7 +6,7 @@ import { WinBackDemoDashboard } from '@/components/demo/demo-dashboard'
 export const metadata = {
   title: 'Cancellation winbacks dashboard demo — Winback',
   description:
-    'See exactly what a Winback dashboard looks like with realistic data — KPIs, the loss-framing pipeline, and the per-subscriber drawer with AI reasoning.',
+    'See exactly what the WinbackFlow dashboard looks like with realistic data — pipeline, KPIs, cancellation themes ranked by lost MRR, and the per-subscriber detail drawer.',
 }
 
 export default function WinBackDemoPage() {
@@ -21,12 +21,13 @@ export default function WinBackDemoPage() {
             Cancellation winbacks · Dashboard preview
           </div>
           <h1 className="mt-3 text-3xl sm:text-5xl font-bold text-slate-900 tracking-tight leading-[1.1] max-w-3xl">
-            Every cancellation. Every chance to win them back.
+            See the reasons. Ship the fixes. Reach the right people.
           </h1>
           <p className="mt-4 text-base sm:text-lg text-slate-600 max-w-2xl leading-relaxed">
-            See exactly what&rsquo;s at risk, what we&rsquo;re working on, and
-            what we&rsquo;ve recovered &mdash; with the AI&rsquo;s reasoning
-            behind every decision.
+            Every cancellation lands here with its reason classified into a
+            theme. The themes are ranked by lost MRR &mdash; so you can see
+            what to build next, by dollars at risk. When you ship a fix,
+            WinbackFlow emails the specific subscribers who cited it.
           </p>
           <p className="mt-3 text-sm text-slate-500 max-w-2xl">
             This is the dashboard you&rsquo;ll see five minutes after
@@ -54,21 +55,30 @@ export default function WinBackDemoPage() {
           </div>
           <ul className="space-y-3 text-sm text-slate-600 leading-relaxed">
             <li>
-              <strong className="text-slate-900">Pipeline strip</strong> (top): see how much MRR is at risk in
-              the last 30 days, how much is already recovered, how much is
-              still in play, and how much is gone. The in-flight number is
+              <strong className="text-slate-900">Pipeline strip</strong> (top): how much MRR is at risk in the last 30
+              days, how much has already been recovered, how much is still
+              in play, and how much is gone. The in-flight number is
               what&rsquo;s still possible.
             </li>
             <li>
-              <strong className="text-slate-900">Drawer</strong> (right): every cancellation is classified by reason,
-              scored for recovery likelihood, and surfaced with the
-              customer&rsquo;s actual words and the AI&rsquo;s reasoning side
-              by side &mdash; so you can decide what to do.
+              <strong className="text-slate-900">Top reasons</strong> (above the table): the cancellation
+              categories driving churn, ranked by share &mdash; so you can
+              see at a glance whether it&rsquo;s mostly Price, Feature
+              gaps, or Switching.
             </li>
             <li>
-              <strong className="text-slate-900">Handoff alert</strong> (top, amber): when AI decides your personal
-              touch matters more than another email, it routes the case to
-              your inbox immediately after the cancellation.
+              <strong className="text-slate-900">Status column</strong>: each open row gets a recovery-likelihood
+              chip &mdash; <span className="font-medium text-emerald-700">High</span>,
+              <span className="font-medium text-amber-700"> Medium</span>, or
+              <span className="font-medium text-slate-500"> Low</span> &mdash; based
+              on signals from their reason, plan, and tenure. Recovered
+              subscribers flip to a <span className="font-medium text-emerald-700">✓ Recovered</span> chip.
+            </li>
+            <li>
+              <strong className="text-slate-900">Awaiting reply</strong>: an amber dot before a subscriber&rsquo;s
+              avatar signals the ball&rsquo;s in your court &mdash; they
+              replied to your last email and the conversation needs you.
+              The first line of their reply shows under their name.
             </li>
           </ul>
         </div>

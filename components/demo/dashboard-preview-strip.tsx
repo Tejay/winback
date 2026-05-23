@@ -1,17 +1,18 @@
 /**
- * Cropped dashboard preview — pipeline strip + KPI band only — designed
- * to embed on marketing pages. Same visual primitives as the full demo
- * dashboard at /demo/{cohort} (which is what the "Explore the dashboard
- * →" CTA links to), but stripped to the headline-bearing portion so it
- * fits in the marketing pages' max-w-5xl story rhythm.
+ * Cropped dashboard previews embedded on marketing pages. Mirrors the
+ * real /dashboard at every level — pipeline, KPIs, reasons strip,
+ * filter chips, subscriber rows. The full uncropped versions live at
+ * /demo/win-back and /demo/payment-recovery.
  *
- * Two cohort exports + a CTA-link helper. No interactivity (server-
- * component-safe). Reuses the data + primitives exported from
- * components/demo/demo-dashboard.tsx — no duplication.
+ * What's shared with the real dashboard:
+ *   - PipelineStrip + StatCard primitives (imported from demo-dashboard)
+ *   - PatternPills row + recovery-likelihood chip + amber awaiting-reply
+ *     dot — same Tailwind classes, same color tokens
  *
- * Copy: previously "See live demo →", changed because the demo isn't
- * live data — it's hardcoded illustrative numbers. "Explore" is honest
- * about being a preview, not a real-time feed.
+ * What's intentionally NOT here (kept off marketing pages):
+ *   - The drawer (real dashboard opens it only on row click; demo is a
+ *     static preview, no interaction)
+ *   - The first-recovery celebration banner (billing-state surface)
  */
 
 import Link from 'next/link'
@@ -59,15 +60,27 @@ function PreviewWrapper({ accent, title, href, children }: PreviewWrapperProps) 
   )
 }
 
+// Top reasons strip — same labels + colors as the real dashboard, just
+// preview percentages.
+const WINBACK_PREVIEW_TOP_REASONS = [
+  { label: 'Price',    pct: 32 },
+  { label: 'Other',    pct: 26 },
+  { label: 'Feature',  pct: 24 },
+  { label: 'Switched', pct: 18 },
+]
+
 /**
- * Win-back cohort preview — pipeline strip on top, 4-card KPI band below.
- * Tinted blue (matches the full demo's win-back tab color).
+ * Win-back cohort preview — pipeline + KPI band + top reasons. Marketing
+ * teaser only; filter chips + subscriber table live on /demo/win-back
+ * (linked via "Explore the dashboard →").
  */
 export function WinBackPreviewStrip() {
   return (
     <PreviewWrapper accent="blue" title="Cancellation winbacks" href="/demo/win-back">
-      <div className="bg-white rounded-2xl p-3 sm:p-4">
+      <div className="bg-white rounded-2xl p-3 sm:p-4 space-y-4">
         <PipelineStrip pipeline={WINBACK_PIPELINE} />
+
+        {/* KPI band */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <StatCard
             accent="blue"
@@ -101,13 +114,28 @@ export function WinBackPreviewStrip() {
             label="In progress"
           />
         </div>
+
+        {/* Top reasons strip */}
+        <div className="flex flex-wrap items-center gap-2 pt-1">
+          {WINBACK_PREVIEW_TOP_REASONS.map((r) => (
+            <span
+              key={r.label}
+              className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ${themeColor(r.label)}`}
+            >
+              {r.label}
+              <span className="text-[10px] tabular-nums opacity-70">{r.pct}%</span>
+            </span>
+          ))}
+        </div>
       </div>
     </PreviewWrapper>
   )
 }
 
 /**
- * Payment-recovery cohort preview — same shape, green tint.
+ * Payment-recovery cohort preview — thin, just the dunning KPIs. The
+ * flow is simpler than win-back and doesn't need the deeper narrative
+ * on the home page; the full detail lives at /demo/payment-recovery.
  */
 export function PaymentRecoveryPreviewStrip() {
   return (
@@ -150,4 +178,15 @@ export function PaymentRecoveryPreviewStrip() {
       </div>
     </PreviewWrapper>
   )
+}
+
+function themeColor(label: string): string {
+  switch (label) {
+    case 'Price':    return 'bg-rose-50 text-rose-700'
+    case 'Feature':  return 'bg-blue-50 text-blue-700'
+    case 'Quality':  return 'bg-amber-50 text-amber-700'
+    case 'Switched': return 'bg-violet-50 text-violet-700'
+    case 'Other':    return 'bg-slate-100 text-slate-600'
+    default:         return 'bg-slate-100 text-slate-700'
+  }
 }

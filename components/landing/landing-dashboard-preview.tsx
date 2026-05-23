@@ -25,11 +25,12 @@ export function LandingDashboardPreview() {
             Your dashboards
           </div>
           <h2 className="mt-3 text-3xl sm:text-4xl font-bold text-slate-900 tracking-tight">
-            See where every dollar is &mdash; recovered, in flight, or lost.
+            Two dashboards, one platform.
           </h2>
-          <p className="mt-3 text-sm sm:text-base text-slate-600 max-w-xl mx-auto">
-            Two dashboards, one platform. Click either to explore the
-            full preview with realistic data.
+          <p className="mt-3 text-sm sm:text-base text-slate-600 max-w-2xl mx-auto">
+            Cancellation winbacks and failed-payment recoveries, side by
+            side. Click either to explore the full preview with realistic
+            data.
           </p>
         </div>
 
