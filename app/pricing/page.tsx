@@ -91,7 +91,7 @@ export default function PricingPage() {
               bullets={[
                 'Everything in Scale',
                 'Procurement-ready contract',
-                'Dedicated implementation engineer',
+                'Dedicated account contact',
               ]}
               railClass="border-l-indigo-500"
               isEnterprise
