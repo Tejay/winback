@@ -1,10 +1,20 @@
 # Spec 07 — Billing Calculation + Changelog Trigger
 
-> **⚠️ Superseded (2026-04-27)** — the 15%-of-MRR-for-12-months billing model
-> below was replaced by **\$99/mo Stripe Subscription + 1× MRR per win-back
-> (refundable for 14 days)** in PRs #35–#38. Live implementation:
-> `src/winback/lib/{subscription,performance-fee,activation,billing-notifications}.ts`.
-> Preserved as the historical record of the original design.
+> **⚠️ Superseded twice — current model is the tiered billing rewrite (2026-05-23).**
+>
+> 1. Original 15%-of-MRR-for-12-months model below was replaced by
+>    $99/mo Stripe Subscription + 1× MRR per win-back (refundable 14d) in
+>    PRs #35–#38 (2026-04-27). Now also superseded.
+> 2. Current model (2026-05-23) is a tiered flat monthly fee priced by the
+>    customer's own MRR — Starter $99 / Growth $299 / Scale $699 /
+>    Enterprise (sales-handled). No per-recovery charges, no perf fees,
+>    no refund windows. See the billing rewrite spec at
+>    `/Users/tejay/.claude/plans/we-are-going-to-memoized-kernighan.md`
+>    and current implementation at `src/winback/lib/billing-config.ts`,
+>    `tiers.ts`, `mrr.ts`, `mrr-snapshot.ts`, `tier-transitions.ts`,
+>    `activation.ts`, `subscription.ts`.
+>
+> Both prior designs preserved below as historical record.
 
 **Phase:** 7
 **Depends on:** Spec 04 (classifier, email), Spec 05 (wb_recoveries data)

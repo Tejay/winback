@@ -246,20 +246,34 @@ Tell me when .env.local has DATABASE_URL set.
 
 ## Phase 9 — Billing ✅ SHIPPED via the Phase A/B/C billing rewrite
 
-**Status (2026-04-27):** Pricing model changed and engine fully rewritten. Old plan
+**Status (2026-05-23):** Billing rewrite shipped. Old plan
 below is preserved as historical context. The current model is:
 
-- **Platform fee:** flat **$99/mo** Stripe Subscription on Winback's own account
-- **Performance fee:** **1× MRR** per voluntary-cancellation win-back, charged once,
-  refundable in full if the subscriber re-cancels within 14 days
-- **Card saves** (failed-payment recoveries): unbounded, covered by the platform fee
-- **Trigger:** billing starts on first delivered save *or* win-back, whichever first
-- **No cron, no settlement, no 12-month tail** — Stripe Subscriptions drive cycles,
-  dunning, and retries
+- **Tiered flat monthly fee priced by the customer's own MRR** —
+  Starter $99 (MRR up to $50k), Growth $299 ($50k–$250k),
+  Scale $699 ($250k–$1M), Enterprise (custom, sales-handled).
+- **No per-recovery charges, no performance fees, no refund windows.**
+- **Unlimited recovery volume** on every tier — win-backs and payment
+  recoveries, however many.
+- **Trigger:** dispute-proof activation page (`/billing/activate`) fires
+  on first delivered recovery. Customer sees their MRR, the derived tier,
+  and the fee BEFORE confirming — we never auto-charge a tier they didn't
+  click through.
+- **Tier transitions** (mid-life): smoothed MRR drives the recommended
+  tier with 30d median + 14d upgrade sustain / 30d downgrade sustain
+  (with 10% hysteresis on downgrades). We never auto-change the billed
+  tier — always prompt-driven.
+- **Carve-outs preserved:** `pilotUntil` (free pilot window) and
+  `customMonthlyCents` (admin-negotiated flat-rate override).
+- **Stripe drives cycles, dunning, and retries** via per-tier Stripe Prices.
 
-**Key code:** `src/winback/lib/subscription.ts`, `performance-fee.ts`, `activation.ts`,
-`billing-notifications.ts`. Webhook wiring in `app/api/stripe/webhook/route.ts`.
-Customer-facing UI in `app/settings/page.tsx` (with `subscription-actions.tsx` for
+**Key code:** `src/winback/lib/billing-config.ts` (single source of
+truth), `tiers.ts`, `mrr.ts`, `fx.ts`, `mrr-snapshot.ts`,
+`tier-transitions.ts`, `subscription.ts`, `activation.ts`. Crons in
+`app/api/cron/fx-refresh/` + `app/api/cron/mrr-snapshot/`. Webhook
+wiring in `app/api/stripe/webhook/route.ts`. Customer-facing UI in
+`app/billing/activate/`, `app/billing/success/`, `app/settings/page.tsx`
+(with `subscription-actions.tsx` for
 the in-product Cancel/Resume buttons). Legal copy in `/terms` §3 and `/refunds`.
 
 **PRs:** #35 (schema + primitives), #36 (cutover), #37 (cleanup), #38 (cancel button +

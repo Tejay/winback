@@ -8,12 +8,19 @@ Resend within 60 seconds. An LLM classifies why they left and generates a
 targeted win-back message. When the product ships something matching their stated reason, the
 win-back fires automatically.
 
-**Pricing:** Flat **$99/mo platform fee** covering up to **500 payment recoveries per
-month** (the emails we send when a subscriber's payment fails so they can update their
-card), plus a one-time **1× MRR performance fee** per voluntary-cancellation win-back,
-refundable in full if the subscriber re-cancels within 14 days. No card at signup —
-billing starts on the first delivered payment recovery or win-back, whichever comes
-first. Implemented as a Stripe Subscription on Winback's own Stripe account.
+**Pricing (rewritten 2026-05-23):** Tiered flat monthly fee priced by the customer's own
+MRR — **Starter $99** (MRR up to $50k), **Growth $299** ($50k–$250k), **Scale $699**
+($250k–$1M), **Enterprise** (custom, sales-handled). No per-recovery charges, no
+performance fees, no usage caps — unlimited recovery volume on every tier. No card at
+signup; billing starts when the customer confirms their tier on the `/billing/activate`
+page (which fires after the first delivered payment recovery or win-back). Implemented
+as a Stripe Subscription on WinbackFlow's own Stripe account using per-tier Stripe Prices
+resolved via `STRIPE_PRICE_ID_STARTER/GROWTH/SCALE` env vars (or lookup_keys
+`winback_{tier}_monthly_v2` as fallback). See
+[/specs/billing-rewrite-2026-05.md](specs/billing-rewrite-2026-05.md) for the full spec.
+
+Carve-outs that override the tier ladder: `customMonthlyCents` (admin-negotiated flat
+rate) and `pilotUntil` (free pilot window, no billing while active).
 
 **Naming canonical (merchant-facing):**
 - *Payment recovery* — the product (the flow that catches failed-payment subscriptions)
