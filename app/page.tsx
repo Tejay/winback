@@ -50,9 +50,13 @@ export default function LandingPage() {
           </h1>
 
           <p className="mt-6 text-base sm:text-lg text-slate-600 max-w-2xl text-center leading-relaxed">
-            Payment failures and deliberate cancellations are the two ways subscription customers slip away. Winback is{' '}
+            Payment failures and deliberate cancellations are the two
+            ways subscription customers slip away. WinbackFlow is{' '}
             <span className="text-slate-900 font-medium">one platform that catches both</span>{' '}
-            &mdash; always-on payment recovery for failed cards, AI-drafted cancellation winback emails. Two kinds of lost revenue, one Stripe connection.
+            &mdash; always-on payment recovery for failed cards, and
+            cancellation listening that emails the right subscribers
+            when you ship the fix they asked for. Two kinds of lost
+            revenue, one Stripe connection.
           </p>
 
           <div className="flex flex-col items-center mt-8">
@@ -73,25 +77,20 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* Trust strip — thin band between hero and bundle callout. The
-          claim that used to live below the Hero CTA ("Connect Stripe ·
-          No card at signup") is folded in here.
-
-          Copy precision: we do NOT have a general 14-day money-back
-          guarantee or a 14-day free trial. The only refund is on the
-          win-back fee, and only if the won-back customer re-cancels
-          within 14 days. So the third item promises what's actually
-          true at the platform level: you pay $0 until we deliver
-          something. */}
+      {/* Trust strip — thin band between hero and the two-pillar teaser.
+          What's true at the platform level: one Stripe connection, no
+          card collected up front, $0 billed until WinbackFlow has
+          delivered an actual recovery. The tier-based fee only kicks
+          in once value has been proven. */}
       <section className="bg-white border-b border-slate-100 py-4">
         <div className="max-w-5xl mx-auto px-6 flex items-center justify-center gap-2 text-xs text-slate-500 flex-wrap">
           <span>
             Built on <strong className="text-slate-700">Stripe Connect Standard</strong>
           </span>
           <span className="text-slate-300">·</span>
-          <span>No card required</span>
+          <span>No card at signup</span>
           <span className="text-slate-300">·</span>
-          <span>$0 until we deliver a save</span>
+          <span>$0 until we recover your first customer</span>
         </div>
       </section>
 
@@ -99,16 +98,11 @@ export default function LandingPage() {
       <LandingDashboardPreview />
       <PricingFormula />
 
-      {/* Footer CTA — guarantee angle, not a duplicate of the Hero CTA.
-          The Hero asks for the click on the promise of recovery; this
-          section closes by removing risk.
-
-          Copy precision: we do NOT have a general 14-day money-back
-          guarantee or a 14-day free trial. The only refund is on the
-          win-back fee, and only if the won-back customer re-cancels
-          within 14 days. CTA text reflects that — "Start free" (true:
-          billing starts on first delivered save) not "Try free for
-          14 days" (false: implies time-limited trial). */}
+      {/* Footer CTA — guarantee angle. The Hero asks for the click on
+          the promise of recovery; this section closes by removing risk.
+          "Start free" reflects the real semantic: billing only kicks in
+          on first delivered save, and even then the customer reviews
+          and confirms a tier-derived price BEFORE any charge. */}
       <section className="bg-[#eef2fb] py-20 sm:py-24">
         <div className="max-w-5xl mx-auto px-6 text-center">
           <p className="text-xs font-semibold tracking-widest uppercase text-violet-600">
@@ -118,10 +112,10 @@ export default function LandingPage() {
             Pay nothing until we save you something.
           </h2>
           <p className="mt-4 text-sm text-slate-600 max-w-xl mx-auto">
-            You pay $0 until we deliver a payment recovery or
-            cancellation winback. Cancellation winback fees are refunded
-            if the customer re-cancels within 14 days. Cancel anytime in
-            one click.
+            $0 until WinbackFlow delivers a payment recovery or
+            cancellation winback. After that, one flat monthly fee
+            priced by your own MRR &mdash; you see the math and confirm
+            the tier before any charge. Cancel anytime in one click.
           </p>
 
           <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
@@ -129,7 +123,7 @@ export default function LandingPage() {
               href="/register"
               className="bg-[#0f172a] text-white rounded-full px-6 py-2.5 text-sm font-medium hover:bg-[#1e293b]"
             >
-              Start free — no card →
+              Start free &mdash; no card →
             </Link>
           </div>
         </div>

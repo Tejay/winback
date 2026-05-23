@@ -376,13 +376,15 @@ export function renderPilotEndingHtml(i: {
     tone: 'Your pilot ends soon',
     body: `${greeting}
 
-Quick heads-up: your Winback pilot ends on ${i.dateStr}. After that, normal billing kicks in — $99/mo platform fee plus 1× MRR per win-back recovery (refundable for 14 days).
+Quick heads-up: your WinbackFlow pilot ends on ${i.dateStr}. After that, normal billing kicks in — a single flat monthly fee priced by your own MRR (Starter $99, Growth $299, Scale $699; Enterprise is sales-handled). No per-recovery charges, unlimited recovery volume on every tier.
 
-Nothing for you to do right now. We'll email a usage summary at the end of the pilot. If you want to discuss pricing or extend the pilot, just hit reply.
+Nothing for you to do right now. The first delivered recovery after the pilot ends will prompt you in-app to confirm your tier and subscribe — we'll show you the math (your computed MRR, the resulting tier, the fee) before any charge.
+
+If you want to discuss pricing or extend the pilot, just hit reply.
 
 Thanks for kicking the tires.
 
-— Winback`,
+— WinbackFlow`,
   })
 }
 

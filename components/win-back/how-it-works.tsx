@@ -1,16 +1,16 @@
 import Link from 'next/link'
-import { Zap, Brain, Send } from 'lucide-react'
+import { Ear, Layers, Send } from 'lucide-react'
 import { StepCard } from '@/components/landing/step-card'
 import { PoweredByStripe } from '@/components/powered-by-stripe'
 
 /**
- * Three-step Detect → Decide → Act flow. Ported from the previous home page
- * (app/page.tsx:60-169 in the pre-marketing-reorg version) — this is the
- * native home of the win-back deep dive.
+ * Three-step Listen → Match → Reach flow.
  *
- * No <RevealOnScroll /> wrapper: same fix as DashboardProof. The step cards
- * are the centrepiece of the section and should render solid on first paint
- * — fast scrolls past the section could leave them mid-fade or trigger-less.
+ * Reflects the current product: AI is listen-only. It classifies why
+ * each subscriber cancelled and stores the theme. When the merchant
+ * ships an improvement, WinbackFlow matches it to stored themes and
+ * emails the subscribers who asked for that thing. No AI conversation,
+ * no exit email on cancellation, no AI reply-handling.
  */
 export function HowItWorks() {
   return (
@@ -24,76 +24,78 @@ export function HowItWorks() {
             Three steps.
           </h2>
           <h2 className="text-3xl sm:text-4xl font-bold text-slate-900">
-            Zero manual work.
+            One trigger.
           </h2>
           <p className="text-base sm:text-lg text-slate-500 mt-4 max-w-2xl mx-auto">
-            No fixed workflows, no generic templates. Every email is written
-            from scratch for the subscriber in front of it.
+            No drip sequences. No AI replies. We email a subscriber only
+            when you&rsquo;ve shipped what they asked for.
           </p>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-16">
           <StepCard
             step="01"
-            label="Detect"
-            title="Catch every cancellation."
-            icon={Zap}
+            label="Listen"
+            title="Capture every reason."
+            icon={Ear}
             tint="amber"
-            body="The moment a subscriber cancels on Stripe, Winback picks it up — with the customer, plan, and exit reason attached."
+            body="The moment a subscriber cancels on Stripe, WinbackFlow records the reason — what they typed in Stripe's cancel box, plus their plan, tenure, and account history."
             details={
               <p>
-                Every cancellation lands in Winback the second it happens
-                — who cancelled, what they were paying, how long
-                they&rsquo;d been a customer, and any reason they gave
-                (including whatever they typed in Stripe&rsquo;s cancel
-                box).
+                Every cancellation lands instantly &mdash; who cancelled,
+                what they were paying, how long they&rsquo;d been with you,
+                and the words they used on the way out. Nothing is sent to
+                them at this stage. WinbackFlow is purely listening.
               </p>
             }
           />
           <StepCard
             step="02"
-            label="Decide"
-            title="Read the full situation."
-            icon={Brain}
+            label="Cluster"
+            title="Group reasons into themes."
+            icon={Layers}
             tint="blue"
-            body="AI weighs the exit reason, account history, tenure, and product fit — then picks the angle most likely to bring them back."
+            body="AI groups cancellations into themes you can act on — 'wanted Slack integration', 'price too high', 'missing API access' — and shows you which themes are growing."
             details={
               <>
                 <p>
-                  Winback reads the cancellation reason against what
-                  you&rsquo;ve shipped since they subscribed, their tenure,
-                  their plan, and the signal strength of the feedback. From
-                  there it picks the response that actually fits:
+                  Free-text exit reasons aren&rsquo;t useful one-by-one;
+                  they&rsquo;re useful as patterns. WinbackFlow rolls
+                  individual cancellations into themes you can read at a
+                  glance:
                 </p>
                 <ul className="list-disc pl-5 space-y-1">
-                  <li>Accountability when it&rsquo;s a quality issue</li>
-                  <li>Education when they missed a feature</li>
-                  <li>A genuine update when something has changed</li>
-                  <li>Silence when contact would do more harm than good</li>
+                  <li>How many subscribers cited each theme</li>
+                  <li>How much MRR is sitting in each theme</li>
+                  <li>Which themes are trending up</li>
                 </ul>
+                <p>
+                  The themes tell you what to build &mdash; ranked by lost
+                  revenue, not gut feel.
+                </p>
               </>
             }
           />
           <StepCard
             step="03"
-            label="Act"
-            title="Send the email that fits."
+            label="Reach"
+            title="Email when you ship the fix."
             icon={Send}
             tint="emerald"
-            body="A personalised message tailored to their exact situation. Replies route to your inbox. Not a generic drip. Not a blast."
+            body="You log a shipped improvement that addresses a theme. WinbackFlow emails the specific subscribers who cited that theme — one targeted message each, in your name."
             details={
               <>
                 <p>
-                  One email per cancellation, written from scratch. Sent
-                  with your name on the From line, from our verified
-                  sending domain.
+                  Single email per matched subscriber. No drip. No
+                  conversation. The email names exactly what they asked
+                  for and what you&rsquo;ve done about it.
                 </p>
                 <p>
-                  When a subscriber replies, the same AI reads it —
-                  new context (they changed their mind, clarified a reason,
-                  pushed back) flows back in and tunes the next move. You
-                  see the reply and the updated classification in your
-                  Winback dashboard.
+                  Sent from our verified sending domain with your name on
+                  the From line. Subscriber replies route to your normal
+                  inbox &mdash; WinbackFlow doesn&rsquo;t intercept or
+                  auto-respond. The conversation from there is between
+                  you and them.
                 </p>
               </>
             }
@@ -109,7 +111,7 @@ export function HowItWorks() {
             href="/register"
             className="bg-[#0f172a] text-white rounded-full px-6 py-2.5 text-sm font-medium hover:bg-[#1e293b]"
           >
-            Start recovering customers today →
+            Start capturing reasons today →
           </Link>
         </div>
       </div>

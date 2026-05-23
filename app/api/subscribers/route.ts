@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
-import { customers, churnedSubscribers, emailsSent, recoveries, improvements, subscriberReplies } from '@/lib/schema'
+import { customers, churnedSubscribers, emailsSent, recoveries, subscriberReplies } from '@/lib/schema'
 import { eq, and, or, ilike, desc, isNull, ne, sql, count, inArray, isNotNull, getTableColumns } from 'drizzle-orm'
 import { aiStateFilterCondition, isValidAiStateFilter, awaitingReplyExpr } from '@/lib/ai-state'
-import { WbPromotionMetadataSchema, formatPromotionChip } from '@/src/winback/lib/promotions'
 
 const DUNNING_REASON = 'Payment failed'
 
@@ -180,41 +179,13 @@ export async function GET(req: NextRequest) {
       .where(where),
   ])
 
-  // Spec 78 — attach applied-promotion chip data per subscriber. Single
-  // follow-up query keyed by the rows we just fetched, joined to
-  // improvements so the chip can render code + terms without a second
-  // round-trip from the client.
-  const subscriberIds = rows.map((r) => r.id)
-  const promoLookup = new Map<string, string>()
-  if (subscriberIds.length > 0) {
-    const promoJoins = await db
-      .select({
-        subscriberId:      recoveries.subscriberId,
-        promotionMetadata: improvements.promotionMetadata,
-      })
-      .from(recoveries)
-      .leftJoin(improvements, eq(
-        improvements.id,
-        sql`(SELECT i.id FROM wb_improvements i WHERE i.kind = 'promotion' AND i.promotion_metadata->>'stripePromotionCodeId' = ${recoveries.appliedPromotionCodeId} LIMIT 1)`,
-      ))
-      .where(and(
-        inArray(recoveries.subscriberId, subscriberIds),
-        isNotNull(recoveries.appliedPromotionCodeId),
-      ))
-    for (const j of promoJoins) {
-      if (!j.promotionMetadata) continue
-      const parsed = WbPromotionMetadataSchema.safeParse(j.promotionMetadata)
-      if (!parsed.success) continue
-      promoLookup.set(j.subscriberId, formatPromotionChip(parsed.data))
-    }
-  }
-
+  // Billing-rewrite: applied-promotion chip removed alongside the
+  // perf-fee promo path. The applied_promotion_code_id column on
+  // wb_recoveries was dropped. If we add platform-side or merchant-side
+  // promo display later, build a fresh lookup — don't resurrect the join.
   const rowsWithPromo = rows.map((r) => ({
     ...r,
-    // Spec 78 — `null` when no promo applied; otherwise a short chip
-    // string like "WINBACK25 · -25% × 3mo" the dashboard renders below
-    // the cancellation reason text.
-    appliedPromotionChip: promoLookup.get(r.id) ?? null,
+    appliedPromotionChip: null as string | null,
   }))
 
   return NextResponse.json({

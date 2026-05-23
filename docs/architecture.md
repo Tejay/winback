@@ -1,3 +1,12 @@
+> **⚠️ Historical reference — pricing model was rewritten on 2026-05-23.**
+> The "$99/mo + 1× MRR per recovery" and "14-day refund window" mechanics
+> described in this doc no longer exist. Current model: tiered flat
+> monthly fee priced by the customer's own MRR (Starter $99 / Growth
+> $299 / Scale $699 / Enterprise sales-handled), no per-recovery
+> charges, no refund windows. See `CLAUDE.md` and
+> `/Users/tejay/.claude/plans/we-are-going-to-memoized-kernighan.md`
+> for the current model. This doc is preserved as historical record.
+
 # Winback Architecture
 
 Updated 2026-04-27 — reflects the post-billing-rewrite system (PRs #35–#39

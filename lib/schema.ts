@@ -68,10 +68,12 @@ export const customers = pgTable('wb_customers', {
   // bypassed. After expiry, normal billing flows resume on next event.
   pilotUntil:               timestamp('pilot_until'),
   pilotEndingWarnedAt:      timestamp('pilot_ending_warned_at'),
-  // Spec 77 — Per-customer custom flat-rate billing. NULL = standard
-  // $99/mo + 1× MRR perf fees. Non-NULL = negotiated flat monthly fee
-  // (perf fees disabled, platform sub uses a one-off Stripe Price at
-  // this amount). Mirrors the pilot bypass pattern at the column level.
+  // Per-customer custom flat-rate billing (admin override of the tier
+  // ladder). NULL = standard tiered pricing (Starter / Growth / Scale /
+  // Enterprise — see billing-config.ts). Non-NULL = negotiated flat
+  // monthly fee (tier ladder bypassed; platform sub uses a one-off
+  // Stripe Price at this amount). Mirrors the pilot bypass pattern at
+  // the column level.
   customMonthlyCents:       integer('custom_monthly_cents'),
   // Spec 78 — opt-in for the promo-aware win-back path. Off by default
   // preserves the "we don't recover by discounting" positioning. Flipped
@@ -95,6 +97,16 @@ export const customers = pgTable('wb_customers', {
   billingNudgeDay30SentAt:          timestamp('billing_nudge_day30_sent_at'),
   billingMonthlyReportLastSentAt:   timestamp('billing_monthly_report_last_sent_at'),
   billingEmailsOptedOutAt:          timestamp('billing_emails_opted_out_at'),
+  // Billing rewrite — tiered pricing state. recommended_tier is system-
+  // computed from smoothed MRR; billed_tier is what the customer is
+  // actually subscribed to (never auto-updated). Migration 051.
+  recommendedTier:        text('recommended_tier'),
+  billedTier:             text('billed_tier'),
+  smoothedMrrUsdMinor:    bigint('smoothed_mrr_usd_minor', { mode: 'number' }),
+  smoothedMrrComputedAt:  timestamp('smoothed_mrr_computed_at'),
+  requiresSales:          boolean('requires_sales').notNull().default(false),
+  recommendedChangedAt:   timestamp('recommended_changed_at'),
+  billedChangedAt:        timestamp('billed_changed_at'),
   createdAt:            timestamp('created_at').defaultNow(),
   updatedAt:            timestamp('updated_at').defaultNow(),
 }, (table) => ({
@@ -404,32 +416,30 @@ export const recoveries = pgTable('wb_recoveries', {
   recoveredAt:       timestamp('recovered_at').defaultNow(),
   planMrrCents:      integer('plan_mrr_cents').notNull(),
   newStripeSubId:    text('new_stripe_sub_id'),
-  // Phase D — removed default 'weak' (every writer sets it explicitly;
-  // default never fires).
   attributionType:   text('attribution_type'),
-  // recoveryType distinguishes the trigger: 'win_back' (voluntary cancel
-  // → reactivation) bills a 1× MRR performance fee; 'card_save' (failed
-  // payment recovered) does not bill — the $99/mo platform fee covers it.
+  // 'win_back' (voluntary cancel → reactivation) or 'card_save' (failed
+  // payment recovered). Both count toward the ROI display when
+  // attributionType is 'strong' or 'weak'; neither bills a per-recovery
+  // fee in the tiered-pricing model.
   recoveryType:      text('recovery_type'),
-  perfFeeChargedAt:  timestamp('perf_fee_charged_at'),
-  perfFeeRefundedAt: timestamp('perf_fee_refunded_at'),
-  perfFeeStripeItemId: text('perf_fee_stripe_item_id'),
-  perfFeeAmountCents: integer('perf_fee_amount_cents'),
-  // Spec 58 — TTL'd lock for race-safe perf-fee charging. NULL = not
-  // claimed; timestamp = a caller is mid-create. The atomic claim-and-act
-  // path in chargePerformanceFee uses this to serialize concurrent
-  // ensureActivation calls. Migration 037.
-  perfFeeCreatingAt: timestamp('perf_fee_creating_at'),
-  // Spec 78 — Stripe promotion_code id attached to the reactivated
-  // subscription when the recovery was promo-driven. NULL for
-  // non-promo recoveries. Drives the dashboard promo-chip render and
-  // is read by activation flow to pass `discounts: [{ promotion_code }]`
-  // on subscription create.
-  appliedPromotionCodeId: text('applied_promotion_code_id'),
-  // Spec 78 — Connect-side Stripe invoice id whose amount_paid set the
-  // perf-fee basis. Also serves as the idempotency key for the
-  // invoice.payment_succeeded handler: if this is already set, the
-  // handler short-circuits and never double-bills. NULL until the first
-  // non-zero invoice settles.
-  perfFeeBasisInvoiceId: text('perf_fee_basis_invoice_id'),
+})
+
+export const mrrSnapshots = pgTable('wb_mrr_snapshots', {
+  id:                          bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+  customerId:                  uuid('customer_id').notNull().references(() => customers.id, { onDelete: 'cascade' }),
+  mrrUsdMinor:                 bigint('mrr_usd_minor', { mode: 'number' }).notNull(),
+  perCurrency:                 jsonb('per_currency').notNull(),
+  breakdown:                   jsonb('breakdown').notNull(),
+  stripeReportedMrrUsdMinor:   bigint('stripe_reported_mrr_usd_minor', { mode: 'number' }),
+  source:                      text('source').notNull(),
+  takenAt:                     timestamp('taken_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  customerTakenAtIdx: index('idx_mrr_snapshots_customer_taken_at')
+    .on(table.customerId, table.takenAt.desc()),
+}))
+
+export const fxRates = pgTable('wb_fx_rates', {
+  currency:   text('currency').primaryKey(),
+  rateUsd:    decimal('rate_usd', { precision: 18, scale: 8 }).notNull(),
+  fetchedAt:  timestamp('fetched_at', { withTimezone: true }).notNull(),
 })

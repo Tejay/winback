@@ -14,11 +14,11 @@ import { AlertTriangle } from 'lucide-react'
  *   - dashboard reads + webhook ingestion still work (history is
  *     preserved so when billing heals, everything resumes)
  *
- * Mounted at the top of /dashboard. Visible above the fold; not
- * dismissible because the cost of dismissing-and-forgetting is real
- * service loss.
+ * `tierLabel` is optional — when present, the copy names the customer's
+ * specific plan ("Your Growth plan is past due..."). When absent, falls
+ * back to the generic copy.
  */
-export function BillingPausedBanner() {
+export function BillingPausedBanner({ tierLabel }: { tierLabel?: string }) {
   return (
     <div
       role="alert"
@@ -28,17 +28,20 @@ export function BillingPausedBanner() {
         <div className="flex items-start gap-2.5">
           <AlertTriangle className="w-4 h-4 text-rose-700 flex-shrink-0 mt-0.5" aria-hidden />
           <div className="text-sm text-rose-900 leading-relaxed">
-            <strong>Service paused — your subscription needs attention.</strong>{' '}
-            Winback isn&rsquo;t classifying new cancellations or sending
-            win-back / payment-recovery emails until your billing is
-            restored.
+            <strong>
+              {tierLabel
+                ? `Your ${tierLabel} plan needs attention.`
+                : 'Service paused — your subscription needs attention.'}
+            </strong>{' '}
+            WinbackFlow isn&rsquo;t classifying new cancellations or sending
+            win-back / payment-recovery emails until your billing is restored.
           </div>
         </div>
         <Link
           href="/settings#billing"
           className="bg-rose-600 hover:bg-rose-700 text-white rounded-full px-4 py-1.5 text-sm font-medium whitespace-nowrap flex-shrink-0 text-center"
         >
-          Restore billing &rarr;
+          Update card &rarr;
         </Link>
       </div>
     </div>

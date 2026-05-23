@@ -7,21 +7,35 @@ import { getPlatformStripe } from '@/src/winback/lib/platform-stripe'
 import { getOrCreatePlatformCustomer } from '@/src/winback/lib/platform-billing'
 import { logEvent } from '@/src/winback/lib/events'
 
+const ALLOWED_TIERS = new Set(['starter', 'growth', 'scale', 'custom'])
+
 /**
- * Spec 23 — POST /api/billing/setup-intent
+ * POST /api/billing/setup-intent
  *
  * Creates a Stripe Checkout session in `setup` mode so the user can
  * save a card on Winback's platform account. Returns the Checkout URL;
  * the client redirects to it.
  *
- * Same endpoint handles Add (first card) and Update (replace existing) —
- * the webhook handler detaches the previous PM after swapping the
- * default.
+ * Optional `confirmedTier` body field: when present, it's forwarded into
+ * the Checkout session metadata so the post-redirect /billing/success
+ * page can call commitActivation with the same tier the customer saw on
+ * the activation page. When absent (settings page "Update card" flow),
+ * the success page falls back to the customer's recommended_tier.
  */
-export async function POST() {
+export async function POST(req: Request) {
   const session = await auth()
   if (!session?.user?.id) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  let confirmedTier: string | null = null
+  try {
+    const body = (await req.json()) as { confirmedTier?: string }
+    if (body.confirmedTier && ALLOWED_TIERS.has(body.confirmedTier)) {
+      confirmedTier = body.confirmedTier
+    }
+  } catch {
+    // No body / invalid JSON — non-tier flow (settings page card update).
   }
 
   const [customer] = await db
@@ -43,17 +57,21 @@ export async function POST() {
       customer: platformCustomerId,
       payment_method_types: ['card'],
       success_url: `${baseUrl}/billing/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${baseUrl}/settings?billing=cancelled`,
+      cancel_url: `${baseUrl}/billing/activate?cancelled=1`,
       metadata: {
         winback_customer_id: customer.id,
         flow: 'platform_card_capture',
+        ...(confirmedTier ? { winback_confirmed_tier: confirmedTier } : {}),
       },
     })
 
     logEvent({
       name: 'billing_setup_started',
       customerId: customer.id,
-      properties: { stripeSessionId: checkoutSession.id },
+      properties: {
+        stripeSessionId: checkoutSession.id,
+        confirmedTier,
+      },
     })
 
     if (!checkoutSession.url) {

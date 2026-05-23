@@ -147,7 +147,7 @@ export async function GET(
             planMrrCents: subscriber.mrrCents,
             newStripeSubId: sub.id,
             attributionType: 'strong',
-            appliedPromotionCodeId: appliedPromo?.stripePromotionCodeId ?? null,
+            recoveryType: 'win_back',
           })
 
           await db

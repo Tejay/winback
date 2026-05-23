@@ -5,7 +5,7 @@ import { Footer } from '@/components/landing/footer'
 export const metadata = {
   title: 'Questions — Winback',
   description:
-    'Stripe access, payment recovery + cancellation winback emails, pricing, and GDPR — answered.',
+    'How WinbackFlow works, Stripe access, when emails go out, tiered pricing, and GDPR — answered.',
 }
 
 interface QA {
@@ -246,17 +246,42 @@ const SECTIONS: Section[] = [
     heading: 'How the emails work',
     items: [
       {
+        q: 'When does WinbackFlow email my cancelled subscribers?',
+        a: (
+          <>
+            <p>
+              Only when you ship an improvement that matches a stored
+              cancellation reason. WinbackFlow does NOT send an email at
+              the moment of cancellation &mdash; the AI is listen-only at
+              that stage. It records the reason and groups it into a
+              theme, and that&rsquo;s it.
+            </p>
+            <p className="mt-3">
+              When you later publish a shipped improvement in your
+              dashboard (e.g. &ldquo;Shipped Slack integration with
+              channel routing&rdquo;), WinbackFlow scans every cancellation
+              reason from the last 12 months and finds the subscribers who
+              cited that theme. Each one gets exactly one email naming
+              what they asked for and what you delivered.
+            </p>
+            <p className="mt-3">
+              No drip sequences. No exit emails. No AI replies. The only
+              email a subscriber gets from us is the one tied to a
+              shipped fix they specifically asked for.
+            </p>
+          </>
+        ),
+      },
+      {
         q: 'Who does the email come from?',
         a: (
           <p>
-            It&rsquo;s sent with your name on the From line (e.g.,{' '}
-            <em>Alex Smith</em>) from our sending domain. When a
-            subscriber replies, the reply <strong>routes back to your
-            dashboard</strong> automatically &mdash; we capture it,
-            re-read the conversation with the same AI, and surface the
-            reply plus the updated classification so new context (they
-            changed their mind, clarified a reason, pushed back) shapes
-            whatever happens next.
+            Sent with your name on the From line (e.g., <em>Alex Smith</em>)
+            from our verified sending domain. If a subscriber replies,
+            the reply goes to your normal inbox &mdash; WinbackFlow
+            doesn&rsquo;t intercept the conversation or auto-respond.
+            From there it&rsquo;s a direct conversation between you and
+            them.
           </p>
         ),
       },
@@ -265,15 +290,16 @@ const SECTIONS: Section[] = [
         a: (
           <>
             <p>
-              Cadence depends on the flow:
+              No drip sequences. Cadence per flow:
             </p>
             <ul className="mt-3 space-y-2 list-disc pl-5">
               <li>
-                <strong>Cancellation winback</strong>: one email immediately after a
-                voluntary cancellation. We send a single follow-up later
-                <em> only</em> if you ship something matching their stated
-                reason (see &ldquo;If I ship something a cancelled customer
-                asked for&hellip;&rdquo; below). Otherwise nothing else.
+                <strong>Cancellation winback</strong>: at most one email
+                per subscriber, sent only when you ship something
+                matching what they asked for. A subscriber who cited
+                multiple cancellation themes could in theory receive
+                multiple targeted emails over time, one per matching
+                ship &mdash; but never two for the same improvement.
               </li>
               <li>
                 <strong>Payment recovery</strong>: up to three emails per
@@ -285,32 +311,40 @@ const SECTIONS: Section[] = [
             </ul>
             <p className="mt-3">
               Every email carries a visible unsubscribe link plus the{' '}
-              <code>List-Unsubscribe</code> header so Gmail and Outlook show
-              a one-click unsubscribe button. No drip sequences, no
-              follow-ups we didn&rsquo;t tell you about.
+              <code>List-Unsubscribe</code> header so Gmail and Outlook
+              show a one-click unsubscribe button.
             </p>
           </>
         ),
       },
       {
-        q: 'If I ship something a cancelled customer asked for, do they hear about it?',
+        q: 'How does WinbackFlow know what a subscriber asked for?',
         a: (
           <>
             <p>
-              Yes. When you publish an improvement in your dashboard
-              (something you&rsquo;ve shipped or fixed), Winback re-reads
-              every cancellation reason from the last 12 months and
-              identifies the subscribers who cited what you just delivered.
-              They get one targeted email that names exactly what they
-              asked for and why it&rsquo;s worth another look.
+              From the exit reason they typed in Stripe&rsquo;s cancel
+              box. WinbackFlow reads that text with an LLM, classifies it
+              into a theme, and stores both the raw text and the theme.
             </p>
             <p className="mt-3">
-              Runs as a daily cron at 09:00 UTC. There&rsquo;s no extra fee
-              for the email itself &mdash; the standard cancellation
-              winback performance fee only kicks in if they actually come
-              back via the email.
+              The dashboard shows you the themes ranked by lost MRR
+              &mdash; so when you&rsquo;re deciding what to build next,
+              the prioritisation is grounded in churn dollars, not gut
+              feel.
             </p>
           </>
+        ),
+      },
+      {
+        q: 'What if a subscriber doesn’t give a reason?',
+        a: (
+          <p>
+            If no reason is captured in Stripe, that subscriber sits in
+            an unclassified bucket. They won&rsquo;t match any
+            improvement and won&rsquo;t receive a re-engagement email
+            &mdash; we can&rsquo;t tell them &ldquo;we shipped what you
+            asked for&rdquo; if we don&rsquo;t know what they asked for.
+          </p>
         ),
       },
       {
@@ -337,30 +371,30 @@ const SECTIONS: Section[] = [
         a: (
           <>
             <p>
-              You review and approve the template and tone during onboarding.
-              After that, the two flows behave differently because they
-              <em> are</em> different:
+              You review and approve the template and tone during
+              onboarding. After that:
             </p>
             <ul className="mt-3 space-y-2 list-disc pl-5">
               <li>
-                <strong>Cancellation winback emails are AI-drafted.</strong> The model
-                reads the cancellation reason and writes a targeted reply
-                in your approved voice. Sent within about a minute of the
-                cancellation &mdash; speed is what makes cancellation
-                winbacks work.
+                <strong>Cancellation-winback emails are AI-drafted</strong>
+                {' '}from the improvement description you publish + the
+                stored theme. The AI fills in the personalisation
+                &mdash; what the customer originally said, what you
+                shipped, why it addresses their reason &mdash; in your
+                approved voice. You can preview any pending send in
+                Settings.
               </li>
               <li>
-                <strong>Payment-recovery emails are rule-based</strong>, not
-                AI-written. A short utilitarian sequence keyed to the
-                Stripe decline code (expired card vs insufficient funds vs
-                hard decline). The customer wanted to stay; the card just
-                broke. No AI needed.
+                <strong>Payment-recovery emails are rule-based</strong>,
+                not AI-written. A short utilitarian sequence keyed to
+                the Stripe decline code (expired card vs insufficient
+                funds vs hard decline). The customer wanted to stay; the
+                card just broke. No AI needed.
               </li>
             </ul>
             <p className="mt-3">
-              You can preview either template in Settings any time and
-              pause sending if you want to handle a specific subscriber
-              yourself.
+              You can pause sending in Settings any time if you want to
+              handle a specific subscriber yourself.
             </p>
           </>
         ),
@@ -479,161 +513,164 @@ const SECTIONS: Section[] = [
     ],
   },
   {
-    heading: 'Pricing & recovery',
-    subsections: [
+    heading: 'Pricing & billing',
+    items: [
       {
-        heading: 'General',
-        items: [
-          {
-            q: 'How does pricing work?',
-            a: (
-              <>
-                <p>
-                  Two fees. A flat <strong>$99/mo platform fee</strong> that
-                  includes up to <strong>500 payment recoveries per month</strong>
-                  {' '}&mdash; the emails we send when a subscriber&rsquo;s payment
-                  fails so they can update their card. And a one-time{' '}
-                  <strong>performance fee equal to 1&times; the won-back
-                  subscriber&rsquo;s own monthly fee</strong> when we win back a
-                  cancelled customer. Charged once per cancellation
-                  winback, never recurring.
-                </p>
-                <p className="mt-3">
-                  <Link href="/pricing" className="text-blue-600 hover:underline">
-                    See full pricing &rarr;
-                  </Link>
-                </p>
-              </>
-            ),
-          },
-          {
-            q: 'Do I pay anything at signup?',
-            a: (
-              <p>
-                No card at signup. We ask for a payment method after we deliver
-                your first payment recovery or cancellation winback,
-                whichever comes first.
-                The $99 platform fee starts on that same invoice. If we deliver
-                nothing, you pay nothing.
-              </p>
-            ),
-          },
-        ],
+        q: 'How does pricing work?',
+        a: (
+          <>
+            <p>
+              One flat monthly fee priced by your own MRR. No per-recovery
+              charges, no performance fees, no usage caps.
+            </p>
+            <ul className="mt-3 space-y-2 list-disc pl-5">
+              <li>
+                <strong>Starter</strong> &mdash; MRR up to $50k &mdash; $99 / month
+              </li>
+              <li>
+                <strong>Growth</strong> &mdash; MRR $50k &ndash; $250k &mdash; $299 / month
+              </li>
+              <li>
+                <strong>Scale</strong> &mdash; MRR $250k &ndash; $1M &mdash; $699 / month
+              </li>
+              <li>
+                <strong>Enterprise</strong> &mdash; MRR $1M+ &mdash; custom,
+                sales-handled
+              </li>
+            </ul>
+            <p className="mt-3">
+              <Link href="/pricing" className="text-blue-600 hover:underline">
+                See full pricing &rarr;
+              </Link>
+            </p>
+          </>
+        ),
       },
       {
-        heading: 'Cancellation winbacks',
-        items: [
-          {
-            q: 'What counts as a cancellation winback?',
-            a: (
-              <>
-                <p>
-                  A subscriber comes back after we engaged with them.
-                  Specifically, one of:
-                </p>
-                <ul className="mt-3 space-y-2 list-disc pl-5">
-                  <li>They clicked our reactivate link.</li>
-                  <li>They replied to our email.</li>
-                  <li>
-                    They came back within 30 days of us escalating to you (a
-                    &ldquo;handoff&rdquo;).
-                  </li>
-                  <li>
-                    They came back within 30 days of you pausing our AI for
-                    them.
-                  </li>
-                </ul>
-                <p className="mt-3">
-                  Payment recoveries are billed separately &mdash; covered by
-                  the $99/mo platform fee.
-                </p>
-              </>
-            ),
-          },
-          {
-            q: 'If I personally reply to a customer our AI handed off to me, who earns the fee?',
-            a: (
-              <>
-                <p>
-                  The fee covers detection and surfacing, not the reply. Our
-                  AI catches the cancellation, classifies why, and gets the
-                  case in front of you fast &mdash; without that, the customer
-                  would&rsquo;ve been just another quiet churn in your Stripe
-                  dashboard. The conversation you have with them is yours;
-                  we&rsquo;re charging for the pipeline that made that
-                  conversation possible.
-                </p>
-                <p className="mt-3">
-                  Same logic when you pause our AI to handle a subscriber
-                  yourself.
-                </p>
-              </>
-            ),
-          },
-          {
-            q: 'What if someone reactivates without us doing anything?',
-            a: (
-              <>
-                <p>No bill if we did nothing. That covers:</p>
-                <ul className="mt-3 space-y-2 list-disc pl-5">
-                  <li>
-                    <strong>Organic</strong> &mdash; they came back on their
-                    own. No email engagement, no handoff, no pause.
-                  </li>
-                  <li>
-                    <strong>Weak</strong> &mdash; we sent an email but they
-                    didn&rsquo;t click, didn&rsquo;t reply, and we didn&rsquo;t
-                    escalate.
-                  </li>
-                </ul>
-                <p className="mt-3">
-                  Both still count as recoveries in your dashboard &mdash;
-                  that&rsquo;s the full picture of what came back. The fee
-                  fires only when we can point to a verifiable trigger
-                  (click, reply, handoff, or pause).
-                </p>
-              </>
-            ),
-          },
-          {
-            q: 'What if a won-back subscriber cancels again?',
-            a: (
-              <p>
-                If they re-cancel within 14 days of the cancellation
-                winback, we refund the
-                entire performance fee. After 14 days, the fee stands &mdash;
-                they had a real period of paid revenue.
-              </p>
-            ),
-          },
-        ],
+        q: 'How is my tier decided?',
+        a: (
+          <>
+            <p>
+              From your own Stripe account. WinbackFlow reads your active
+              subscriptions live (via Stripe Connect &mdash; no
+              self-reporting) and computes your MRR using the same math
+              Stripe shows on your dashboard.
+            </p>
+            <p className="mt-3">
+              When it&rsquo;s time to subscribe, the activation page shows
+              you the full breakdown &mdash; your computed MRR, the
+              resulting tier, the monthly fee &mdash; before any charge.
+              You click Subscribe at the displayed price. We never
+              auto-charge a tier you didn&rsquo;t confirm.
+            </p>
+            <p className="mt-3">
+              We err in your favor on band edges: if your MRR is within 5%
+              of a tier boundary, you stay in the lower tier.
+            </p>
+          </>
+        ),
       },
       {
-        heading: 'Payment recoveries',
-        items: [
-          {
-            q: 'Is there a per-recovery fee for payment recoveries?',
-            a: (
-              <p>
-                No. The $99/mo platform fee covers up to 500 payment
-                recoveries per month &mdash; no per-recovery charge inside
-                that cap.
-              </p>
-            ),
-          },
-          {
-            q: 'Do I pay if Stripe recovers a failed payment on its own?',
-            a: (
-              <p>
-                No extra charge either way. Stripe&rsquo;s Smart Retries
-                silently recover a chunk of failed payments on their own;
-                our payment-recovery emails handle the rest &mdash; the
-                ones Stripe gives up on. The $99/mo platform fee covers up
-                to 500 payment recoveries per month.
-              </p>
-            ),
-          },
-        ],
+        q: 'Do I pay anything at signup?',
+        a: (
+          <p>
+            No card at signup. WinbackFlow runs free until we deliver your
+            first payment recovery or cancellation winback. Only then do
+            we prompt you in-app to confirm your tier and subscribe. If we
+            deliver nothing, you pay nothing.
+          </p>
+        ),
+      },
+      {
+        q: 'Can my tier change later?',
+        a: (
+          <>
+            <p>
+              Yes, but never automatically. We re-compute your MRR every
+              week. If it grows into a higher tier and stays there for 14
+              days, you&rsquo;ll see an upgrade prompt in your dashboard
+              and settings. Same for downgrades &mdash; if your MRR drops
+              for 30 days (and stays at least 10% below the boundary, to
+              avoid flapping), you&rsquo;ll see a downgrade option.
+            </p>
+            <p className="mt-3">
+              In both directions, you decide. The Stripe Customer Portal
+              handles the actual switch.
+            </p>
+          </>
+        ),
+      },
+      {
+        q: 'Are recoveries capped on any tier?',
+        a: (
+          <p>
+            No. Every tier covers unlimited recovery volume &mdash; both
+            payment recoveries and cancellation winbacks, however many of
+            each. There are no overage fees and no usage charges.
+          </p>
+        ),
+      },
+      {
+        q: 'What counts as a cancellation winback in my dashboard?',
+        a: (
+          <>
+            <p>
+              A previously-cancelled subscriber starts paying you again
+              after we emailed them about a shipped improvement that
+              matched their cancellation reason. The ROI display in your
+              dashboard counts:
+            </p>
+            <ul className="mt-3 space-y-2 list-disc pl-5">
+              <li>
+                <strong>Strong</strong> &mdash; they clicked the
+                reactivate link in our targeted improvement email and
+                resubscribed.
+              </li>
+              <li>
+                <strong>Weak</strong> &mdash; we sent the targeted
+                improvement email; they didn&rsquo;t click it but
+                resubscribed within the attribution window anyway.
+              </li>
+              <li>
+                <strong>Organic</strong> &mdash; they came back on their
+                own with no matching email having gone out. Recorded for
+                your records; excluded from the &ldquo;Recovered&rdquo;
+                figure to keep the ROI number defensible.
+              </li>
+            </ul>
+            <p className="mt-3">
+              None of this affects your bill. Your monthly fee is flat,
+              based on your MRR tier &mdash; recoveries change the ROI
+              number on your dashboard, not what you pay.
+            </p>
+          </>
+        ),
+      },
+      {
+        q: 'What if a won-back subscriber cancels again?',
+        a: (
+          <p>
+            Your monthly fee doesn&rsquo;t change &mdash; it&rsquo;s flat
+            per tier, independent of any individual recovery outcome. The
+            re-cancellation does drop them out of your &ldquo;currently
+            active&rdquo; revenue run-rate on the dashboard, and Winback
+            re-classifies them as a new churn event with a fresh
+            cancellation winback flow.
+          </p>
+        ),
+      },
+      {
+        q: 'Can I cancel? What happens to my data?',
+        a: (
+          <p>
+            One-click cancel via your billing settings &mdash; no
+            retention friction. The subscription ends at the close of your
+            current cycle. Your data stays intact, and WinbackFlow keeps
+            running recovery and winback on your account for free. The
+            next delivered recovery will prompt you in-app to re-subscribe
+            at the tier matching your then-current MRR.
+          </p>
+        ),
       },
     ],
   },

@@ -93,6 +93,24 @@ export const CRON_SCHEDULES: ReadonlyArray<CronSchedule> = [
     purpose: 'Picks unclassified subscribers, runs the LLM, persists tier/triggerNeed/etc, and sends an exit email if the cancellation is recent and the AI doesn\'t suppress.',
     staleImpact: 'New cancellations sit in the queue with classified_at=NULL. Exit emails are delayed; merchant dashboard shows them as "pending classification".',
   },
+  {
+    name: 'fx-refresh',
+    displayName: 'FX rate refresh',
+    cron: '0 2 * * *',
+    label: 'Daily 02:00 UTC',
+    maxIntervalSecs: DAY * 1.5,
+    purpose: 'Refreshes USD-base FX rates from the configured provider into wb_fx_rates. Powers non-USD subscription conversion in MRR computation.',
+    staleImpact: 'Non-USD subscriptions convert at stale rates (still permitted up to 7d, then admin-alerted). No customer is blocked.',
+  },
+  {
+    name: 'mrr-snapshot',
+    displayName: 'MRR snapshot + tier eval',
+    cron: '0 3 * * 0',
+    label: 'Weekly Sunday 03:00 UTC',
+    maxIntervalSecs: DAY * 8,
+    purpose: 'Per connected account: compute MRR from Stripe, write a snapshot, recompute smoothed MRR, re-evaluate recommended_tier, fire upgrade/downgrade prompts when sustain windows elapse.',
+    staleImpact: 'Tier recommendations and upgrade/downgrade prompts freeze at the last successful run. Customers continue paying their billed_tier — no economic impact, just stale advice.',
+  },
 ]
 
 // HOUR is exported for tests that want to construct stale-thresholds in a

@@ -104,11 +104,10 @@ export default function PrivacyPage() {
             requests received via the controllers we serve.
           </li>
           <li>
-            <strong>Billing our customers.</strong> Charge a flat
-            $99/mo platform fee and a one-time fee equal to one month
-            of the won-back subscriber&rsquo;s subscription fee for
-            each delivered cancellation win-back (refundable if the
-            subscriber re-cancels within 14 days).
+            <strong>Billing our customers.</strong> Charge a single flat
+            monthly fee priced by the customer&rsquo;s own MRR (Starter
+            $99 / Growth $299 / Scale $699 / Enterprise sales-handled).
+            No per-recovery charges, no usage caps.
           </li>
         </ul>
 

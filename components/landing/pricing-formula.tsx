@@ -2,22 +2,13 @@ import Link from 'next/link'
 import { Check } from 'lucide-react'
 
 /**
- * Pricing — three colored-rail cards, one per fee line, so the
- * structure is impossible to misread.
+ * Pricing — three tier cards + Enterprise contact-sales, one rail per
+ * tier so the structure is impossible to misread.
  *
- * Reads as one design system with /payment-recovery, /win-back, and
- * the two-pillar teaser above:
- *   • Platform fee  → slate rail (the flat baseline)
- *   • Payment recovery → blue rail (bundled free)
- *   • Win-back fee  → emerald rail (pay-on-success)
- *
- * Copy notes:
- *   - "1× Monthly fee" instead of "MRR" (user feedback: MRR jargon
- *     isn't universally understood).
- *   - Headline names the differentiator directly: $99/mo flat, pay
- *     extra only when we win back a customer.
- *   - Sub-cards trust strip + fixed-contract escape hatch retained
- *     for the buyers who need them (procurement, annual contracts).
+ * Structure-only rewrite (billing rewrite). Final copy is a separate
+ * design pass; placeholder copy here keeps the page coherent and the
+ * prices accurate. Per-tier benefits, comparison rows, and FAQ-tier
+ * coverage are deferred.
  */
 export function PricingFormula() {
   return (
@@ -29,128 +20,114 @@ export function PricingFormula() {
             Pricing
           </p>
           <h2 className="mt-3 text-3xl sm:text-4xl font-bold tracking-tight text-slate-900">
-            $99/mo flat. Pay extra only when we win back a customer.
+            One flat monthly fee. Priced by your MRR.
           </h2>
           <p className="mt-4 text-sm sm:text-base text-slate-600">
-            Payment recoveries are bundled into the platform fee. The performance fee only kicks in when we save you a cancelled customer.
+            No per-recovery charges, no surprise invoices. Unlimited recovery
+            volume on every tier. Free until we&apos;ve delivered your first
+            recovered customer.
           </p>
         </div>
 
-        {/* Three pricing cards — same colored-rail design language as
-            the two-pillar teaser so the page reads as one system. */}
-        <div className="mt-12 grid grid-cols-1 lg:grid-cols-3 gap-4">
-          {/* Card 1 — Platform fee (slate, flat baseline) */}
-          <div
-            className="rounded-2xl border border-slate-100 shadow-sm p-6 border-l-4 border-l-slate-400"
-            style={{ backgroundImage: 'linear-gradient(to right, #f8fafc 0%, #ffffff 30%)' }}
-          >
-            <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-500">
-              Platform fee
-            </p>
-            <div className="mt-3 flex items-baseline gap-1.5">
-              <span className="text-4xl font-bold text-slate-900 leading-none tabular-nums">$99</span>
-              <span className="text-sm text-slate-500">/ month</span>
-            </div>
-            <p className="mt-3 text-sm text-slate-600 leading-relaxed">
-              Flat. Both flows running. Cancel anytime.
-            </p>
-          </div>
+        {/* Tier grid — Starter / Growth / Scale / Enterprise */}
+        <div className="mt-12 grid grid-cols-1 lg:grid-cols-4 gap-4">
+          <TierCard
+            tier="Starter"
+            band="MRR up to $50k"
+            price="$99"
+            blurb="For early-stage SaaS finding their first cohort of paying customers."
+            railClass="border-l-slate-400"
+          />
+          <TierCard
+            tier="Growth"
+            band="MRR $50k – $250k"
+            price="$299"
+            blurb="For teams scaling past product-market fit, fighting both churn and failed payments."
+            railClass="border-l-blue-500"
+            featured
+          />
+          <TierCard
+            tier="Scale"
+            band="MRR $250k – $1M"
+            price="$699"
+            blurb="For established subscription businesses with material recovery dollars on the line."
+            railClass="border-l-emerald-500"
+          />
+          <TierCard
+            tier="Enterprise"
+            band="MRR $1M+"
+            price="Contact us"
+            blurb="Bespoke pricing, SLAs, and onboarding. Reach out and we&rsquo;ll tailor a contract."
+            railClass="border-l-indigo-500"
+            isEnterprise
+          />
+        </div>
 
-          {/* Card 2 — Payment recovery (blue, included free) */}
-          <div
-            className="rounded-2xl border border-slate-100 shadow-sm p-6 border-l-4 border-l-blue-600"
-            style={{ backgroundImage: 'linear-gradient(to right, #eff6ff 0%, #ffffff 30%)' }}
-          >
-            <p className="text-[10px] font-semibold uppercase tracking-widest text-blue-700">
-              Payment recovery
-            </p>
-            <div className="mt-3 flex items-baseline gap-1.5">
-              <span className="text-4xl font-bold text-slate-900 leading-none">Free</span>
-              <span className="text-sm text-slate-500">included</span>
-            </div>
-            <p className="mt-3 text-sm text-slate-600 leading-relaxed">
-              Up to <strong className="text-slate-800">500 recoveries / mo</strong> bundled into the platform fee.
-            </p>
-          </div>
-
-          {/* Card 3 — Win-back performance fee (emerald, pay-on-success) */}
-          <div
-            className="rounded-2xl border border-slate-100 shadow-sm p-6 border-l-4 border-l-emerald-600"
-            style={{ backgroundImage: 'linear-gradient(to right, #ecfdf5 0%, #ffffff 30%)' }}
-          >
-            <p className="text-[10px] font-semibold uppercase tracking-widest text-emerald-700">
-              Cancellation winback fee
-            </p>
-            <div className="mt-3 flex items-baseline gap-1.5">
-              <span className="text-4xl font-bold text-slate-900 leading-none">1&times; Monthly fee</span>
-            </div>
-            <p className="mt-3 text-sm text-slate-600 leading-relaxed">
-              Per cancelled customer we bring back.{' '}
-              <strong className="text-slate-800">$0</strong>
-              {' '}if we don&rsquo;t deliver any.
-            </p>
+        {/* Trust strip */}
+        <div className="mt-10 rounded-2xl border border-slate-100 bg-slate-50/50 p-5">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm text-slate-700">
+            <TrustItem>Free until your first recovered customer</TrustItem>
+            <TrustItem>Unlimited recovery volume on every tier</TrustItem>
+            <TrustItem>Cancel anytime — no retention friction</TrustItem>
           </div>
         </div>
 
-        {/* See full pricing — promoted from a tiny text sublink to a
-            button-style anchor so it's actually visible. User feedback:
-            the previous "14-day money-back. See full pricing →" sublink
-            was too easy to miss (and the "14-day money-back" half was
-            misleading — there is no general money-back guarantee). */}
-        <div className="mt-10 flex justify-center">
+        <div className="mt-8 text-center">
           <Link
             href="/pricing"
-            className="inline-flex items-center gap-1.5 rounded-full border border-slate-300 bg-white px-5 py-2.5 text-sm font-medium text-slate-700 hover:border-blue-500 hover:text-blue-700 transition-colors shadow-sm"
+            className="inline-flex items-center justify-center text-sm font-medium text-blue-700 hover:text-blue-800"
           >
-            See full pricing &amp; Questions
-            <span aria-hidden>&rarr;</span>
+            See full pricing details →
           </Link>
-        </div>
-
-        {/* Trust strip — procurement checkboxes (cancel anytime, no
-            setup, refund window). Refund row says exactly what's
-            refundable: the win-back fee, only if the won-back customer
-            re-cancels within 14 days. NOT a general money-back. */}
-        <div className="mt-12 max-w-3xl mx-auto">
-          <div className="rounded-2xl border border-slate-200 bg-white px-6 py-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="flex items-center gap-2 text-sm text-slate-700">
-              <Check className="w-4 h-4 text-emerald-500 flex-shrink-0" strokeWidth={2.4} />
-              <span>$0 until first save</span>
-            </div>
-            <div className="flex items-center gap-2 text-sm text-slate-700">
-              <Check className="w-4 h-4 text-emerald-500 flex-shrink-0" strokeWidth={2.4} />
-              <span>Cancellation winback fee refunded if they re-cancel in 14 days</span>
-            </div>
-            <div className="flex items-center gap-2 text-sm text-slate-700">
-              <Check className="w-4 h-4 text-emerald-500 flex-shrink-0" strokeWidth={2.4} />
-              <span>Cancel anytime</span>
-            </div>
-            <div className="flex items-center gap-2 text-sm text-slate-700">
-              <Check className="w-4 h-4 text-emerald-500 flex-shrink-0" strokeWidth={2.4} />
-              <span>No setup fees</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Fixed-contract alternative — kept verbatim for annual-budget
-            buyers who can't operate on performance pricing. */}
-        <div className="mt-12 max-w-xl mx-auto pt-10 border-t border-slate-200 text-center">
-          <h3 className="text-sm font-semibold text-slate-900">
-            Need a fixed annual contract?
-          </h3>
-          <p className="mt-3 text-sm text-slate-500 leading-relaxed">
-            For teams that need predictable budgeting with SSO and a signed
-            SLA &mdash; we offer fixed annual contracts as an alternative to
-            the performance model.
-          </p>
-          <a
-            href="mailto:sales@winbackflow.co"
-            className="mt-4 inline-block text-sm font-medium text-blue-600 hover:text-blue-700"
-          >
-            sales@winbackflow.co &rarr;
-          </a>
         </div>
       </div>
     </section>
+  )
+}
+
+function TierCard({
+  tier,
+  band,
+  price,
+  blurb,
+  railClass,
+  featured = false,
+  isEnterprise = false,
+}: {
+  tier: string
+  band: string
+  price: string
+  blurb: string
+  railClass: string
+  featured?: boolean
+  isEnterprise?: boolean
+}) {
+  return (
+    <div
+      className={`rounded-2xl border ${
+        featured ? 'border-blue-200 ring-1 ring-blue-100' : 'border-slate-100'
+      } shadow-sm p-6 border-l-4 ${railClass} bg-white`}
+    >
+      <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+        {tier}
+      </p>
+      <div className="mt-3 flex items-baseline gap-1.5">
+        <span className="text-3xl font-bold text-slate-900 leading-none tabular-nums">
+          {price}
+        </span>
+        {!isEnterprise && <span className="text-sm text-slate-500">/ mo</span>}
+      </div>
+      <p className="mt-2 text-xs font-medium text-slate-500">{band}</p>
+      <p className="mt-3 text-sm text-slate-600 leading-relaxed">{blurb}</p>
+    </div>
+  )
+}
+
+function TrustItem({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex items-start gap-2">
+      <Check className="h-4 w-4 text-emerald-600 flex-shrink-0 mt-0.5" aria-hidden />
+      <span className="leading-relaxed">{children}</span>
+    </div>
   )
 }

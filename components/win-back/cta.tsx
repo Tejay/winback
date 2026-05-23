@@ -16,7 +16,7 @@ export function Cta() {
           Bring back the cancellers.
         </h2>
         <p className="mt-4 text-sm text-slate-600 max-w-xl mx-auto">
-          Cancellation winbacks are performance-billed: 1 month&apos;s subscription fee per recovered customer, refundable for 14 days, $0 if we don&apos;t recover anyone.{' '}
+          One flat monthly fee priced by your MRR &mdash; $0 until we&apos;ve recovered your first customer, unlimited recovery volume on every tier, cancel anytime.{' '}
           <Link href="/#pricing" className="text-blue-600 hover:text-blue-700 font-medium">
             See full pricing →
           </Link>

@@ -2,9 +2,13 @@ import { FlowIllustration } from '@/components/landing/flow-illustration'
 
 /**
  * /win-back hero. Mirrors components/payment-recovery/hero.tsx — full-bleed
- * section with bg-#eef2fb to match the platform's hero pattern. Includes the
- * cancellation → AI → recovery flow diagram (which was on the old home hero
- * but is win-back-specific, so it lives here now).
+ * section with bg-#eef2fb to match the platform's hero pattern.
+ *
+ * The new product story: AI is listen-only. It classifies why each
+ * subscriber cancelled and stores the reason. When the merchant ships
+ * an improvement that matches a stored reason, WinbackFlow emails the
+ * specific subscribers who asked for it — one targeted message, no
+ * generic blast, no AI conversation back-and-forth.
  */
 export function Hero() {
   return (
@@ -15,12 +19,18 @@ export function Hero() {
             Cancellation winbacks
           </p>
           <h1 className="mt-4 text-4xl sm:text-5xl font-bold tracking-tight text-slate-900">
-            Bring back the customers who chose to leave.
+            Bring back the customers who told you why they left.
           </h1>
           <p className="mt-5 text-base sm:text-lg text-slate-600 leading-relaxed">
-            Cancellations are recoverable — if the reason actually lands. Winback reads what the customer said — and when they didn&apos;t say anything, what they did. Account history, changelog matches, tenure, engagement signals. Then writes a personal, single email that fits.{' '}
-            <span className="text-blue-600 font-semibold">Every email is AI-drafted, personalised to that subscriber</span>{' '}
-            — not a templated broadcast.
+            Every cancellation comes with a reason &mdash; in the Stripe
+            cancel box, in the customer&rsquo;s own words. WinbackFlow
+            reads each one, classifies it into a theme, and remembers
+            who asked for what.{' '}
+            <span className="text-blue-600 font-semibold">
+              When you ship something that matches a theme, we email the
+              specific subscribers who cited it.
+            </span>{' '}
+            One targeted message per match &mdash; no blast, no drip.
           </p>
         </div>
 

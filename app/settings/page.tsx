@@ -15,6 +15,11 @@ import { PoweredByStripe } from '@/components/powered-by-stripe'
 import { fetchPlatformPaymentMethod, fetchPlatformInvoices } from '@/src/winback/lib/platform-billing'
 import { getSubscriptionDetails } from '@/src/winback/lib/subscription'
 import { SubscriptionActions } from './subscription-actions'
+import { TierTransparencyBlock } from '@/components/tier-transparency-block'
+import { tierConfig, ROI_DISPLAY_WINDOW_DAYS } from '@/src/winback/lib/billing-config'
+import { tierLabel as tierLabelFor, type TierKey } from '@/src/winback/lib/tiers'
+import { recoveries } from '@/lib/schema'
+import { and, gte, inArray } from 'drizzle-orm'
 
 export default async function SettingsPage({
   searchParams,
@@ -78,6 +83,46 @@ export default async function SettingsPage({
     ...inv,
     createdAt: inv.createdAt.toISOString(),
   }))
+
+  // Tier transparency + upgrade/downgrade prompt data.
+  const trailingSince = new Date(
+    Date.now() - ROI_DISPLAY_WINDOW_DAYS * 24 * 60 * 60 * 1000,
+  )
+  const trailingRecoveryRows = customer
+    ? await db
+        .select({ mrrCents: recoveries.planMrrCents })
+        .from(recoveries)
+        .where(
+          and(
+            eq(recoveries.customerId, customer.id),
+            gte(recoveries.recoveredAt, trailingSince),
+            inArray(recoveries.attributionType, ['strong', 'weak']),
+          ),
+        )
+    : []
+  const trailing30dRecoveredUsdMinor = trailingRecoveryRows.reduce(
+    (sum, r) => sum + (r.mrrCents ?? 0),
+    0,
+  )
+  const tierForDisplay = (customer?.billedTier ??
+    customer?.recommendedTier ??
+    null) as TierKey | 'custom' | 'enterprise' | null
+  const priceForDisplay =
+    tierForDisplay && tierForDisplay !== 'custom' && tierForDisplay !== 'enterprise'
+      ? tierConfig(tierForDisplay).priceUsdMinor
+      : tierForDisplay === 'custom'
+        ? customer?.customMonthlyCents ?? null
+        : null
+  // Detect divergence between recommended and billed tiers — the surface
+  // for the upgrade / downgrade prompts. The sustain-window check
+  // happens server-side in tier-transitions; here we just render
+  // whatever recommended_tier currently says.
+  const recommendedNeq =
+    customer?.recommendedTier &&
+    customer.billedTier &&
+    customer.recommendedTier !== customer.billedTier
+      ? (customer.recommendedTier as TierKey | 'custom' | 'enterprise')
+      : null
 
   return (
     <>
@@ -179,6 +224,56 @@ export default async function SettingsPage({
               {billingDisplay.caption}
             </p>
 
+            {/* Tier transparency — MRR, band, fee, trailing-30d recovered.
+                Same component the activation page uses. Customers can
+                always see the math their bill is computed against. */}
+            <div className="mb-5">
+              <TierTransparencyBlock
+                data={{
+                  tier: tierForDisplay,
+                  priceUsdMinor: priceForDisplay,
+                  mrrUsdMinor: customer?.smoothedMrrUsdMinor ?? 0,
+                  trailing30dRecoveredUsdMinor,
+                }}
+              />
+            </div>
+
+            {/* Tier change prompt — fires when recommended_tier diverges
+                from billed_tier AND the sustain window has elapsed (the
+                cron sets recommendedChangedAt; here we just render).
+                Always actionable, never auto-charging. */}
+            {recommendedNeq && recommendedNeq !== 'enterprise' && (
+              <div className="mb-5 border border-amber-200 bg-amber-50 rounded-xl p-4">
+                <div className="text-sm font-semibold text-amber-900">
+                  Plan recommendation: {recommendedNeq === 'custom' ? 'Custom plan' : tierLabelFor(recommendedNeq as TierKey)}
+                </div>
+                <p className="text-sm text-amber-800 mt-1 leading-relaxed">
+                  Based on your trailing 30-day MRR, your account fits the{' '}
+                  {recommendedNeq === 'custom' ? 'Custom' : tierLabelFor(recommendedNeq as TierKey)}{' '}
+                  tier. Switch via{' '}
+                  <a href="/billing/activate" className="underline font-medium">
+                    Activate at the new tier
+                  </a>{' '}
+                  — we never change your plan without your click.
+                </p>
+              </div>
+            )}
+            {recommendedNeq === 'enterprise' && (
+              <div className="mb-5 border border-indigo-200 bg-indigo-50 rounded-xl p-4">
+                <div className="text-sm font-semibold text-indigo-900">
+                  You&apos;re eligible for Enterprise.
+                </div>
+                <p className="text-sm text-indigo-800 mt-1 leading-relaxed">
+                  Your MRR puts you in our Enterprise tier — pricing is bespoke
+                  and handled by sales. Reach out at{' '}
+                  <a href="mailto:sales@winbackflow.co" className="underline font-medium">
+                    sales@winbackflow.co
+                  </a>
+                  .
+                </p>
+              </div>
+            )}
+
             {/* Payment-failed banner — shown when Stripe Subscription is
                 past_due or unpaid. Stripe Smart Retries will keep trying;
                 meanwhile the customer can update their card via the
@@ -196,13 +291,14 @@ export default async function SettingsPage({
               </div>
             )}
 
-            {/* Plan card — Phase B: $99/mo platform + 1× MRR per win-back.
-                Badge + footer derived from billingDisplay (see
-                deriveBillingDisplay() below), which reads the LIVE
-                Stripe subscription status instead of just "is there a
-                sub ID stored in our DB?" — the latter was wrong for
-                any sub that Stripe transitioned to incomplete_expired
-                / canceled / past_due without us nulling our DB field. */}
+            {/* Plan card — tiered platform fee (Starter / Growth / Scale /
+                Enterprise) priced by the customer's own Stripe MRR. Badge +
+                footer derived from billingDisplay (see deriveBillingDisplay()
+                below), which reads the LIVE Stripe subscription status
+                instead of just "is there a sub ID stored in our DB?" — the
+                latter was wrong for any sub that Stripe transitioned to
+                incomplete_expired / canceled / past_due without us nulling
+                our DB field. */}
             <div className="border border-slate-200 rounded-2xl p-5">
               <div className="flex items-center">
                 <span className="text-xs font-semibold uppercase tracking-widest text-slate-400">
@@ -214,11 +310,28 @@ export default async function SettingsPage({
               </div>
 
               <div className="mt-4">
-                <span className="text-3xl font-bold text-slate-900">$99</span>
-                <span className="text-slate-400">/mo platform fee</span>
+                {tierForDisplay === 'enterprise' || priceForDisplay === null ? (
+                  <span className="text-3xl font-bold text-slate-900">
+                    Contact sales
+                  </span>
+                ) : (
+                  <>
+                    <span className="text-3xl font-bold text-slate-900">
+                      ${(priceForDisplay / 100).toLocaleString()}
+                    </span>
+                    <span className="text-slate-400">/mo</span>
+                    {tierForDisplay && tierForDisplay !== 'custom' && (
+                      <span className="ml-2 text-sm text-slate-500">
+                        {tierLabelFor(tierForDisplay as TierKey)} tier
+                      </span>
+                    )}
+                  </>
+                )}
               </div>
               <p className="text-sm text-slate-500 mt-2">
-                Includes up to 500 payment recoveries per month. Plus a one-time fee of <strong className="text-slate-900">1× whatever your customer&apos;s first paid invoice is</strong> per win-back, charged when that invoice settles. If they never pay, neither do you. Fully refundable if the customer re-cancels within 14 days.
+                Flat monthly fee, no per-recovery charges, unlimited recovery
+                volume. Cancel anytime via the billing portal — no retention
+                friction.
               </p>
               {billingDisplay.footer && (
                 <p className="text-xs text-slate-400 mt-3">
