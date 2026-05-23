@@ -122,7 +122,7 @@ const SECTIONS: Section[] = [
         a: (
           <>
             <p>
-              Yes. From Settings &rarr; Reasons you can select a single
+              Yes. From Reasons (top-nav) you can select a single
               Stripe promotion code at a time to offer with winback emails
               (or skip &mdash; many merchants find a personal-sounding
               email outperforms a discount). Switching the active code is
