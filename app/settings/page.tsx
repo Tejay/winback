@@ -391,8 +391,6 @@ export default async function SettingsPage({
             <div className="px-6 pb-6 border-t border-slate-100 pt-4">
               <p className="text-sm text-slate-600">
                 We read every one &mdash; and we&rsquo;ll email you if we ship it.
-                The same listen &rarr; ship &rarr; notify loop we run for your
-                subscribers, turned on us.
               </p>
               <FeatureRequestForm />
             </div>
