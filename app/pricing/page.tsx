@@ -78,7 +78,7 @@ export default function PricingPage() {
               blurb="For established subscription businesses with material recovery dollars on the line."
               bullets={[
                 'Everything in Growth',
-                'Zoom call on request',
+                'Quarterly strategy review (Zoom)',
                 'Custom reporting on request',
               ]}
               railClass="border-l-emerald-500"
