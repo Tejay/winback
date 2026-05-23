@@ -66,7 +66,7 @@ export default function PricingPage() {
               bullets={[
                 'Everything in Starter',
                 'Priority support',
-                'Founder handoff routing',
+                'Onboarding setup call',
               ]}
               railClass="border-l-blue-500"
             />
