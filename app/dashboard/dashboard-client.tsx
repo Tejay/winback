@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { StatusBadge } from '@/components/status-badge'
 import { Pagination } from '@/components/pagination'
-import { TrendingUp, CheckCircle, DollarSign, Users, Search, Zap, X, RotateCcw, Check, Loader2, Sparkles, MessageSquare, CreditCard, ChevronRight, ChevronDown, Copy, Mail, Send, ArrowLeft } from 'lucide-react'
+import { TrendingUp, CheckCircle, DollarSign, Users, Search, Zap, X, RotateCcw, Check, Loader2, Sparkles, MessageSquare, CreditCard, ChevronRight, ChevronDown, Copy, Mail, Send } from 'lucide-react'
 
 interface Subscriber {
   id: string
@@ -62,6 +62,10 @@ interface Subscriber {
   // in /api/subscribers from recoveries.appliedPromotionCodeId joined
   // to the promotion's wb_improvements row.
   appliedPromotionChip?: string | null
+  // Drawer redesign — the subscriber's most-recent inbound reply (shown
+  // inline on awaiting rows) + whether the ball is in the founder's court.
+  latestReplySnippet?: string | null
+  awaitingReply?: boolean
 }
 
 type ConversationMessage =
@@ -96,9 +100,8 @@ interface LabelPct {
 }
 interface WinBackFilterCounts {
   all: number
-  handoff: number
-  'has-reply': number
-  paused: number
+  awaiting: number
+  high: number
   recovered: number
   done: number
 }
@@ -160,7 +163,7 @@ const EMPTY_STATS: Stats = {
     inProgress: 0,
     handoffsNeedingAttention: 0,
     topReasons: [],
-    filterCounts: { all: 0, handoff: 0, 'has-reply': 0, paused: 0, recovered: 0, done: 0 },
+    filterCounts: { all: 0, awaiting: 0, high: 0, recovered: 0, done: 0 },
     dailyRecovered: [],
     pipeline30d: EMPTY_PIPELINE,
   },
@@ -314,6 +317,34 @@ export function DashboardClient({
       cancelled = true
     }
   }, [selected?.id])
+
+  // While a drawer is open, silently re-poll its conversation so a new
+  // inbound reply (or AI re-classification) appears without reopening it.
+  // Silent = no loading spinner, no blanking on error — just swap in fresh
+  // messages. Visibility-gated; also fires immediately on tab focus.
+  useEffect(() => {
+    if (!selected?.id) return
+    const id = selected.id
+    let stopped = false
+    const poll = () => {
+      if (document.visibilityState !== 'visible') return
+      fetch(`/api/subscribers/${id}/conversation`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          if (!stopped && data && Array.isArray(data.messages)) setConversation(data.messages)
+        })
+        .catch(() => {})
+    }
+    const interval = setInterval(poll, 12000)
+    window.addEventListener('focus', poll)
+    document.addEventListener('visibilitychange', poll)
+    return () => {
+      stopped = true
+      clearInterval(interval)
+      window.removeEventListener('focus', poll)
+      document.removeEventListener('visibilitychange', poll)
+    }
+  }, [selected?.id])
   // Spec 51 — bannerDismissed removed. Banner visibility is now derived
   // purely from server state (activatedAt + stripeSubscriptionId). No more
   // localStorage-driven indefinite dismissal.
@@ -409,13 +440,10 @@ export function DashboardClient({
         setStatsLoaded(true) // unblock UI so KPIs show "—" rather than spinning
       })
     const params = new URLSearchParams()
-    // Spec 40 — partition by cohort. The "Has reply" chip is win-back-only
-    // and serialised to ?hasReply=true rather than the filter slot so the
-    // existing AI-state filter pipeline stays clean.
+    // Spec 40 — partition by cohort. Filters (awaiting / high / recovered /
+    // done for win-back; dunning states for payment) go in the filter slot.
     params.set('cohort', tab === 'winback' ? 'winback' : 'payment-recovery')
-    if (filter === 'has-reply') {
-      params.set('hasReply', 'true')
-    } else if (filter !== 'all') {
+    if (filter !== 'all') {
       params.set('filter', filter)
     }
     if (search) params.set('search', search)
@@ -442,6 +470,23 @@ export function DashboardClient({
   }, [tab, filter, search, page])
 
   useEffect(() => { fetchData() }, [fetchData])
+
+  // Keep the list + KPIs live: refresh on a gentle interval and immediately
+  // when the tab regains focus. This is what surfaces a brand-new inbound
+  // reply (the "awaiting reply" state) without a manual reload — the common
+  // flow is: founder replies in their email client, switches back here.
+  // Visibility-gated so a backgrounded tab doesn't poll Neon for nothing.
+  useEffect(() => {
+    const refresh = () => { if (document.visibilityState === 'visible') fetchData() }
+    const interval = setInterval(refresh, 15000)
+    window.addEventListener('focus', fetchData)
+    document.addEventListener('visibilitychange', refresh)
+    return () => {
+      clearInterval(interval)
+      window.removeEventListener('focus', fetchData)
+      document.removeEventListener('visibilitychange', refresh)
+    }
+  }, [fetchData])
 
   // Spec 73 — reset to page 1 when filter / search / cohort changes. Skips
   // the first render so we don't overwrite a URL-hydrated `?page=N` on mount.
@@ -503,34 +548,6 @@ export function DashboardClient({
     }
   }
 
-  // Drawer redesign — take-over toggle. Sets ai_paused_until to a far-
-  // future sentinel + ai_paused_reason='takeover'. AI stops auto-replying
-  // for this subscriber until handleHandBack flips it back.
-  async function handleTakeOver(id: string) {
-    const res = await fetch(`/api/subscribers/${id}/take-over`, { method: 'POST' })
-    if (!res.ok) {
-      console.error('[dashboard] take-over failed:', res.status)
-      return
-    }
-    // Optimistic update so the toggle flips immediately without a refetch.
-    setSelected((prev) => prev && prev.id === id
-      ? { ...prev, aiPausedUntil: new Date('9999-12-31T00:00:00Z').toISOString(), aiPausedReason: 'takeover' }
-      : prev)
-    fetchData()
-  }
-
-  async function handleHandBack(id: string) {
-    const res = await fetch(`/api/subscribers/${id}/hand-back`, { method: 'POST' })
-    if (!res.ok) {
-      console.error('[dashboard] hand-back failed:', res.status)
-      return
-    }
-    setSelected((prev) => prev && prev.id === id
-      ? { ...prev, aiPausedUntil: null, aiPausedReason: null, aiPausedAt: null }
-      : prev)
-    fetchData()
-  }
-
   // Drawer redesign — founder reply composer. 500-char Zod-enforced on
   // the server. On success, append the new outbound to the conversation
   // optimistically so the drawer reflects it before the refetch lands.
@@ -590,9 +607,8 @@ export function DashboardClient({
   // filter state so switching tabs doesn't lose context.
   const winbackFilters: Array<{ key: string; label: string }> = [
     { key: 'all',       label: 'All' },
-    { key: 'handoff',   label: 'You active' },
-    { key: 'has-reply', label: 'Has reply' },
-    { key: 'paused',    label: 'Paused' },
+    { key: 'awaiting',  label: 'Awaiting reply' },
+    { key: 'high',      label: 'High recovery' },
     { key: 'recovered', label: 'Recovered' },
     { key: 'done',      label: 'Done' },
   ]
@@ -815,32 +831,17 @@ export function DashboardClient({
         </button>
       </div>
 
-      {/* Spec 40/43 — Win-back tab. Reading order top→bottom:
-          handoff alert (act now) → pipeline strip (loss framing) →
-          KPI band → pattern strip → subscriber table. */}
+      {/* Win-back tab. Reading order top→bottom:
+          pipeline strip (loss framing) → KPI cards → pattern strip →
+          subscriber table. The legacy "needs your attention" handoff
+          alert was removed — the AI no longer escalates a queue; the
+          "Awaiting reply" filter + inline reply snippets surface what
+          needs the founder now. */}
       {tab === 'winback' && (
         <>
-          {stats.winBack.handoffsNeedingAttention > 0 && (
-            <div className="mb-4 flex items-center justify-between gap-3 bg-amber-50 border border-amber-200 rounded-2xl px-5 py-3">
-              <div className="flex items-center gap-2 text-sm">
-                <span className="bg-amber-100 text-amber-700 rounded-full w-6 h-6 flex items-center justify-center text-xs font-bold">
-                  !
-                </span>
-                <span className="font-medium text-amber-900">
-                  {stats.winBack.handoffsNeedingAttention} subscriber{stats.winBack.handoffsNeedingAttention === 1 ? '' : 's'} need{stats.winBack.handoffsNeedingAttention === 1 ? 's' : ''} your attention
-                </span>
-              </div>
-              <button
-                onClick={() => setWinbackFilter('handoff')}
-                className="text-sm font-medium text-amber-900 hover:text-amber-700"
-              >
-                Resolve queue →
-              </button>
-            </div>
-          )}
           <PipelineStrip pipeline={stats.winBack.pipeline30d} />
-          {/* KPI row — blue tint background */}
-          <section className="rounded-3xl bg-blue-100 border border-blue-200 p-3 mb-7">
+          {/* KPI cards — clean white cards on the page background */}
+          <section className="mb-7">
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
               <StatCard
                 loading={!statsLoaded}
@@ -996,35 +997,65 @@ export function DashboardClient({
 
       {/* Subscriber table — per-tab columns + interaction model */}
       {tab === 'winback' ? (
-        <div className="bg-white rounded-2xl border border-slate-100 overflow-x-auto">
+        <div className="bg-white rounded-2xl border border-slate-100 overflow-x-auto shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
           <table className="w-full">
             <thead>
-              <tr className="border-b border-slate-100">
-                <th className="text-left text-xs font-semibold uppercase tracking-wide text-slate-400 py-3 px-4">Subscriber</th>
-                <th className="hidden lg:table-cell text-left text-xs font-semibold uppercase tracking-wide text-slate-400 py-3 px-4">Plan</th>
-                <th className="hidden sm:table-cell text-left text-xs font-semibold uppercase tracking-wide text-slate-400 py-3 px-4">Cancelled</th>
-                <th className="hidden md:table-cell text-left text-xs font-semibold uppercase tracking-wide text-slate-400 py-3 px-4">Reason</th>
-                <th className="text-left text-xs font-semibold uppercase tracking-wide text-slate-400 py-3 px-4">Status</th>
-                <th className="text-right text-xs font-semibold uppercase tracking-wide text-slate-400 py-3 px-4">MRR</th>
+              <tr className="bg-slate-50/60 border-b border-slate-100">
+                <th className="text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400 py-3 pl-5 pr-4">Subscriber</th>
+                <th className="hidden lg:table-cell text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400 py-3 px-4">Plan</th>
+                <th className="hidden sm:table-cell text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400 py-3 px-4">Cancelled</th>
+                <th className="hidden md:table-cell text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400 py-3 px-4">Reason</th>
+                <th className="text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400 py-3 px-4">Status</th>
+                <th className="text-right text-[11px] font-semibold uppercase tracking-wider text-slate-400 py-3 pr-5">MRR</th>
               </tr>
             </thead>
-            <tbody>
-              {(subscribers ?? []).map((sub) => (
+            <tbody className="divide-y divide-slate-50">
+              {(subscribers ?? []).map((sub) => {
+                const isClosed = sub.status === 'recovered' || sub.status === 'lost' || sub.status === 'skipped' || !!sub.doNotContact
+                const initial = (sub.name?.trim()?.[0] ?? sub.email?.trim()?.[0] ?? '?').toUpperCase()
+                const showSnippet = !!(sub.awaitingReply && sub.latestReplySnippet)
+                const avatarClass =
+                  sub.status === 'recovered' ? 'bg-emerald-50 text-emerald-700'
+                  : sub.recoveryLikelihood === 'high' ? 'bg-gradient-to-br from-amber-200 to-amber-300 text-amber-900'
+                  : 'bg-slate-100 text-slate-500'
+                const snippet = (sub.latestReplySnippet ?? '').replace(/\s+/g, ' ').trim().slice(0, 80)
+                return (
                 <tr
                   key={sub.id}
                   onClick={() => setSelected(sub)}
-                  className="hover:bg-slate-50 cursor-pointer border-b border-slate-50 transition-colors"
+                  className="hover:bg-slate-50/70 cursor-pointer transition-colors"
                 >
-                  <td className="py-4 pr-4 px-4">
-                    <div className="text-sm font-medium text-slate-900">{sub.name ?? 'Unknown'}</div>
-                    <div className="text-xs text-slate-400 mt-0.5 truncate max-w-[160px] sm:max-w-none">{sub.email ?? ''}</div>
+                  <td className="py-3.5 pl-3 pr-4">
+                    <div className="flex items-center gap-2.5">
+                      {/* Unread-style dot — marks "the ball's in your court"
+                          before you even read the snippet. Reserved slot keeps
+                          avatars aligned whether or not the dot shows. */}
+                      <span className="w-2 flex justify-center shrink-0">
+                        {showSnippet && <span className="w-2 h-2 rounded-full bg-amber-400" title="Awaiting your reply" />}
+                      </span>
+                      <div className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-semibold shrink-0 ${avatarClass}`}>{initial}</div>
+                      <div className="min-w-0">
+                        <div className={`text-sm text-slate-900 leading-tight ${showSnippet ? 'font-bold' : 'font-medium'}`}>{sub.name ?? 'Unknown'}</div>
+                        {showSnippet ? (
+                          // Block + truncate (not flex) so a long reply — which may
+                          // include quoted thread text — clips with an ellipsis
+                          // instead of stretching the column and pushing MRR off-screen.
+                          <div className="text-xs text-amber-700 mt-0.5 truncate max-w-[200px]">
+                            <MessageSquare className="w-3 h-3 inline-block align-[-2px] mr-1" />
+                            “{snippet}”
+                          </div>
+                        ) : (
+                          <div className="text-xs text-slate-400 mt-0.5 truncate max-w-[200px]">{sub.email ?? ''}</div>
+                        )}
+                      </div>
+                    </div>
                   </td>
-                  <td className="hidden lg:table-cell text-sm text-slate-600 py-4 px-4">{sub.planName ?? '—'}</td>
-                  <td className="hidden sm:table-cell text-sm text-slate-600 py-4 px-4">
+                  <td className="hidden lg:table-cell text-sm text-slate-600 py-3.5 px-4">{sub.planName ?? '—'}</td>
+                  <td className="hidden sm:table-cell text-sm text-slate-500 py-3.5 px-4">
                     {sub.cancelledAt ? new Date(sub.cancelledAt).toISOString().split('T')[0] : '—'}
                   </td>
-                  <td className="hidden md:table-cell text-sm text-slate-600 py-4 px-4 align-top">
-                    <div>
+                  <td className="hidden md:table-cell text-sm text-slate-600 py-3.5 px-4 align-top">
+                    <div className="max-w-[180px]">
                       {sub.cancellationReason
                         ? sub.cancellationReason.length > 45
                           ? sub.cancellationReason.slice(0, 45) + '…'
@@ -1033,61 +1064,53 @@ export function DashboardClient({
                     </div>
                     {sub.appliedPromotionChip && (
                       <div className="mt-1">
-                        {/* Spec 78 — promo chip rendered on its own line under
-                            the cancellation reason; long reasons wrap cleanly
-                            instead of fighting the chip inline. */}
+                        {/* Spec 78 — promo chip on its own line under the reason. */}
                         <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 text-[11px] font-medium">
                           {sub.appliedPromotionChip}
                         </span>
                       </div>
                     )}
                   </td>
-                  <td className="py-4 px-4">
+                  <td className="py-3.5 px-4">
                     {(() => {
-                      // Closed states (recovered / lost / skipped / opted-out)
-                      // get a single neutral chip — recovery + ownership are
-                      // irrelevant once the conversation is done.
-                      const isClosed = sub.status === 'recovered' || sub.status === 'lost' || sub.status === 'skipped' || sub.doNotContact
+                      // Closed states get a single neutral chip (recovered is
+                      // emerald). Recovery + ownership are irrelevant once done.
                       if (isClosed) {
-                        const closedLabel =
-                          sub.status === 'recovered' ? 'Recovered'
-                          : sub.doNotContact ? 'Unsubscribed'
-                          : sub.status === 'lost' ? 'Lost'
-                          : 'Skipped'
+                        if (sub.status === 'recovered') {
+                          return (
+                            <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">✓ Recovered</span>
+                          )
+                        }
+                        const closedLabel = sub.doNotContact ? 'Unsubscribed' : sub.status === 'lost' ? 'Lost' : 'Skipped'
                         return (
-                          <span className="inline-flex items-center text-[10px] uppercase tracking-wider font-medium text-slate-500 bg-slate-50 border border-slate-200 px-2 py-0.5 rounded-full">
+                          <span className="inline-flex items-center text-[11px] font-medium text-slate-500 bg-slate-50 border border-slate-200 px-2 py-0.5 rounded-full">
                             {closedLabel}
                           </span>
                         )
                       }
-                      // Active states: optional amber "High" recovery chip
-                      // + slate "AI" / dark "You" ownership chip.
-                      const isFounderActive = !!(sub.aiPausedUntil && new Date(sub.aiPausedUntil).getTime() > Date.now())
+                      // Open states: recovery-likelihood chip (paint, not gate).
+                      // "Awaiting reply" is conveyed by the reply snippet under
+                      // the name, not a second chip.
+                      const rl = sub.recoveryLikelihood
+                      if (!rl) return <span className="text-xs text-slate-300">—</span>
+                      const chip =
+                        rl === 'high'   ? { dot: 'bg-emerald-500', cls: 'text-emerald-700 bg-emerald-50 border-emerald-200', label: 'High' }
+                        : rl === 'medium' ? { dot: 'bg-amber-400',   cls: 'text-amber-700 bg-amber-50 border-amber-200',     label: 'Medium' }
+                        :                   { dot: 'bg-slate-300',   cls: 'text-slate-500 bg-slate-50 border-slate-200',     label: 'Low' }
                       return (
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          {sub.recoveryLikelihood === 'high' && (
-                            <span className="inline-flex items-center text-[10px] uppercase tracking-wider font-semibold text-amber-900 bg-amber-100 border border-amber-200 px-2 py-0.5 rounded-full">
-                              High
-                            </span>
-                          )}
-                          <span
-                            className={
-                              isFounderActive
-                                ? 'inline-flex items-center text-[10px] uppercase tracking-wider font-semibold text-white bg-slate-900 px-2 py-0.5 rounded-full'
-                                : 'inline-flex items-center text-[10px] uppercase tracking-wider font-semibold text-slate-600 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-full'
-                            }
-                          >
-                            {isFounderActive ? 'You' : 'AI'}
-                          </span>
-                        </div>
+                        <span className={`inline-flex items-center gap-1 text-[11px] font-semibold border px-2 py-0.5 rounded-full ${chip.cls}`}>
+                          <span className={`w-1.5 h-1.5 rounded-full ${chip.dot}`} />
+                          {chip.label}
+                        </span>
                       )
                     })()}
                   </td>
-                  <td className="text-sm font-medium text-slate-900 py-4 px-4 text-right">
+                  <td className={`text-sm font-semibold tabular-nums py-3.5 pr-5 text-right ${sub.status === 'recovered' ? 'text-emerald-700' : 'text-slate-900'}`}>
                     ${(sub.mrrCents / 100).toFixed(2)}
                   </td>
                 </tr>
-              ))}
+                )
+              })}
               {subscribers !== null && subscribers.length === 0 && (
                 <tr>
                   <td colSpan={6} className="text-center py-12 text-sm text-slate-400">
@@ -1122,12 +1145,11 @@ export function DashboardClient({
       />
 
       {/* Subscriber detail panel — block layout (drawer redesign Phase 5).
-          Six discrete blocks separated by hairline dividers: identity ·
-          take-over toggle · AI insight · conversation · reply composer ·
-          footer. Founder takes over via the toggle; AI is paused for
-          this subscriber until they explicitly hand back. */}
+          Blocks separated by hairline dividers: identity · AI insight ·
+          conversation · reply composer · footer. The AI sends one listen-
+          only exit email then stays quiet; the founder can reply at any
+          time from the composer below (no take-over step). */}
       {selected && (() => {
-        const isFounderHandling = !!(selected.aiPausedUntil && new Date(selected.aiPausedUntil).getTime() > Date.now())
         const hasInsight = !!(selected.drawerInsightRead || selected.drawerInsightWorthKnowing)
         const replyOver = replyDraft.length > 500
         const firstInitial = (selected.name?.trim()?.[0] ?? selected.email?.trim()?.[0] ?? '?').toUpperCase()
@@ -1168,38 +1190,6 @@ export function DashboardClient({
                   )}
                 </div>
               </div>
-            </div>
-
-            {/* Block 2: state toggle — take-over / hand-back */}
-            <div className="px-5 py-3 border-t border-slate-100">
-              {isFounderHandling ? (
-                <div className="bg-slate-900 rounded-xl px-3.5 py-2.5 flex items-center justify-between">
-                  <div>
-                    <div className="text-[13px] font-semibold text-white leading-tight">You're handling this</div>
-                    <div className="text-[11px] text-slate-300 leading-tight mt-0.5">AI is paused on this conversation</div>
-                  </div>
-                  <button
-                    onClick={() => handleHandBack(selected.id)}
-                    className="text-xs font-medium text-slate-900 bg-white hover:bg-slate-100 rounded-full px-3 py-1.5 flex items-center gap-1 shadow-sm"
-                  >
-                    <ArrowLeft className="w-3 h-3" />
-                    Hand back
-                  </button>
-                </div>
-              ) : (
-                <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-3.5 py-2.5 flex items-center justify-between">
-                  <div>
-                    <div className="text-[13px] font-semibold text-emerald-900 leading-tight">AI handling this conversation</div>
-                    <div className="text-[11px] text-emerald-700/80 leading-tight mt-0.5">Replies are auto-answered</div>
-                  </div>
-                  <button
-                    onClick={() => handleTakeOver(selected.id)}
-                    className="text-xs font-medium text-slate-900 bg-white hover:bg-slate-50 border border-slate-200 rounded-full px-3 py-1.5"
-                  >
-                    Take over →
-                  </button>
-                </div>
-              )}
             </div>
 
             {/* Block 3: AI insight — Read + Worth knowing */}
@@ -1324,9 +1314,7 @@ export function DashboardClient({
               <div className="px-5 py-3 border-t border-slate-100">
                 <div className="bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 flex items-center justify-between text-[11px]">
                   <span className="text-slate-600">
-                    {isFounderHandling
-                      ? <><span className="font-semibold text-slate-900">You're handling.</span>{' '}AI paused.</>
-                      : <><span className="font-semibold text-slate-900">AI handling.</span>{' '}Responses auto-sent.</>}
+                    <span className="font-semibold text-slate-900">Conversation</span>
                     {conversation && conversation.length > 0 && (
                       <> · {conversation.length} message{conversation.length === 1 ? '' : 's'}</>
                     )}
@@ -1408,8 +1396,10 @@ export function DashboardClient({
               </>
             )}
 
-            {/* Block 5: reply composer — only when founder has taken over AND Details is closed */}
-            {!detailsOpen && isFounderHandling && selected.email && (
+            {/* Block 5: reply composer — always available (no take-over step).
+                Hidden only when Details is open, or there's no email / the
+                subscriber unsubscribed (server rejects those anyway). */}
+            {!detailsOpen && selected.email && !selected.doNotContact && (
               <div className="px-5 py-4 border-t border-slate-100">
                 <div className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold mb-2">Your reply</div>
                 <div className="border border-slate-200 rounded-xl bg-white overflow-hidden focus-within:border-slate-300">
@@ -1932,27 +1922,24 @@ function StatCard({
       : 'text-slate-400'
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-100 px-4 py-4">
+    <div className="bg-white rounded-2xl border border-slate-100 p-5 transition-shadow hover:shadow-[0_8px_26px_-10px_rgba(15,23,42,0.14)]">
       <div className="flex items-start justify-between">
-        <div className={`${accentClass} rounded-lg w-7 h-7 flex items-center justify-center`}>
+        <div className={`${accentClass} rounded-xl w-8 h-8 flex items-center justify-center`}>
           {icon}
         </div>
         {sparkline && sparkline.length > 0 && (
           <Sparkline data={sparkline} accent={accent} />
         )}
+        {!sparkline && delta && (
+          <span className={`text-[11px] font-semibold tabular-nums ${deltaClass}`}>
+            {delta.direction === 'up' ? '▲' : delta.direction === 'down' ? '▼' : ''} {delta.text}
+          </span>
+        )}
       </div>
-      <div className="text-2xl sm:text-3xl font-bold text-slate-900 mt-2.5 tabular-nums">{value}</div>
-      <div className="text-[11px] font-semibold uppercase tracking-widest text-slate-400 mt-1">
-        {label}
-      </div>
+      <div className="text-3xl font-bold tracking-tight text-slate-900 mt-3 tabular-nums">{value}</div>
+      <div className="text-[13px] text-slate-400 mt-1">{label}</div>
       {subValue && (
         <div className="text-xs text-slate-500 tabular-nums mt-1.5">{subValue}</div>
-      )}
-      {delta && (
-        <div className={`text-[11px] font-medium tabular-nums mt-1.5 ${deltaClass}`}>
-          {delta.text}
-          <span className="text-slate-400 font-normal"> vs last month</span>
-        </div>
       )}
     </div>
   )

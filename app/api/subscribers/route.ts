@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
-import { customers, churnedSubscribers, emailsSent, recoveries, improvements } from '@/lib/schema'
-import { eq, and, or, ilike, desc, isNull, ne, sql, count, inArray, isNotNull } from 'drizzle-orm'
-import { aiStateFilterCondition, isValidAiStateFilter } from '@/lib/ai-state'
+import { customers, churnedSubscribers, emailsSent, recoveries, improvements, subscriberReplies } from '@/lib/schema'
+import { eq, and, or, ilike, desc, isNull, ne, sql, count, inArray, isNotNull, getTableColumns } from 'drizzle-orm'
+import { aiStateFilterCondition, isValidAiStateFilter, awaitingReplyExpr } from '@/lib/ai-state'
 import { WbPromotionMetadataSchema, formatPromotionChip } from '@/src/winback/lib/promotions'
 
 const DUNNING_REASON = 'Payment failed'
@@ -83,6 +83,17 @@ export async function GET(req: NextRequest) {
           )!,
         )
       }
+    } else if (filter === 'awaiting') {
+      // Drawer redesign — "the ball's in your court": subscriber replied
+      // more recently than the founder did, and the row is still open.
+      conditions.push(awaitingReplyExpr())
+    } else if (filter === 'high') {
+      conditions.push(
+        and(
+          eq(churnedSubscribers.recoveryLikelihood, 'high'),
+          sql`${churnedSubscribers.status} not in ('recovered', 'lost', 'skipped')`,
+        )!,
+      )
     } else if (isValidAiStateFilter(filter)) {
       const cond = aiStateFilterCondition(filter)
       if (cond) conditions.push(cond)
@@ -115,7 +126,7 @@ export async function GET(req: NextRequest) {
 
   // Spec 40 — sort policy:
   //   payment-recovery cohort: most-urgent retry first (next_payment_attempt ASC NULLS LAST)
-  //   winback cohort, filter='all': handoffs → replies → recency
+  //   winback cohort, filter='all': awaiting-you → high recovery → recency
   //   anything else: cancelledAt DESC (legacy)
   const orderBy =
     cohort === 'payment-recovery'
@@ -125,28 +136,15 @@ export async function GET(req: NextRequest) {
         ]
       : cohort === 'winback' && filter === 'all'
         ? [
-            // Drawer redesign — sort priority for the "All" view:
-            //   1. High recovery + founder taking over (urgent, you're already engaged)
-            //   2. High recovery + AI handling (worth a personal look)
-            //   3. Anything else, ordered by most recent cancellation
+            // Drawer redesign — "All" view priority, matching the dashboard
+            // model (the founder skims and acts):
+            //   1. Awaiting your reply — the ball is in your court, top.
+            //   2. High recovery likelihood — worth a personal look.
+            //   3. Everything else, most recent cancellation first.
             sql`case
-              when ${churnedSubscribers.recoveryLikelihood} = 'high'
-                and (
-                  (${churnedSubscribers.founderHandoffAt} is not null
-                   and ${churnedSubscribers.founderHandoffResolvedAt} is null)
-                  or (${churnedSubscribers.aiPausedUntil} > now()
-                      and ${churnedSubscribers.aiPausedReason} = 'takeover')
-                )
-              then 0
-              when ${churnedSubscribers.recoveryLikelihood} = 'high'
-              then 1
+              when ${awaitingReplyExpr()} then 0
+              when ${churnedSubscribers.recoveryLikelihood} = 'high' then 1
               else 2 end`,
-            // Tie-breaker: rows with at least one inbound reply bubble up.
-            sql`case when exists (
-              select 1 from ${emailsSent}
-              where ${emailsSent.subscriberId} = ${churnedSubscribers.id}
-                and ${emailsSent.repliedAt} is not null
-            ) then 0 else 1 end`,
             desc(churnedSubscribers.cancelledAt),
           ]
         : [desc(churnedSubscribers.cancelledAt)]
@@ -156,7 +154,22 @@ export async function GET(req: NextRequest) {
   // cheap on indexed columns and the SELECT is bounded by pageSize.
   const where = and(...conditions)
   const [rows, [totalRow]] = await Promise.all([
-    db.select()
+    db.select({
+      ...getTableColumns(churnedSubscribers),
+      // Drawer redesign — surface the latest inbound reply inline so the
+      // list can show the subscriber's own words on "awaiting" rows, and
+      // a flag so the row can be visually marked as needing a reply. Both
+      // are correlated subqueries on the same scan — no extra round-trip.
+      // Outer id MUST be qualified — see awaitingReplyExpr() for why a bare
+      // ${churnedSubscribers.id} silently binds to sr.id here.
+      latestReplySnippet: sql<string | null>`(
+        select sr.body from ${subscriberReplies} sr
+        where sr.subscriber_id = ${churnedSubscribers}."id"
+        order by sr.received_at desc
+        limit 1
+      )`.as('latest_reply_snippet'),
+      awaitingReply: awaitingReplyExpr().as('awaiting_reply'),
+    })
       .from(churnedSubscribers)
       .where(where)
       .orderBy(...orderBy)

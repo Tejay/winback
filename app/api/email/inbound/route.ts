@@ -8,6 +8,7 @@ import { SubscriberSignals } from '@/src/winback/lib/types'
 import { logEvent } from '@/src/winback/lib/events'
 import { buildConversationThread } from '@/src/winback/lib/conversation'
 import { deriveTriggerNeedConfidence } from '@/src/winback/lib/improvement-match'
+import { stripQuotedReply } from '@/src/winback/lib/strip-quoted-reply'
 
 type InboundOutcome =
   | 'processed'
@@ -249,15 +250,12 @@ export async function POST(req: Request) {
   const text = envelopeText || fetched.text
   const inReplyToHeader = fetched.inReplyTo
 
-  // Strip quoted lines from reply (best-effort — different clients quote
-  // differently; we don't depend on this for thread reconstruction,
-  // which uses our canonical wb_emails_sent + wb_subscriber_replies data
-  // server-side via buildConversationThread).
-  const stripped = text
-    .split('\n')
-    .filter((line: string) => !line.trimStart().startsWith('>'))
-    .join('\n')
-    .trim()
+  // Strip quoted history, forwarded blocks, and signatures so we store only
+  // what the subscriber actually typed (best-effort — clients quote
+  // differently). We don't depend on this for thread reconstruction, which
+  // uses our canonical wb_emails_sent + wb_subscriber_replies data via
+  // buildConversationThread.
+  const stripped = stripQuotedReply(text)
 
   if (!stripped) {
     console.log('Empty reply text after stripping quotes (subscriberId:', subscriberId, 'emailId:', emailId, ')')
