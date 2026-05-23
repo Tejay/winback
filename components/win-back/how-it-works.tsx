@@ -6,11 +6,11 @@ import { PoweredByStripe } from '@/components/powered-by-stripe'
 /**
  * Three-step Listen → Match → Reach flow.
  *
- * Reflects the current product: AI is listen-only. It classifies why
- * each subscriber cancelled and stores the theme. When the merchant
- * ships an improvement, WinbackFlow matches it to stored themes and
- * emails the subscribers who asked for that thing. No AI conversation,
- * no exit email on cancellation, no AI reply-handling.
+ * Reflects the current product: one exit email goes out at cancellation
+ * to capture why each subscriber left. The reason is classified into a
+ * theme. When the merchant ships an improvement, WinbackFlow matches it
+ * to stored themes and emails a single follow-up to the subscribers who
+ * asked for that thing. No AI conversation, no drip, no AI reply-handling.
  */
 export function HowItWorks() {
   return (
@@ -39,13 +39,15 @@ export function HowItWorks() {
             title="Capture every reason."
             icon={Ear}
             tint="amber"
-            body="The moment a subscriber cancels on Stripe, WinbackFlow records the reason — what they typed in Stripe's cancel box, plus their plan, tenure, and account history."
+            body="The moment a subscriber cancels on Stripe, WinbackFlow sends one short exit email asking why they left — and stores the reply alongside their plan, tenure, and account history."
             details={
               <p>
                 Every cancellation lands instantly &mdash; who cancelled,
-                what they were paying, how long they&rsquo;d been with you,
-                and the words they used on the way out. Nothing is sent to
-                them at this stage. WinbackFlow is purely listening.
+                what they were paying, how long they&rsquo;d been with
+                you, and the reason they gave on the way out. That one
+                exit email is the only thing the subscriber hears from
+                us at this stage. After it&rsquo;s sent, WinbackFlow goes
+                quiet until you ship a fix.
               </p>
             }
           />

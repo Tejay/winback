@@ -66,7 +66,7 @@ export default function PricingPage() {
               bullets={[
                 'Everything in Starter',
                 'Priority support',
-                'Founder handoff routing',
+                'Onboarding setup call',
               ]}
               railClass="border-l-blue-500"
             />
@@ -78,7 +78,7 @@ export default function PricingPage() {
               blurb="For established subscription businesses with material recovery dollars on the line."
               bullets={[
                 'Everything in Growth',
-                'Zoom call on request',
+                'Quarterly strategy review (Zoom)',
                 'Custom reporting on request',
               ]}
               railClass="border-l-emerald-500"
@@ -91,7 +91,7 @@ export default function PricingPage() {
               bullets={[
                 'Everything in Scale',
                 'Procurement-ready contract',
-                'Dedicated implementation engineer',
+                'Dedicated account contact',
               ]}
               railClass="border-l-indigo-500"
               isEnterprise
