@@ -16,97 +16,98 @@ export default function RefundsPage() {
           Refunds &amp; cancellations.
         </h1>
         <p className="text-sm text-slate-500 mb-8 not-prose">
-          Version 2026-05-17 · Effective 17 May 2026
+          Version 2026-05-23 · Effective 23 May 2026
         </p>
 
         <h2>1. When you are charged</h2>
         <p>
-          Winback charges in two parts:
+          WinbackFlow bills a single flat monthly fee priced by your own MRR,
+          paid as a recurring Stripe Subscription on our platform Stripe
+          account. There are no per-recovery charges, no performance fees, and
+          no usage overages.
         </p>
         <ul>
           <li>
-            <strong>Platform fee — $99 per month</strong>, billed as a recurring
-            Stripe Subscription. Starts when we deliver your first payment
-            recovery or win-back, whichever comes first; the first cycle is
-            prorated to that date. Covers the platform itself plus up to 500
-            payment recoveries per month.
+            <strong>Starter</strong> &mdash; MRR up to $50k &mdash; $99 / month
           </li>
           <li>
-            <strong>Performance fee — one month of the recovered subscriber&rsquo;s
-            MRR</strong>, charged once per win-back. A win-back is when a
-            previously-cancelled subscriber resumes paying you on Stripe through
-            work we did &mdash; specifically: they clicked the reactivate link
-            in our email, replied to our email, came back within 30 days of us
-            escalating their case to you (a handoff), or came back within 30
-            days of you pausing our AI for them. The fee is added as an invoice
-            item to the relevant Stripe Subscription cycle.
+            <strong>Growth</strong> &mdash; MRR $50k – $250k &mdash; $299 / month
+          </li>
+          <li>
+            <strong>Scale</strong> &mdash; MRR $250k – $1M &mdash; $699 / month
+          </li>
+          <li>
+            <strong>Enterprise</strong> &mdash; MRR $1M+ &mdash; custom,
+            sales-handled
           </li>
         </ul>
+        <p>
+          Your tier is computed from your own Stripe account (read via
+          Stripe Connect &mdash; no self-reporting). The activation page
+          shows you the math before you confirm: your MRR, the resulting
+          tier, and the monthly fee. You click Subscribe at the displayed
+          price &mdash; we never auto-charge a tier you didn&rsquo;t confirm.
+        </p>
 
         <h2>2. When you are not charged</h2>
         <ul>
           <li>
-            <strong>Until first delivery.</strong> You pay nothing until Winback
-            has actually delivered a payment recovery or a win-back. If neither
-            happens, no platform fee is ever billed.
+            <strong>Until first delivery.</strong> You pay nothing until
+            WinbackFlow has actually delivered a payment recovery or a
+            win-back. Until then the platform runs for free.
           </li>
           <li>
-            <strong>Payment recoveries do not incur a per-recovery fee.</strong>{' '}
-            The flat $99/mo includes up to 500 payment recoveries per month —
-            no incremental charge per recovery within that allowance.
+            <strong>No per-recovery charges.</strong> The flat tier fee
+            covers unlimited recovery volume &mdash; both win-backs and
+            payment recoveries, however many of each.
           </li>
           <li>
-            <strong>Stripe&rsquo;s own retries.</strong> If a failed payment is
-            recovered by Stripe&rsquo;s built-in retries with no email from us
-            and no card update by the customer, we don&rsquo;t record a recovery
-            and you are not billed for it.
-          </li>
-          <li>
-            <strong>Weak-attribution win-backs are not billed.</strong> If a
-            cancelled subscriber resubscribes without clicking our reactivate
-            link, the recovery shows on your dashboard but no performance fee is
-            charged.
+            <strong>Enterprise tier is never auto-charged.</strong> Accounts
+            whose MRR exceeds $1M are routed to sales; pricing is bespoke
+            and only takes effect once a contract is signed.
           </li>
         </ul>
 
-        <h2>3. 14-day refund window for win-back fees</h2>
+        <h2>3. Tier changes</h2>
         <p>
-          If a subscriber we won back cancels again <strong>within 14 days</strong>{' '}
-          of the recovery, we refund the entire performance fee for that
-          recovery. The refund is automatic when we detect the re-cancellation:
-          if the fee was on a not-yet-finalized invoice, the line item is
-          removed before the invoice bills; if the invoice has already been
-          paid, we issue a Stripe credit note for the full amount.
+          We never auto-change your billed tier. If your MRR grows into a
+          higher band, you&rsquo;ll see an upgrade prompt in your dashboard
+          and settings &mdash; click to switch, ignore to stay on your
+          current plan. Same for downgrades: if your MRR drops, you&rsquo;ll
+          see a downgrade option, never an automatic price change.
         </p>
         <p>
-          After 14 days the fee stands — that subscriber had a real period of
-          paid revenue and the recovery counted.
+          When you do switch tiers through the in-app prompt or the Stripe
+          Customer Portal, the new price takes effect on your next billing
+          cycle with normal Stripe proration.
         </p>
 
         <h2>4. Cancelling Winback</h2>
         <ul>
           <li>
-            <strong>Pause anytime</strong> from Settings — your data stays
-            intact, no new emails go out, and the platform subscription
+            <strong>Pause anytime</strong> from Settings &mdash; your data
+            stays intact, no new emails go out, and the platform subscription
             continues to run in the background. You can resume any time.
           </li>
           <li>
-            <strong>Cancel the subscription</strong> from Settings → Billing
-            (cancels at the end of the current cycle, no more charges
+            <strong>Cancel the subscription</strong> from Settings &rarr;
+            Billing (cancels at the end of the current cycle, no more charges
             thereafter). Your data remains for as long as the workspace exists.
+            Recovery and win-back machinery continues to run on your account
+            for free &mdash; the next delivered recovery will prompt you to
+            re-subscribe at your then-current MRR tier.
           </li>
           <li>
-            <strong>Disconnect Stripe</strong> any time from Settings →
-            Integrations or from your Stripe Dashboard → Apps. New
+            <strong>Disconnect Stripe</strong> any time from Settings &rarr;
+            Integrations or from your Stripe Dashboard &rarr; Apps. New
             cancellations will no longer be detected.
           </li>
           <li>
-            <strong>Delete your workspace</strong> from Settings → Danger Zone.
-            Deletion is immediate and permanent (no grace period). If a platform
-            subscription is active at deletion, we cancel it immediately and
-            Stripe issues a prorated final invoice for the unused portion of
-            the current cycle. There is no settlement obligation for past
-            recoveries.
+            <strong>Delete your workspace</strong> from Settings &rarr; Danger
+            Zone. Deletion is immediate and permanent (no grace period). If
+            a platform subscription is active at deletion, we cancel it
+            immediately and Stripe issues a prorated final invoice for the
+            unused portion of the current cycle.
           </li>
         </ul>
 
@@ -114,17 +115,19 @@ export default function RefundsPage() {
         <p>
           Email{' '}
           <a href="mailto:support@winbackflow.co">support@winbackflow.co</a>{' '}
-          within 30 days of the invoice. We review the recovery&rsquo;s
-          attribution trail (the tracked email click that triggered the fee)
-          and respond within 5 business days. If we can&rsquo;t show a
-          legitimate trigger, we credit or refund the disputed amount.
+          within 30 days of the invoice. We review the tier assignment math
+          (the MRR snapshot taken at activation and the recurring snapshots
+          since) and respond within 5 business days. If we can&rsquo;t justify
+          the tier you were billed at, we credit or refund the disputed
+          amount.
         </p>
 
-        <h2>6. Refunds for failed deliveries or bugs</h2>
+        <h2>6. Refunds for billing errors</h2>
         <p>
-          If a Winback email was never sent, or was sent in error, we don&rsquo;t
-          bill the related performance fee. If we billed in error, we credit or
-          refund — your choice.
+          If we billed you at the wrong tier (e.g. our MRR computation was
+          off by enough to cross a band), we credit or refund the difference
+          &mdash; your choice. We never round in our favor; the spec is to
+          bias-low on band edges.
         </p>
 
         <h2>7. Contact</h2>

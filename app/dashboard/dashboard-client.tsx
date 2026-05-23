@@ -524,28 +524,17 @@ export function DashboardClient({
   // Spec 51 — dismissBanner removed. Banner is server-derived; no
   // localStorage dismissal. Merchant subscribes or stays paused.
 
-  // Spec 51 — Subscribe button on the banner. Opens Stripe Checkout
-  // directly (setup-intent flow). Used by both the main banner and the
-  // persistent paused status bar. Failures bubble up to a small inline
-  // error message on the banner.
-  const [subscribeError, setSubscribeError] = useState<string | null>(null)
+  // Subscribe button on the banner — routes through the new
+  // /billing/activate page so the customer sees the MRR breakdown +
+  // tier + price BEFORE any Stripe Checkout step. The old direct
+  // setup-intent flow (jump straight to Stripe Checkout, blind card
+  // capture, server-side commit) bypassed the dispute-proof surface
+  // and is gone.
+  const [subscribeError] = useState<string | null>(null)
   const [subscribing, setSubscribing] = useState(false)
-  async function handleSubscribe() {
-    setSubscribeError(null)
+  function handleSubscribe() {
     setSubscribing(true)
-    try {
-      const res = await fetch('/api/billing/setup-intent', { method: 'POST' })
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}))
-        throw new Error(data.error ?? `Failed (${res.status})`)
-      }
-      const { url } = await res.json()
-      if (!url) throw new Error('No checkout URL returned')
-      window.location.href = url
-    } catch (e) {
-      setSubscribeError(e instanceof Error ? e.message : String(e))
-      setSubscribing(false)
-    }
+    window.location.href = '/billing/activate'
   }
 
   // Drawer redesign — founder reply composer. 500-char Zod-enforced on
@@ -689,7 +678,7 @@ export function DashboardClient({
             disabled={subscribing}
             className="bg-amber-900 text-amber-50 rounded-full px-4 py-1.5 text-xs font-medium hover:bg-amber-800 flex-shrink-0 disabled:opacity-60"
           >
-            {subscribing ? 'Opening Stripe…' : 'Subscribe to resume →'}
+            {subscribing ? 'Loading…' : 'Review and subscribe →'}
           </button>
         </div>
       )}
@@ -1650,29 +1639,60 @@ function FirstRecoveryBanner({
   subscribing: boolean
   error: string | null
 }) {
-  // Spec 53 — Trial-ended causal-story banner. Drops the ROI framing
-  // (which broke for $0-mrr first recoveries) and replaces with a single
-  // clear narrative: trial ended on first recovery → AI paused →
-  // subscribe to resume. Inner celebration strip is conditional on the
-  // first recovery having actual revenue.
-  //
-  // Follow-up to spec 54 — branch the copy for re-pausers (customers who
-  // had a subscription, cancelled it, and the cycle expired). They're in
-  // the same paused state as a first-time pauser, but reading "Your trial
-  // ended" is wrong for someone who was paying. Detected via the
-  // platform_subscription_canceled event in wb_events.
+  // Activation-celebration banner. Fires on the dashboard when a
+  // delivered recovery exists but the customer has no active platform
+  // subscription. Treats the moment as a proof-of-value win, NOT as a
+  // service-interruption alert. Confetti fires once on first mount so
+  // the customer feels the moment — reloading the page doesn't re-fire
+  // (sessionStorage flag keyed by mounted-banner).
   const showCelebration = !everSubscribed && firstRecovery.mrrCents > 0
   const recoveredName = firstRecovery.name ?? 'Your first subscriber'
   const recoveredMrrUsd = (firstRecovery.mrrCents / 100).toFixed(0)
   const atRiskAnnualUsd = Math.round(atRiskMrrAnnualizedCents / 100).toLocaleString()
 
+  const moreNoun =
+    atRiskCount === 1 ? 'more in your queue' : `${atRiskCount} more in your queue`
+
   const headline = everSubscribed
-    ? 'Your subscription ended.'
-    : 'Your trial ended on your first recovery.'
-  const subhead = everSubscribed
-    ? 'The AI has paused new sends until you re-subscribe.'
-    : 'The AI has paused new sends until you subscribe.'
-  const ctaLabel = everSubscribed ? 'Re-subscribe via Stripe' : 'Subscribe via Stripe'
+    ? 'Another save just landed.'
+    : 'Your first save just landed.'
+  const subhead =
+    atRiskCount > 0
+      ? `Subscribe to keep going on the ${moreNoun}.`
+      : 'Subscribe to keep WinbackFlow running.'
+  const ctaLabel = everSubscribed ? 'Re-subscribe →' : 'Review and subscribe →'
+
+  // Confetti — fires once per session per banner mount. Imports the
+  // package lazily so the dashboard's initial JS bundle doesn't pay the
+  // cost for users who never see this banner.
+  useEffect(() => {
+    const flag = 'wb_first_save_celebrated'
+    if (typeof window === 'undefined') return
+    if (window.sessionStorage.getItem(flag) === '1') return
+    window.sessionStorage.setItem(flag, '1')
+    let cancelled = false
+    void import('canvas-confetti').then((mod) => {
+      if (cancelled) return
+      const confetti = mod.default
+      // Two angled bursts from bottom corners — feels like cheering
+      // from the wings, not a single flat shower from the top.
+      const fire = (angle: number, origin: { x: number; y: number }) =>
+        confetti({
+          particleCount: 80,
+          spread: 70,
+          angle,
+          startVelocity: 55,
+          decay: 0.92,
+          gravity: 0.9,
+          ticks: 220,
+          origin,
+          colors: ['#10b981', '#3b82f6', '#fbbf24', '#ef4444', '#a855f7'],
+        })
+      fire(60, { x: 0.15, y: 0.7 })
+      fire(120, { x: 0.85, y: 0.7 })
+    }).catch(() => { /* never break the page on a celebration failure */ })
+    return () => { cancelled = true }
+  }, [])
 
   // Cohort breakdown line — only render if we actually have a split to show.
   const cohortParts: string[] = []
@@ -1690,13 +1710,13 @@ function FirstRecoveryBanner({
 
   return (
     <div
-      className="relative overflow-hidden bg-gradient-to-br from-blue-50 via-white to-emerald-50 border-2 border-red-400 rounded-2xl p-7 mb-6 shadow-sm"
+      className="relative overflow-hidden bg-gradient-to-br from-emerald-50 via-white to-blue-50 border-2 border-emerald-400 rounded-2xl p-7 mb-6 shadow-sm"
       style={{ animation: 'wb-slide-in 420ms cubic-bezier(0.2, 0.9, 0.32, 1.12) both' }}
     >
       {/* Subtle decorative glows */}
       <div aria-hidden className="pointer-events-none">
-        <div className="absolute -top-16 -right-16 w-56 h-56 bg-blue-200/30 rounded-full blur-3xl"></div>
-        <div className="absolute -bottom-16 -left-16 w-40 h-40 bg-emerald-200/30 rounded-full blur-3xl"></div>
+        <div className="absolute -top-16 -right-16 w-56 h-56 bg-emerald-200/40 rounded-full blur-3xl"></div>
+        <div className="absolute -bottom-16 -left-16 w-40 h-40 bg-blue-200/30 rounded-full blur-3xl"></div>
       </div>
 
       <style>{`
@@ -1704,11 +1724,21 @@ function FirstRecoveryBanner({
           from { opacity: 0; transform: translateY(-8px); }
           to   { opacity: 1; transform: translateY(0); }
         }
+        @keyframes wb-emoji-pop {
+          0%   { transform: scale(0.3) rotate(-20deg); opacity: 0; }
+          50%  { transform: scale(1.25) rotate(8deg); opacity: 1; }
+          100% { transform: scale(1) rotate(0deg); opacity: 1; }
+        }
       `}</style>
 
       <div className="relative">
         <div className="flex items-start gap-3 mb-4">
-          <span className="text-2xl leading-none flex-shrink-0">⏸</span>
+          <span
+            className="text-2xl leading-none flex-shrink-0 inline-block"
+            style={{ animation: 'wb-emoji-pop 700ms cubic-bezier(0.34, 1.56, 0.64, 1) both' }}
+          >
+            🎉
+          </span>
           <div>
             <h2 className="text-xl font-bold text-slate-900 leading-tight">
               {headline}
@@ -1743,16 +1773,15 @@ function FirstRecoveryBanner({
             disabled={subscribing}
             className="bg-[#0f172a] text-white rounded-full px-6 py-2.5 text-sm font-semibold hover:bg-[#1e293b] inline-flex items-center gap-2 shadow-md disabled:opacity-60 disabled:cursor-not-allowed"
           >
-            {subscribing ? 'Opening Stripe…' : ctaLabel}
-            {!subscribing && <span>→</span>}
+            {subscribing ? 'Loading…' : ctaLabel}
           </button>
           <span className="text-xs text-slate-500">
-            $99/mo + 1× MRR per recovery · Refundable for 14 days if they re-cancel
+            Flat monthly fee priced by your MRR · Cancel anytime, no retention friction
           </span>
         </div>
         {error && (
           <p className="text-xs text-red-600 mt-3">
-            Couldn&apos;t open Stripe Checkout: {error}. Try again, or contact support if it persists.
+            Couldn&apos;t continue to billing: {error}. Try again, or contact support if it persists.
           </p>
         )}
       </div>

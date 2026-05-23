@@ -1,7 +1,7 @@
 import Stripe from 'stripe'
 import { db } from '@/lib/db'
-import { users, customers, churnedSubscribers, recoveries, emailsSent, improvements } from '@/lib/schema'
-import { eq, and, ne, inArray, desc, gt, isNull, isNotNull } from 'drizzle-orm'
+import { users, customers, churnedSubscribers, recoveries, emailsSent } from '@/lib/schema'
+import { eq, and, ne, inArray, desc, isNull, isNotNull } from 'drizzle-orm'
 import { decrypt } from '@/src/winback/lib/encryption'
 import { extractSignals, getConnectStripe, getInvoiceSubscriptionId } from '@/src/winback/lib/stripe'
 import { getPlatformStripe } from '@/src/winback/lib/platform-stripe'
@@ -15,12 +15,9 @@ import {
   setDefaultPaymentMethod,
   detachPaymentMethod,
 } from '@/src/winback/lib/platform-billing'
-import { ensureActivation } from '@/src/winback/lib/activation'
-import { refundPerformanceFee, chargePerformanceFee, PERF_FEE_REFUND_WINDOW_DAYS } from '@/src/winback/lib/performance-fee'
-import {
-  buildPromotionMetadata,
-  upsertPromotionImprovement,
-} from '@/src/winback/lib/promotions'
+import { prepareActivation } from '@/src/winback/lib/activation'
+import { syncBilledTierFromStripe } from '@/src/winback/lib/subscription'
+import { takeSnapshot } from '@/src/winback/lib/mrr-snapshot'
 import { sendPlatformPaymentFailedEmail } from '@/src/winback/lib/billing-notifications'
 import { processDunningPaymentUpdate } from '@/src/winback/lib/dunning-checkout'
 
@@ -32,14 +29,19 @@ function getStripe() {
 }
 
 /**
- * Phase B — runs ensureActivation in a try/catch so a Stripe API blip never
- * blocks the recovery webhook from acknowledging. Activation is idempotent;
+ * Runs prepareActivation in a try/catch so a Stripe API blip never blocks
+ * the recovery webhook from acknowledging. prepareActivation is idempotent;
  * a retry (Stripe redelivers, or a follow-up webhook) will reach the same
  * end state.
+ *
+ * NEVER creates the platform Stripe subscription on its own — that only
+ * happens via commitActivation, which the customer triggers explicitly on
+ * the activation confirmation page. Webhook only persists recommended_tier
+ * + activatedAt and (when in 'enterprise_handoff') flips requires_sales.
  */
 async function triggerActivation(wbCustomerId: string, ctx: string): Promise<void> {
   try {
-    const result = await ensureActivation(wbCustomerId)
+    const result = await prepareActivation(wbCustomerId)
     console.log(`[activation:${ctx}] state=${result.state}`, wbCustomerId)
   } catch (err) {
     console.error(`[activation:${ctx}] failed for`, wbCustomerId, err)
@@ -55,136 +57,29 @@ async function triggerActivation(wbCustomerId: string, ctx: string): Promise<voi
 }
 
 /**
- * Spec 78 — when the recovered subscriber's first non-zero invoice settles
- * on the merchant's Stripe account, fire the 1× performance fee on the
- * merchant's Winback platform subscription. The basis is invoice.amount_paid,
- * not planMrrCents — this correctly handles free-month promos, free trials,
- * and plan upgrades/downgrades.
+ * Fire-and-forget MRR snapshot for the customer behind a connect-side
+ * subscription event. Drives the snapshot density that smoothing relies
+ * on — without these, smoothed MRR would lag by up to a week between
+ * scheduled cron runs.
  *
- * Independent of processPaymentSucceeded (which handles dunning recoveries
- * via the cancellationReason='Payment failed' subscriber filter). Both can
- * fire on the same event without conflict.
- *
- * Idempotency:
- *   • recovery.perf_fee_stripe_item_id set → no-op (already charged)
- *   • recovery.perf_fee_basis_invoice_id matches this invoice → no-op
- *     (defends against duplicate webhook delivery)
- *   • Stripe Idempotency-Key on invoiceItems.create includes basis-invoice-id
- *     (chargePerformanceFee adds this) — 24h dedup at Stripe edge
- *
- * Skip cases (return without action, no error):
- *   • amount_paid <= 0 (free-month / fully-discounted invoice — wait for
- *     the next paid invoice)
- *   • Invoice not for a subscription
- *   • Subscription id doesn't map to a Winback recovery
- *   • Recovery type isn't 'win_back' (card-saves are covered by $99 plan)
- *   • Recovery already has perfFeeChargedAt set
- *   • Connect account id doesn't match the recovery's customer (defense
- *     in depth — should be impossible given the join key)
+ * Resolution: connect account id → customers.id → takeSnapshot. Failures
+ * are swallowed; the weekly cron is the safety net.
  */
-async function maybeFireWinBackPerfFee(event: Stripe.Event): Promise<void> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const invoice = event.data.object as any
-  const accountId = event.account
+async function maybeRecomputeMrr(accountId: string | undefined, ctx: string): Promise<void> {
   if (!accountId) return
-
-  const subId = getInvoiceSubscriptionId(invoice)
-  if (!subId) return
-
-  const amountPaid = typeof invoice.amount_paid === 'number' ? invoice.amount_paid : 0
-  if (amountPaid <= 0) return
-
-  const invoiceId: string | null = typeof invoice.id === 'string' ? invoice.id : null
-
-  const [rec] = await db
-    .select({
-      id: recoveries.id,
-      customerId: recoveries.customerId,
-      recoveryType: recoveries.recoveryType,
-      perfFeeChargedAt: recoveries.perfFeeChargedAt,
-      perfFeeStripeItemId: recoveries.perfFeeStripeItemId,
-      perfFeeBasisInvoiceId: recoveries.perfFeeBasisInvoiceId,
-    })
-    .from(recoveries)
-    .where(eq(recoveries.newStripeSubId, subId))
-    .limit(1)
-
-  if (!rec) return
-  if (rec.recoveryType !== 'win_back') return
-  if (rec.perfFeeChargedAt || rec.perfFeeStripeItemId) return
-  if (invoiceId && rec.perfFeeBasisInvoiceId === invoiceId) return
-
-  const [cust] = await db
-    .select({ id: customers.id })
-    .from(customers)
-    .where(eq(customers.stripeAccountId, accountId))
-    .limit(1)
-  if (!cust || cust.id !== rec.customerId) return
-
   try {
-    const result = await chargePerformanceFee(rec.id, {
-      amountCents: amountPaid,
-      basisInvoiceId: invoiceId ?? undefined,
-    })
-    logEvent({
-      name: 'win_back_perf_fee_fired',
-      customerId: rec.customerId,
-      properties: {
-        recoveryId: rec.id,
-        amountCents: result.amountCents,
-        basisInvoiceId: invoiceId,
-        alreadyCharged: result.alreadyCharged,
-        skipped: result.skipped ?? null,
-      },
-    })
+    const [cust] = await db
+      .select({ id: customers.id })
+      .from(customers)
+      .where(eq(customers.stripeAccountId, accountId))
+      .limit(1)
+    if (!cust) return
+    const result = await takeSnapshot(cust.id, 'webhook')
+    if (!result.ok && result.reason !== 'no_token') {
+      console.warn(`[mrr-snapshot:${ctx}] failed for`, cust.id, result.error ?? result.reason)
+    }
   } catch (err) {
-    // Don't fail the webhook — Stripe would retry infinitely. Log instead;
-    // admin can retry via diagnostic script.
-    console.error('[win_back_perf_fee] failed for recovery', rec.id, err)
-    logEvent({
-      name: 'win_back_perf_fee_failed',
-      customerId: rec.customerId,
-      properties: {
-        recoveryId: rec.id,
-        basisInvoiceId: invoiceId,
-        errorMessage: err instanceof Error ? err.message : String(err),
-      },
-    })
-  }
-}
-
-/**
- * Phase B — when a previously-recovered subscriber re-cancels, refund any
- * win-back perf fee charged within the last 14 days. Idempotent and safe
- * to call on every cancellation event.
- */
-async function maybeRefundRecentWinBack(subscriberId: string): Promise<void> {
-  const cutoff = new Date(Date.now() - PERF_FEE_REFUND_WINDOW_DAYS * 24 * 60 * 60 * 1000)
-  const refundable = await db
-    .select({ id: recoveries.id })
-    .from(recoveries)
-    .where(
-      and(
-        eq(recoveries.subscriberId, subscriberId),
-        eq(recoveries.recoveryType, 'win_back'),
-        gt(recoveries.perfFeeChargedAt, cutoff),
-        isNull(recoveries.perfFeeRefundedAt),
-      ),
-    )
-    .orderBy(desc(recoveries.perfFeeChargedAt))
-    .limit(1)
-
-  if (!refundable.length) return
-
-  try {
-    const result = await refundPerformanceFee(refundable[0].id)
-    console.log(`[refund] win-back ${refundable[0].id} method=${result.method}`)
-    logEvent({
-      name: 'win_back_refunded',
-      properties: { recoveryId: refundable[0].id, method: result.method },
-    })
-  } catch (err) {
-    console.error('[refund] failed for recovery', refundable[0].id, err)
+    console.error(`[mrr-snapshot:${ctx}] unexpected error for account`, accountId, err)
   }
 }
 
@@ -236,13 +131,26 @@ export async function POST(req: Request) {
     if (event.type === 'customer.subscription.deleted') {
       if (event.account) {
         await processChurn(event)
+        // Recompute MRR — a deletion shifts the customer's recurring base.
+        await maybeRecomputeMrr(event.account, 'sub_deleted')
       } else {
-        // Phase B — platform-side subscription canceled (our $99/mo).
+        // Platform-side subscription canceled.
         await processPlatformSubscriptionDeleted(event)
       }
     }
     if (event.type === 'customer.subscription.created') {
-      await processRecovery(event)
+      if (event.account) {
+        await processRecovery(event)
+        await maybeRecomputeMrr(event.account, 'sub_created')
+      }
+    }
+    if (event.type === 'customer.subscription.updated') {
+      if (event.account) {
+        await maybeRecomputeMrr(event.account, 'sub_updated')
+      } else {
+        // Platform-side: sync billed_tier from the (possibly-changed) Price.
+        await processPlatformSubscriptionUpdated(event)
+      }
     }
     if (event.type === 'checkout.session.completed') {
       // Spec 23 — platform card capture (no event.account)
@@ -269,12 +177,6 @@ export async function POST(req: Request) {
     if (event.type === 'invoice.payment_succeeded') {
       if (event.account) {
         await processPaymentSucceeded(event)
-        // Spec 78 — also try to fire any pending win-back perf fee whose
-        // basis is this invoice. Independent of processPaymentSucceeded
-        // (which only handles dunning recoveries); maybeFireWinBackPerfFee
-        // gates on recoveryType='win_back'. Both handlers can fire on the
-        // same event without conflict.
-        await maybeFireWinBackPerfFee(event)
       } else {
         await processPlatformInvoiceEvent(event)
       }
@@ -284,24 +186,6 @@ export async function POST(req: Request) {
     // customer portal too). Only process on platform account.
     if (event.type === 'invoice.paid' && !event.account) {
       await processPlatformInvoiceEvent(event)
-    }
-    // Spec 78 — Stripe-native promotions ingestion. Connect-side events
-    // only (event.account set). promotion_code.created/updated fire on
-    // creation and any edit (active toggle, expiry change, etc.).
-    // coupon.updated covers edits that change the discount terms.
-    // coupon.deleted archives the row (in-flight recoveries referencing
-    // it activate without discount; matcher skips going forward).
-    if (
-      event.account &&
-      (event.type === 'promotion_code.created' || event.type === 'promotion_code.updated')
-    ) {
-      await processPromotionCodeUpsert(event)
-    }
-    if (event.account && event.type === 'coupon.updated') {
-      await processCouponUpdated(event)
-    }
-    if (event.account && event.type === 'coupon.deleted') {
-      await processCouponDeleted(event)
     }
   } catch (err) {
     console.error('Webhook processing error:', err)
@@ -373,8 +257,10 @@ async function processChurn(event: Stripe.Event) {
         ),
       )
 
-    // Re-cancel within the win-back refund window? Refund the perf fee.
-    await maybeRefundRecentWinBack(existing.id)
+    // Billing-rewrite: perf-fee refund machinery removed entirely. No
+    // per-recovery charges → nothing to refund on a re-cancel. The
+    // re-cancellation continues to flow through the dunning/winback
+    // engines normally.
 
     // Did the exit email actually go out last time?
     const [sent] = await db
@@ -585,10 +471,11 @@ async function processRecovery(event: Stripe.Event) {
 
   console.log(`${attributionType.toUpperCase()} RECOVERY:`, churned.email, 'at', mrrCents, 'cents/mo')
 
-  // Phase B — converge on activation. ensureActivation is idempotent and
-  // only charges the perf fee when the recovery is strong-attribution AND
-  // a subscription is live (i.e. card on file). Otherwise it queues the
-  // recovery and waits for the card-capture webhook to call back.
+  // Billing-rewrite: on a strong-attribution recovery, run prepareActivation
+  // to (a) mark activatedAt, (b) compute the customer's MRR live and
+  // persist recommended_tier so the in-app activation page can render the
+  // breakdown the moment the customer visits. Subscription creation
+  // remains gated on the customer's explicit click on the activation page.
   if (attributionType === 'strong') {
     await triggerActivation(customer.id, 'subscription_created')
   }
@@ -598,9 +485,6 @@ async function processCheckoutRecovery(event: Stripe.Event) {
   const session = event.data.object as Stripe.Checkout.Session
   const subscriberId = session.metadata?.winback_subscriber_id
   const customerId = session.metadata?.winback_customer_id
-  // Spec 78 — surfaces the promo applied in the reactivate route's
-  // checkout-session create so we can persist it on the recovery row.
-  const appliedPromoCodeId = session.metadata?.winback_applied_promotion_code_id ?? null
 
   if (!subscriberId || !customerId) return // Not a Winback checkout
 
@@ -622,7 +506,6 @@ async function processCheckoutRecovery(event: Stripe.Event) {
     newStripeSubId: session.subscription as string ?? null,
     attributionType: 'strong',
     recoveryType: 'win_back',
-    appliedPromotionCodeId: appliedPromoCodeId,
   })
 
   // Spec 21b — also resolve any pending handoff
@@ -975,8 +858,10 @@ async function processPaymentSucceeded(event: Stripe.Event) {
     // Spec 57 — read subscription id via helper (handles new + legacy API shapes)
     newStripeSubId: getInvoiceSubscriptionId(invoice),
     attributionType,
-    // Phase B — dunning recoveries are card saves: covered by the platform
-    // fee, no per-recovery performance fee.
+    // Dunning recoveries are card saves. Billing rewrite: no per-recovery
+    // fee anywhere — the flat tier fee covers all recoveries. recoveryType
+    // is kept for analytics + the ROI dashboard's strong/weak attribution
+    // split.
     recoveryType: 'card_save',
   })
 
@@ -1008,7 +893,10 @@ async function processPaymentSucceeded(event: Stripe.Event) {
 
   console.log(`${attributionType.toUpperCase()} DUNNING RECOVERY:`, subscriber.email)
 
-  // Phase B — kick off platform-fee billing (no perf fee for card saves).
+  // Billing rewrite: a successful card-save counts as a delivered
+  // recovery, so it triggers prepareActivation (mark activatedAt,
+  // compute MRR, persist recommended_tier). The customer's banner and
+  // activation page get hot for the next dashboard visit.
   await triggerActivation(customer.id, 'dunning_recovery')
 }
 
@@ -1079,19 +967,26 @@ async function processPlatformCardCapture(event: Stripe.Event) {
 
   console.log(`[webhook] Platform card ${wasUpdate ? 'updated' : 'captured'} for customer ${wbCustomerId}`)
 
-  // Phase B — converge on activation now that a card is on file. If a
-  // recovery has already been delivered, this is the moment we create the
-  // $99/mo Stripe Subscription and drain any queued win-back perf fees onto
-  // its first invoice. No-op for an Update (subscription already exists).
+  // Billing rewrite: card-capture no longer auto-creates the platform
+  // subscription. Subscription creation is gated on the customer's
+  // explicit click on the /billing/activate page (commitActivation
+  // route). This call only runs prepareActivation as a defensive
+  // refresh — if the customer has a delivered recovery, it ensures
+  // recommended_tier is current and activatedAt is set, so the
+  // dashboard banner and activation page are hot whenever they revisit.
   await triggerActivation(wbCustomerId, 'card_capture')
 }
 
 /**
- * Phase B — handle our own platform-side subscription cancellation. Fires
- * when Stripe ends the subscription (cancel_at_period_end reached, or the
- * customer cancelled directly via the billing portal). Just clears the
- * cached subscription_id so a future recovery can ensurePlatformSubscription
- * cleanly.
+ * Handle our own platform-side subscription cancellation. Fires when
+ * Stripe ends the subscription (cancel_at_period_end reached, or the
+ * customer cancelled directly via the billing portal).
+ *
+ * Billing-rewrite behavior: reset the customer to pre_billing — clear
+ * stripeSubscriptionId AND billed_tier so a future delivered recovery
+ * re-prompts the activation confirmation page at whatever tier their
+ * then-current MRR puts them in. recommendedTier is RETAINED (it's still
+ * the right answer for what tier they SHOULD be on).
  */
 async function processPlatformSubscriptionDeleted(event: Stripe.Event) {
   const subscription = event.data.object as Stripe.Subscription
@@ -1102,9 +997,15 @@ async function processPlatformSubscriptionDeleted(event: Stripe.Event) {
     return
   }
 
+  const now = new Date()
   await db
     .update(customers)
-    .set({ stripeSubscriptionId: null, updatedAt: new Date() })
+    .set({
+      stripeSubscriptionId: null,
+      billedTier: null,
+      billedChangedAt: now,
+      updatedAt: now,
+    })
     .where(eq(customers.id, wbCustomerId))
 
   logEvent({
@@ -1114,6 +1015,30 @@ async function processPlatformSubscriptionDeleted(event: Stripe.Event) {
   })
 
   console.log(`[webhook] Platform subscription canceled for customer ${wbCustomerId}`)
+}
+
+/**
+ * Platform-side subscription.updated. Most updates (status changes,
+ * cancel_at_period_end toggles) need no DB action — Stripe is the source
+ * of truth and we read it on demand. The one thing we DO sync is
+ * billed_tier when the Price has changed (customer upgraded/downgraded
+ * via the Stripe Customer Portal). syncBilledTierFromStripe handles the
+ * reverse Price-ID → tier lookup.
+ */
+async function processPlatformSubscriptionUpdated(event: Stripe.Event) {
+  const subscription = event.data.object as Stripe.Subscription
+  const wbCustomerId = subscription.metadata?.winback_customer_id
+  if (!wbCustomerId) return
+
+  try {
+    await syncBilledTierFromStripe(wbCustomerId, subscription)
+  } catch (err) {
+    console.error(
+      '[webhook] platform subscription.updated tier-sync failed for',
+      wbCustomerId,
+      err,
+    )
+  }
 }
 
 /**
@@ -1166,157 +1091,9 @@ async function processPlatformInvoiceEvent(event: Stripe.Event) {
   }
 }
 
-/**
- * Spec 78 — Connect-side promotion_code.created/updated handler.
- *
- * Looks up the Winback customer by the Connect account id, fetches the
- * promotion code (with coupon expanded), pre-expands the coupon's
- * applies_to.products into price ids, and upserts a kind='promotion'
- * row into wb_improvements.
- *
- * No-op if the promotion code is missing or the customer doesn't exist.
- * Errors are logged but don't fail the webhook (Stripe would retry
- * indefinitely otherwise).
- */
-async function processPromotionCodeUpsert(event: Stripe.Event): Promise<void> {
-  const accountId = event.account
-  if (!accountId) return
-  const promo = event.data.object as Stripe.PromotionCode
-
-  const [customer] = await db
-    .select()
-    .from(customers)
-    .where(eq(customers.stripeAccountId, accountId))
-    .limit(1)
-  if (!customer?.stripeAccessToken) return
-
-  try {
-    const stripe = getConnectStripe(decrypt(customer.stripeAccessToken))
-    // Re-retrieve with the nested coupon expanded so buildPromotionMetadata
-    // doesn't have to fetch it separately. API ≥ 2026-03-25.dahlia uses
-    // promotion.coupon (not the legacy top-level coupon path).
-    const full = await stripe.promotionCodes.retrieve(promo.id, {
-      expand: ['promotion.coupon'],
-    })
-    const metadata = await buildPromotionMetadata(stripe, full)
-    const { created } = await upsertPromotionImprovement(customer.id, metadata)
-    logEvent({
-      name: 'promotion_synced',
-      customerId: customer.id,
-      properties: {
-        stripePromotionCodeId: promo.id,
-        stripeCouponId: metadata.stripeCouponId,
-        code: metadata.code,
-        active: metadata.active,
-        created,
-      },
-    })
-  } catch (err) {
-    console.error('[webhook:promotion_code] failed for', promo.id, err)
-    logEvent({
-      name: 'promotion_sync_failed',
-      customerId: customer.id,
-      properties: {
-        stripePromotionCodeId: promo.id,
-        errorMessage: err instanceof Error ? err.message : String(err),
-      },
-    })
-  }
-}
-
-/**
- * Spec 78 — Connect-side coupon.updated handler. A coupon edit
- * (toggling valid, changing redeem_by, etc.) may invalidate previously-
- * synced promotion codes. We re-fetch every active promotion code that
- * uses this coupon and re-upsert.
- */
-async function processCouponUpdated(event: Stripe.Event): Promise<void> {
-  const accountId = event.account
-  if (!accountId) return
-  const coupon = event.data.object as Stripe.Coupon
-
-  const [customer] = await db
-    .select()
-    .from(customers)
-    .where(eq(customers.stripeAccountId, accountId))
-    .limit(1)
-  if (!customer?.stripeAccessToken) return
-
-  try {
-    const stripe = getConnectStripe(decrypt(customer.stripeAccessToken))
-    // API ≥ 2026-03-25.dahlia: list params now nest the coupon filter
-    // under `promotion.coupon` to match the resource's new shape.
-    const codes = await stripe.promotionCodes.list({
-      promotion: { coupon: coupon.id },
-      limit: 100,
-    } as Stripe.PromotionCodeListParams)
-    for (const promo of codes.data) {
-      const metadata = await buildPromotionMetadata(stripe, promo)
-      await upsertPromotionImprovement(customer.id, metadata)
-    }
-    logEvent({
-      name: 'coupon_synced',
-      customerId: customer.id,
-      properties: {
-        stripeCouponId: coupon.id,
-        promotionCodeCount: codes.data.length,
-        valid: coupon.valid,
-      },
-    })
-  } catch (err) {
-    console.error('[webhook:coupon_updated] failed for', coupon.id, err)
-  }
-}
-
-/**
- * Spec 78 — Connect-side coupon.deleted handler. Archives every
- * wb_improvements row whose metadata.stripeCouponId matches. In-flight
- * recoveries that referenced one of these promo codes activate without
- * discount and emit a `promo_deleted_at_activation` event.
- */
-async function processCouponDeleted(event: Stripe.Event): Promise<void> {
-  const accountId = event.account
-  if (!accountId) return
-  const coupon = event.data.object as Stripe.Coupon
-
-  const [customer] = await db
-    .select()
-    .from(customers)
-    .where(eq(customers.stripeAccountId, accountId))
-    .limit(1)
-  if (!customer) return
-
-  // Pull all this customer's promotion improvements and archive the ones
-  // whose coupon id matches. (Stripe API doesn't tell us which promotion
-  // codes were on this coupon at the time of deletion.)
-  const candidates = await db
-    .select({
-      id: improvements.id,
-      status: improvements.status,
-      promotionMetadata: improvements.promotionMetadata,
-    })
-    .from(improvements)
-    .where(and(
-      eq(improvements.customerId, customer.id),
-      eq(improvements.kind, 'promotion'),
-    ))
-
-  let archivedCount = 0
-  for (const row of candidates) {
-    const meta = row.promotionMetadata as { stripeCouponId?: string; stripePromotionCodeId?: string } | null
-    if (meta?.stripeCouponId !== coupon.id) continue
-    if (row.status === 'archived') continue
-    await db
-      .update(improvements)
-      .set({ status: 'archived', archivedAt: new Date(), updatedAt: new Date() })
-      .where(eq(improvements.id, row.id))
-    archivedCount++
-  }
-  if (archivedCount > 0) {
-    logEvent({
-      name: 'coupon_deleted_archived_promos',
-      customerId: customer.id,
-      properties: { stripeCouponId: coupon.id, archivedCount },
-    })
-  }
-}
+// Billing-rewrite: removed processPromotionCodeUpsert / processCouponUpdated /
+// processCouponDeleted. Those handlers existed only to feed the perf-fee
+// promo machinery (applied_promotion_code_id on recoveries). With perf fees
+// gone and the column dropped, ingesting Stripe promo codes serves no
+// purpose. If platform-side coupon support is added later, write a new
+// dedicated handler — don't resurrect this one.

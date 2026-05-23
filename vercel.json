@@ -35,6 +35,14 @@
     {
       "path": "/api/cron/cluster-cancellations",
       "schedule": "0 2 * * 0"
+    },
+    {
+      "path": "/api/cron/fx-refresh",
+      "schedule": "0 2 * * *"
+    },
+    {
+      "path": "/api/cron/mrr-snapshot",
+      "schedule": "0 3 * * 0"
     }
   ]
 }

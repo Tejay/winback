@@ -190,7 +190,6 @@ export function CustomerDetailClient({ customerId }: { customerId: string }) {
       </Section>
 
       <Section label="Billing snapshot">
-        <KV k="Queued win-back fees" v={String(data.billing.outstandingObligations)} />
         <KV k="Platform Stripe customer" v={id.stripePlatformCustomerId ?? '(no platform card on file)'} />
       </Section>
 
@@ -400,12 +399,12 @@ function relTime(iso: string): string {
 }
 
 /**
- * Spec 77 — Custom pricing section.
+ * Custom pricing section (admin override of the tier ladder).
  *
- * Standard customers see "Standard ($99/mo + 1× MRR perf fee)" + an
- * "Assign flat rate" button.
- * Flat-rate customers see "Custom flat rate — $X.XX/month" + a
- * "Revert to standard" button.
+ * Standard customers see "Standard (tiered: Starter/Growth/Scale/Enterprise)" +
+ * an "Assign flat rate" button.
+ * Flat-rate customers see "Custom flat rate — $X.XX/month" + a "Revert to
+ * standard" button (which puts them back on the tier matching their MRR).
  *
  * Destructive actions (switch + revert) require typing the confirmation
  * string in an inline form — matches the existing admin pattern.
@@ -470,7 +469,7 @@ function CustomPricingSection({
       })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error ?? 'Revert failed')
-      setMsg(json.priceUpdatedOnStripe ? '✓ Reverted to standard $99/mo (Stripe subscription updated)' : '✓ Reverted to standard $99/mo (no active Stripe sub to update)')
+      setMsg(json.priceUpdatedOnStripe ? '✓ Reverted to standard tiered pricing (Stripe subscription updated to MRR-derived tier)' : '✓ Reverted to standard tiered pricing (no active Stripe sub to update)')
       setMode('idle')
       setConfirmStr('')
       await onChanged()
@@ -492,12 +491,12 @@ function CustomPricingSection({
         {isFlatRate ? (
           <>
             <strong>Custom flat rate — ${(currentCents! / 100).toFixed(2)} / month.</strong>{' '}
-            <span className="text-slate-500">Performance fees disabled.</span>
+            <span className="text-slate-500">Tier ladder bypassed.</span>
           </>
         ) : (
           <>
             <strong>Standard.</strong>{' '}
-            <span className="text-slate-500">$99/mo platform + 1× MRR performance fee per recovery.</span>
+            <span className="text-slate-500">Tiered: Starter $99 / Growth $299 / Scale $699 / Enterprise (sales). Tier auto-derived from MRR.</span>
           </>
         )}
       </p>
@@ -535,7 +534,7 @@ function CustomPricingSection({
             {!dollarsValid && <p className="text-xs text-amber-700 mt-1">Enter between $1.00 and $9,999.00. For free comp, use the pilot mechanism instead.</p>}
           </div>
           <p className="text-xs text-slate-600">
-            Saving will: set the customer&apos;s custom rate, swap the Stripe subscription Price (no proration), and disable performance fees on future win-backs. Any perf fees already queued for the current billing cycle will still bill at the old terms.
+            Saving will: set the customer&apos;s custom monthly rate, swap the Stripe subscription Price to a one-off custom Price at the new amount (no proration), and bypass the standard tier ladder for this customer. Future tier transitions are suppressed while the custom rate is active.
           </p>
           <div>
             <label className="block text-xs font-semibold uppercase tracking-widest text-slate-500 mb-1.5">
@@ -575,7 +574,7 @@ function CustomPricingSection({
       {mode === 'reverting' && isFlatRate && (
         <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
           <p className="text-xs text-slate-600">
-            Reverting will: clear the custom rate, swap the Stripe subscription back to the standard $99/mo Price (no proration), and re-enable performance fees on future win-backs.
+            Reverting will: clear the custom rate, swap the Stripe subscription back to the standard tier Price matching the customer&apos;s current recommended tier (no proration), and re-enable the standard tier-transition recommender for this customer.
           </p>
           <div>
             <label className="block text-xs font-semibold uppercase tracking-widest text-slate-500 mb-1.5">

@@ -9,8 +9,11 @@ import { eq } from 'drizzle-orm'
 import { Logo } from '@/components/logo'
 import { getPlatformStripe } from '@/src/winback/lib/platform-stripe'
 import { setDefaultPaymentMethod } from '@/src/winback/lib/platform-billing'
-import { ensureActivation, type ActivationState } from '@/src/winback/lib/activation'
+import { commitActivation, type CommitActivationState } from '@/src/winback/lib/activation'
 import { getPausedQueueCounts, type QueueCounts } from '@/src/winback/lib/pause-drain'
+import type { TierKey } from '@/src/winback/lib/tiers'
+
+const ALLOWED_TIERS = new Set(['starter', 'growth', 'scale', 'custom'])
 
 /**
  * Spec 52 — Subscribe success landing page.
@@ -30,31 +33,42 @@ import { getPausedQueueCounts, type QueueCounts } from '@/src/winback/lib/pause-
 export default async function BillingSuccessPage({
   searchParams,
 }: {
-  searchParams: Promise<{ session_id?: string }>
+  searchParams: Promise<{ session_id?: string; already_active?: string }>
 }) {
   const session = await auth()
   if (!session?.user?.id) redirect('/login')
 
-  const { session_id: sessionId } = await searchParams
+  const { session_id: sessionId, already_active: alreadyActive } = await searchParams
 
   const [customer] = await db
     .select({
       id: customers.id,
       stripePlatformCustomerId: customers.stripePlatformCustomerId,
+      recommendedTier: customers.recommendedTier,
     })
     .from(customers)
     .where(eq(customers.userId, session.user.id))
     .limit(1)
 
-  // Fallback state when we can't even map the user to a customer row.
-  // Treated the same as a transient failure — direct them back to the
-  // dashboard; the webhook will catch up if anything actually happened
-  // on the Stripe side.
-  if (!customer || !sessionId) {
+  // Fallback state when we can't map the user to a customer. Either the
+  // session is stale or the redirect was tampered with; direct back to
+  // the dashboard and let the webhook catch up.
+  if (!customer) {
     return <Shell tone="pending" />
   }
 
-  let outcome: ActivationState | { state: 'error' } = { state: 'error' }
+  // `already_active=1` is the activate-page client's shortcut when
+  // commitActivation succeeded synchronously (card was already on file).
+  // Render the success state without a second commit attempt.
+  if (alreadyActive === '1') {
+    return <Shell tone="success" queueCounts={await safeQueueCounts(customer.id)} />
+  }
+
+  if (!sessionId) {
+    return <Shell tone="pending" />
+  }
+
+  let outcome: CommitActivationState | { state: 'error' } = { state: 'error' }
 
   try {
     const stripe = getPlatformStripe()
@@ -87,7 +101,24 @@ export default async function BillingSuccessPage({
       await setDefaultPaymentMethod(customer.stripePlatformCustomerId, paymentMethodId)
     }
 
-    outcome = await ensureActivation(customer.id)
+    // Tier resolution: prefer the value the customer confirmed on the
+    // activation page (round-tripped via Checkout metadata). Fall back
+    // to recommendedTier — for the legacy settings-page card-update
+    // flow that never visited /billing/activate.
+    const fromMetadata = checkoutSession.metadata?.winback_confirmed_tier
+    const confirmedTier =
+      fromMetadata && ALLOWED_TIERS.has(fromMetadata)
+        ? (fromMetadata as TierKey | 'custom')
+        : (customer.recommendedTier as TierKey | 'custom' | null)
+
+    if (!confirmedTier) {
+      // Customer has no recommended tier yet (probably the card-update
+      // path before they've ever delivered a recovery). Render success
+      // — the card is on file, we'll subscribe when a recovery lands.
+      return <Shell tone="success" queueCounts={await safeQueueCounts(customer.id)} />
+    }
+
+    outcome = await commitActivation(customer.id, confirmedTier)
   } catch (err) {
     console.error('[billing/success] sync activation failed:', err)
     outcome = { state: 'error' }
@@ -95,20 +126,23 @@ export default async function BillingSuccessPage({
 
   // Spec 54 — once activation has run (state=active), look up the paused-
   // window queue counts so we can surface "we're processing N events…".
-  // Cron at /api/cron/drain-paused-queue does the actual processing; this
-  // page is just informing the merchant. On error, omit the line.
   let queueCounts: QueueCounts | null = null
   if (outcome.state === 'active') {
-    try {
-      queueCounts = await getPausedQueueCounts(customer.id)
-    } catch (err) {
-      console.warn('[billing/success] queue counts lookup failed:', err)
-    }
+    queueCounts = await safeQueueCounts(customer.id)
   }
 
   if (outcome.state === 'active') return <Shell tone="success" queueCounts={queueCounts} />
   if (outcome.state === 'pilot') return <Shell tone="pilot" />
   return <Shell tone="pending" />
+}
+
+async function safeQueueCounts(customerId: string): Promise<QueueCounts | null> {
+  try {
+    return await getPausedQueueCounts(customerId)
+  } catch (err) {
+    console.warn('[billing/success] queue counts lookup failed:', err)
+    return null
+  }
 }
 
 type Tone = 'success' | 'pilot' | 'pending'
@@ -158,13 +192,13 @@ const COPY: Record<Tone, { icon: ReactNode; title: string; body: string }> = {
     icon: <CheckCircle2 className="h-12 w-12 text-green-500" />,
     title: "You're subscribed.",
     body:
-      "We'll bill $99/mo plus 1× MRR per recovered win-back, refundable in full if they re-cancel within 14 days. The AI is back at work.",
+      "Flat monthly fee, no per-recovery charges. Cancel anytime from your billing settings — no retention friction. WinbackFlow is back at work.",
   },
   pilot: {
     icon: <CheckCircle2 className="h-12 w-12 text-blue-500" />,
     title: "You're on the pilot.",
     body:
-      "No billing while your pilot is active — we'll resume the standard $99/mo + 1× MRR per recovery once it ends. The AI keeps working in the meantime.",
+      "No billing while your pilot is active — once it ends, we'll prompt you to subscribe at the tier that matches your then-current MRR. WinbackFlow keeps working in the meantime.",
   },
   pending: {
     icon: <CheckCircle2 className="h-12 w-12 text-slate-300" />,

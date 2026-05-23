@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "Winback — recover churned subscribers automatically",
-  description: "Recover customers from both ends of churn — payment failures (up to 500 payment recoveries/mo, included) and deliberate cancellations (1 month's subscription fee per cancellation winback, refundable). $99/mo platform fee, one Stripe Connect, no card at signup.",
+  description: "Recover customers from both ends of churn — failed payments and deliberate cancellations — from one Stripe Connect. One flat monthly fee priced by your MRR (Starter $99 / Growth $299 / Scale $699). No per-recovery charges, unlimited recovery volume. No card at signup; pay nothing until we deliver your first recovery.",
 };
 
 export default function RootLayout({

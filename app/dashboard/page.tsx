@@ -8,6 +8,7 @@ import { ImpersonationBanner } from '@/components/impersonation-banner'
 import { BillingPausedBanner } from '@/components/billing-paused-banner'
 import { DashboardClient } from './dashboard-client'
 import { isCustomerBillingHealthy } from '@/src/winback/lib/billing-enforcement'
+import { tierLabel as tierLabelFor, type TierKey } from '@/src/winback/lib/tiers'
 
 const DUNNING_REASON = 'Payment failed'
 
@@ -141,7 +142,17 @@ export default async function DashboardPage() {
   return (
     <>
       <ImpersonationBanner />
-      {!billingHealthy && <BillingPausedBanner />}
+      {!billingHealthy && (
+        <BillingPausedBanner
+          tierLabel={
+            customer.billedTier &&
+            customer.billedTier !== 'custom' &&
+            customer.billedTier !== 'enterprise'
+              ? tierLabelFor(customer.billedTier as TierKey)
+              : undefined
+          }
+        />
+      )}
       <TopNav userName={session.user.name} isAdmin={isAdmin} />
       <main className="min-h-screen bg-[#f5f5f5]">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6 sm:py-8">

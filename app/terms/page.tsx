@@ -41,28 +41,39 @@ export default function TermsPage() {
           See also: <a href="/refunds" className="text-blue-600 hover:underline">Refunds &amp; cancellations</a>.
         </p>
         <p>
-          The Service is free to sign up and use until Winback delivers your first
-          payment recovery (recovery of a failed-payment subscription) or your first
-          win-back (recovery of a voluntarily-cancelled subscriber). At that point we
-          ask for a payment method and billing begins. There are two fees:
+          The Service is free to sign up and use until WinbackFlow delivers your
+          first payment recovery (recovery of a failed-payment subscription) or
+          your first win-back (recovery of a voluntarily-cancelled subscriber).
+          At that point you are shown an in-app activation page that displays
+          your computed MRR (read live from your Stripe account), the resulting
+          tier, and the monthly fee, before any charge. Billing only begins
+          after you explicitly confirm the displayed price.
+        </p>
+        <p>
+          WinbackFlow charges a single flat monthly fee priced by your own MRR,
+          billed as a recurring Stripe Subscription:
         </p>
         <ul>
-          <li>
-            <strong>Platform fee — $99 per month</strong>, billed as a recurring
-            Stripe Subscription (prorated for the first partial cycle). This covers
-            up to 500 payment recoveries per month and the platform itself.
-          </li>
-          <li>
-            <strong>Performance fee — one month of the recovered subscriber&rsquo;s
-            monthly recurring revenue per win-back</strong>, charged once and added
-            to the relevant Stripe Subscription invoice. If that subscriber re-cancels
-            within 14 days of recovery, we refund the performance fee in full.
-          </li>
+          <li><strong>Starter</strong> &mdash; MRR up to $50,000 &mdash; $99 / month</li>
+          <li><strong>Growth</strong> &mdash; MRR $50,000 &ndash; $250,000 &mdash; $299 / month</li>
+          <li><strong>Scale</strong> &mdash; MRR $250,000 &ndash; $1,000,000 &mdash; $699 / month</li>
+          <li><strong>Enterprise</strong> &mdash; MRR $1,000,000+ &mdash; custom pricing, sales-handled</li>
         </ul>
         <p>
-          There is no setup fee and no minimum commitment. You can cancel the platform
-          subscription at any time from Settings — the cycle in progress finishes,
-          then no further charges are made. All fees are exclusive of VAT.
+          There are no per-recovery charges, no performance fees, no usage
+          caps, and no setup fees. Recovery volume is unlimited on every tier.
+          If your MRR changes enough to move you across a band, we surface an
+          upgrade or downgrade prompt &mdash; we never auto-change the tier you
+          are billed at.
+        </p>
+        <p>
+          There is no minimum commitment. You can cancel the platform
+          subscription at any time from Settings &mdash; the cycle in progress
+          finishes, then no further charges are made. All fees are exclusive of
+          VAT. See{' '}
+          <a href="/refunds" className="text-blue-600 hover:underline">
+            Refunds &amp; cancellations
+          </a>{' '}for the detailed billing policy.
         </p>
 
         <h2>4. Your responsibilities</h2>

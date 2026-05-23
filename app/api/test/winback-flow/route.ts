@@ -10,7 +10,7 @@ import { appendStandardFooter } from '@/src/winback/lib/email'
 import { buildHandoffNotification } from '@/src/winback/lib/founder-handoff-email'
 import { buildConversationThread, getLatestReply } from '@/src/winback/lib/conversation'
 import { logEvent } from '@/src/winback/lib/events'
-import { ensureActivation } from '@/src/winback/lib/activation'
+import { prepareActivation } from '@/src/winback/lib/activation'
 import { getConnectStripe } from '@/src/winback/lib/stripe'
 import { SubscriberSignals } from '@/src/winback/lib/types'
 
@@ -559,17 +559,19 @@ async function handlePost(req: Request) {
       },
     })
 
-    // Phase B — fire activation when this is a billable (strong) win-back so
-    // the harness exercises the same path real webhooks do: subscription
-    // creation if a card is on file, perf-fee invoice item, or queueing in
-    // the DB if awaiting card.
+    // Billing-rewrite: fire prepareActivation so the harness exercises the
+    // same Phase A path real webhooks do — persist recommended_tier, mark
+    // activatedAt, surface enterprise_handoff if applicable. Subscription
+    // creation is now gated on the customer's explicit click on the
+    // /billing/activate page (commitActivation) — the harness deliberately
+    // does NOT auto-commit.
     let activationState: string | undefined
     if (attributionType === 'strong') {
       try {
-        const result = await ensureActivation(customer.id)
+        const result = await prepareActivation(customer.id)
         activationState = result.state
       } catch (err) {
-        console.error('[test-harness] ensureActivation failed:', err)
+        console.error('[test-harness] prepareActivation failed:', err)
         activationState = 'error'
       }
     }

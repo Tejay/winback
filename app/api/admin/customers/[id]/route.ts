@@ -63,7 +63,6 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
     recentOauthErrors,
     recentEmails,
     recentEvents,
-    outstandingObligations,
     openHandoffs,
     subscriberCountRow,
   ] = await Promise.all([
@@ -115,21 +114,6 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
       .where(eq(wbEvents.customerId, id))
       .orderBy(desc(wbEvents.createdAt))
       .limit(50),
-    // Outstanding obligations: strong win-back recoveries with the perf fee
-    // not yet charged (typically waiting on a card to land). Phase C — old
-    // billing_runs reconciliation removed.
-    ro
-      .select({ n: sql<number>`count(*)::int` })
-      .from(recoveries)
-      .where(
-        and(
-          eq(recoveries.customerId, id),
-          eq(recoveries.attributionType, 'strong'),
-          eq(recoveries.recoveryType, 'win_back'),
-          isNull(recoveries.perfFeeChargedAt),
-          isNull(recoveries.perfFeeRefundedAt),
-        ),
-      ),
     // Open handoffs that emergency action could resolve
     ro
       .select({ n: sql<number>`count(*)::int` })
@@ -157,7 +141,9 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
     recentEmails,
     recentEvents,
     billing: {
-      outstandingObligations: outstandingObligations[0]?.n ?? 0,
+      // Billing rewrite removed per-recovery obligations. Tier + billing
+      // health surface in the new admin UI when needed.
+      outstandingObligations: 0,
     },
     openHandoffs: openHandoffs[0]?.n ?? 0,
     subscriberCount: subscriberCountRow[0]?.n ?? 0,
