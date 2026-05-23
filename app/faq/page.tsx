@@ -81,40 +81,27 @@ const SECTIONS: Section[] = [
       {
         q: 'When does WinbackFlow email my cancelled subscribers?',
         a: (
-          <>
-            <p>
-              Only when you ship an improvement that matches a stored
-              cancellation reason. WinbackFlow does NOT send an email at
-              the moment of cancellation &mdash; the AI is listen-only at
-              that stage. It records the reason and groups it into a
-              theme, and that&rsquo;s it.
-            </p>
-            <p className="mt-3">
-              When you later publish a shipped improvement in your
-              dashboard (e.g. &ldquo;Shipped Slack integration with
-              channel routing&rdquo;), WinbackFlow scans every cancellation
-              reason from the last 12 months and finds the subscribers who
-              cited that theme. Each one gets exactly one email naming what
-              they asked for and what you delivered.
-            </p>
-            <p className="mt-3">
-              No drip sequences. No exit emails. No AI replies. The only
-              email a subscriber gets from us is the one tied to a shipped
-              fix they specifically asked for.
-            </p>
-          </>
+          <p>
+            One exit email at cancellation to capture the reason for
+            leaving. Then, if you later ship a product improvement that
+            matches that reason within the follow-up window, the
+            subscriber gets one follow-up email naming what they asked
+            for and what you delivered. That&rsquo;s it &mdash; no drip
+            sequences, no AI replies.
+          </p>
         ),
       },
       {
         q: 'Will my customers feel spammed?',
         a: (
           <p>
-            At most one email per subscriber per shipped match &mdash; never
-            a drip, never a follow-up sequence. Payment-recovery emails
-            (up to three, timed to lead Stripe&rsquo;s automatic retries)
-            stop the moment Stripe collects. Every email carries a visible
-            unsubscribe link plus the <code>List-Unsubscribe</code> header
-            for one-click unsubscribe in Gmail and Outlook.
+            One exit email at cancellation, plus at most one follow-up
+            per shipped match &mdash; never a drip sequence.
+            Payment-recovery emails (up to three, timed to lead
+            Stripe&rsquo;s automatic retries) stop the moment Stripe
+            collects. Every email carries a visible unsubscribe link
+            plus the <code>List-Unsubscribe</code> header for one-click
+            unsubscribe in Gmail and Outlook.
           </p>
         ),
       },
