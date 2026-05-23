@@ -443,3 +443,25 @@ export const fxRates = pgTable('wb_fx_rates', {
   rateUsd:    decimal('rate_usd', { precision: 18, scale: 8 }).notNull(),
   fetchedAt:  timestamp('fetched_at', { withTimezone: true }).notNull(),
 })
+
+// Migration 052 — in-product feature request intake. Replaces the
+// dormant "Notifications email" field on Settings. status + shippedAt
+// exist so the future close-the-loop email cron has somewhere to
+// record state; the mechanism itself is deferred.
+export const featureRequests = pgTable('wb_feature_requests', {
+  id:                bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+  customerId:        uuid('customer_id').notNull().references(() => customers.id, { onDelete: 'cascade' }),
+  // Email of the user who submitted (resolved server-side from session,
+  // never client-supplied). Denormalised so historical attribution
+  // survives even if the user row changes.
+  submittedByEmail:  text('submitted_by_email').notNull(),
+  body:              text('body').notNull(),
+  status:            text('status').notNull().default('new'),
+  submittedAt:       timestamp('submitted_at', { withTimezone: true }).notNull().defaultNow(),
+  shippedAt:         timestamp('shipped_at', { withTimezone: true }),
+}, (table) => ({
+  customerSubmittedAtIdx: index('idx_feature_requests_customer_submitted_at')
+    .on(table.customerId, table.submittedAt.desc()),
+  statusSubmittedAtIdx: index('idx_feature_requests_status_submitted_at')
+    .on(table.status, table.submittedAt.desc()),
+}))

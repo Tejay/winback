@@ -7,7 +7,7 @@ import { TopNav } from '@/components/top-nav'
 import { ImpersonationBanner } from '@/components/impersonation-banner'
 import { DisconnectButton } from './disconnect-button'
 import { DangerZone } from './danger-zone'
-import { NotificationEmailForm } from './notification-email-form'
+import { FeatureRequestForm } from './feature-request-form'
 import { PaymentMethodSection } from './payment-method-section'
 import { InvoiceList } from './invoice-list'
 import { CreditCard } from 'lucide-react'
@@ -195,23 +195,6 @@ export default async function SettingsPage({
 
           </div>
 
-          {/* Section 1.5 — Notifications (spec 21c) */}
-          <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 mb-4">
-            <div className="text-xs font-semibold tracking-widest uppercase text-blue-600">
-              Notifications
-            </div>
-            <h2 className="text-lg font-semibold text-slate-900 mt-1">
-              Where we reach you
-            </h2>
-            <p className="text-sm text-slate-500 mt-1 mb-4">
-              When the AI hands off a subscriber for personal follow-up, we'll send the alert here.
-            </p>
-            <NotificationEmailForm
-              initial={customer?.notificationEmail ?? null}
-              fallbackEmail={session.user.email ?? null}
-            />
-          </div>
-
           {/* Section 2 — Billing */}
           <div id="billing" className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
             <div className="text-xs font-semibold tracking-widest uppercase text-blue-600">
@@ -389,6 +372,29 @@ export default async function SettingsPage({
               />
             </div>
           </div>
+
+          {/* Section 3 — Feature requests (collapsible) */}
+          <details className="bg-white rounded-2xl border border-slate-100 shadow-sm mt-4 group">
+            <summary className="cursor-pointer p-6 list-none flex items-start justify-between gap-4">
+              <div>
+                <div className="text-xs font-semibold tracking-widest uppercase text-blue-600">
+                  Feature requests
+                </div>
+                <h2 className="text-lg font-semibold text-slate-900 mt-1">
+                  Tell us what&rsquo;s missing
+                </h2>
+              </div>
+              <span className="text-slate-400 group-open:rotate-45 transition-transform flex-shrink-0 text-2xl leading-none mt-1">
+                +
+              </span>
+            </summary>
+            <div className="px-6 pb-6 border-t border-slate-100 pt-4">
+              <p className="text-sm text-slate-600">
+                We read every one &mdash; and we&rsquo;ll email you if we ship it.
+              </p>
+              <FeatureRequestForm />
+            </div>
+          </details>
 
           {/* Danger zone */}
           <DangerZone
