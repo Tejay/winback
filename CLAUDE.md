@@ -1,5 +1,26 @@
 # Winback — Claude Code Project Context
 
+## Working hygiene (read first)
+
+**Never make code changes on `main`.** Every session of work — even small ones — starts
+on a feature branch. The pattern:
+
+1. Before the first edit of a session, check `git status` and `git branch --show-current`.
+2. If on `main` or `master` (or any default branch tracking origin), create a new
+   feature branch with a descriptive name (e.g. `billing-rewrite-tier-prices`,
+   `fix-stale-pricing-copy`). Working tree carries over via `git checkout -b`.
+3. Make changes, commit in logical chunks, push the branch, open a PR.
+4. After a PR merges, **do not assume the next session continues on the same branch.**
+   Switch back to `main`, pull, and re-branch for the new work.
+
+This isn't about ceremony — it's about (a) keeping `main` deployable at all times,
+(b) making any single change reversible without untangling it from other work, and
+(c) keeping `git log main` reviewable.
+
+If you find yourself with uncommitted changes on `main` mid-session, branch
+immediately: `git checkout -b <descriptive-name>` preserves the working tree.
+Don't keep editing on `main` because "it's already there."
+
 ## What this project is
 
 Winback is a SaaS that helps subscription businesses automatically recover churned customers.
