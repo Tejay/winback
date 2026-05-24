@@ -287,57 +287,29 @@ export function PromotionsSection({
                     </div>
                   )}
 
-                  <div className="mt-2 grid grid-cols-2 gap-3 text-xs">
-                    <div>
-                      <div className="font-semibold text-emerald-700 uppercase tracking-wide text-[10px]">
-                        Winback checks
-                      </div>
-                      <ul className="mt-1 text-slate-600 space-y-0.5">
-                        {p.winbackChecks.map((c) => (
-                          <li key={c}>· {c}</li>
-                        ))}
-                      </ul>
+                  {/* Spec 79 — inline restrictions warning, only when
+                      this promo has rules Stripe will enforce at checkout
+                      that we don't pre-check (first_time_transaction,
+                      minimum_amount, etc.). Silent otherwise. The two-
+                      column "Winback checks / You verify" grid was
+                      removed: the green column duplicated the rule-
+                      disclosure subtitle above, and "You verify"
+                      mislabelled what Stripe (not the merchant) actually
+                      enforces. */}
+                  {p.merchantVerifies.length > 0 && (
+                    <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                      <strong>Heads up.</strong> Stripe will also enforce
+                      these at checkout, so a subscriber who doesn&rsquo;t
+                      meet them will see a Stripe rejection on the
+                      reactivation page: {p.merchantVerifies.join('; ')}.
                     </div>
-                    <div>
-                      <div className="font-semibold text-amber-700 uppercase tracking-wide text-[10px]">
-                        You verify
-                      </div>
-                      {p.merchantVerifies.length === 0 ? (
-                        <div className="mt-1 text-slate-400 italic">— none —</div>
-                      ) : (
-                        <ul className="mt-1 text-slate-600 space-y-0.5">
-                          {p.merchantVerifies.map((c) => (
-                            <li key={c}>· {c}</li>
-                          ))}
-                        </ul>
-                      )}
-                    </div>
-                  </div>
+                  )}
                 </div>
               </label>
             )
           })}
         </div>
       )}
-
-      <div className="mt-5 p-4 bg-blue-50 border border-blue-100 rounded-xl text-xs text-blue-900 leading-relaxed">
-        <strong>How it works.</strong> Winback only emails the promo above when{' '}
-        the toggle is on AND the subscriber cancelled for price AND the four
-        Winback-checked restrictions pass. Restrictions under <em>You verify</em>{' '}
-        are evaluated by Stripe at click time — if a subscriber doesn&apos;t
-        meet them, they&apos;ll see a Stripe error on the reactivation page.
-        Pick a promo whose restrictions match the audience you want to reach.
-      </div>
-
-      <div className="mt-3 p-4 bg-slate-50 border border-slate-100 rounded-xl text-xs text-slate-600 leading-relaxed">
-        <strong>About our fee.</strong> Winback&apos;s 1× recovery fee is
-        charged on the customer&apos;s first paid invoice after they
-        reactivate — so promos reduce both the customer&apos;s payment and
-        our fee in lockstep.{' '}
-        <a href="/settings#billing" className="underline hover:text-slate-900">
-          Billing details ↗
-        </a>
-      </div>
 
       {/* Confirm dialog for promos with uncovered restrictions */}
       {pendingConfirm && (
