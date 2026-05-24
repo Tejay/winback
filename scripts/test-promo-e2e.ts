@@ -1,7 +1,7 @@
 // Spec 79 promo flow — end-to-end test on tejaasvi@gmail.com's connected
 // (test-mode) Stripe account.
 //
-// What's REAL:
+// What the SCRIPT does (all real):
 //   1. Create test customer + active subscription via the Connect account
 //   2. Cancel with cancellation_details = { feedback: 'too_expensive', ... }
 //      so the classifier lands on Tier 1 + cancellationCategory = 'Price'
@@ -13,13 +13,15 @@
 //   5. Run the reengagement matcher directly → promo path fires → promo
 //      email goes out to tejaasvi+promotest@gmail.com via Resend
 //
-// What's SIMULATED (clearly marked in output):
-//   6. The reactivation click-through. Stripe Checkout requires a
-//      browser; can't headlessly drive it. Insert the wb_recoveries row
-//      with applied_improvement_id mirroring what processCheckoutRecovery
-//      would do after a real checkout completion. This is the same insert
-//      the production webhook makes — see processCheckoutRecovery in
-//      app/api/stripe/webhook/route.ts:513.
+// What YOU do next (manual, in a browser):
+//   6. Open the email in tejaasvi+promotest@gmail.com, click the
+//      "Resubscribe" button
+//   7. Stripe Checkout opens with the WINBACKE2E25 discount pre-applied
+//      in the discounts array. Complete with a test card (4242 4242…)
+//   8. Stripe fires checkout.session.completed to the production webhook
+//      → processCheckoutRecovery writes the wb_recoveries row with
+//      applied_improvement_id → dashboard chip + per-code 30d metric
+//      light up
 //
 // Cleanup deletes the test customer, subscription, churned_subscribers,
 // recovery, and emailsSent rows.
@@ -294,54 +296,26 @@ async function main(): Promise<void> {
     return
   }
 
-  // ─── SIMULATION ──────────────────────────────────────────────────────
-  // Stripe Checkout completion can't run headlessly. Insert the recovery
-  // row directly, mirroring what processCheckoutRecovery does on
-  // checkout.session.completed (see webhook/route.ts:513).
-  console.log('\n[SIMULATED] processCheckoutRecovery → wb_recoveries insert')
-  console.log('   (Headless mode can\'t drive Stripe Checkout. Inserting the')
-  console.log('   same row processCheckoutRecovery writes after a real checkout.)')
-  await db.insert(recoveries).values({
-    subscriberId:         churnRow.id,
-    customerId:           merchant.id,
-    planMrrCents:         classified.mrrCents,
-    newStripeSubId:       null,
-    attributionType:      'strong',
-    recoveryType:         'win_back',
-    appliedImprovementId: promoEmail.improvementId,
-  })
-  await db
-    .update(churnedSubscribers)
-    .set({ status: 'recovered', updatedAt: new Date() })
-    .where(eq(churnedSubscribers.id, churnRow.id))
-
-  const [recoveryRow] = await db
-    .select({
-      id:                   recoveries.id,
-      planMrrCents:         recoveries.planMrrCents,
-      attributionType:      recoveries.attributionType,
-      recoveryType:         recoveries.recoveryType,
-      appliedImprovementId: recoveries.appliedImprovementId,
-      recoveredAt:          recoveries.recoveredAt,
-    })
-    .from(recoveries)
-    .where(eq(recoveries.subscriberId, churnRow.id))
-    .limit(1)
-  console.log(`    ✓ Recovery row written:`)
-  console.log(`        id                   = ${recoveryRow.id}`)
-  console.log(`        planMrrCents         = ${recoveryRow.planMrrCents}`)
-  console.log(`        attributionType      = ${recoveryRow.attributionType}`)
-  console.log(`        recoveryType         = ${recoveryRow.recoveryType}`)
-  console.log(`        appliedImprovementId = ${recoveryRow.appliedImprovementId}`)
-  console.log(`        recoveredAt          = ${recoveryRow.recoveredAt?.toISOString()}`)
-
-  console.log('\n=== DONE ===')
-  console.log(`\nView the dashboard chip:`)
-  console.log(`    http://localhost:3000/dashboard`)
-  console.log(`\nView the per-code 30d metric:`)
-  console.log(`    http://localhost:3000/reasons (Promotions tab)`)
-  console.log(`\nWhen ready, clean up:`)
-  console.log(`    npx tsx --env-file=.env.local scripts/test-promo-e2e.ts --cleanup`)
+  console.log('\n=== Script done. Now drive the rest in your browser. ===')
+  console.log('')
+  console.log(`  → Open the inbox for ${TEST_SUB_EMAIL}`)
+  console.log(`  → Click the "Resubscribe" button in the email`)
+  console.log(`  → Stripe Checkout opens with the ${promoMeta?.code ?? 'promo'} discount`)
+  console.log(`    pre-applied — complete with a test card (4242 4242 4242 4242,`)
+  console.log(`    any future exp, any CVC)`)
+  console.log(`  → On success, Stripe fires checkout.session.completed to the`)
+  console.log(`    production webhook → processCheckoutRecovery writes the`)
+  console.log(`    wb_recoveries row with applied_improvement_id`)
+  console.log(`  → Refresh http://localhost:3000/dashboard — Promo-E2E User`)
+  console.log(`    row shows ✓ Recovered via ${promoMeta?.code ?? 'CODE'} chip`)
+  console.log(`  → http://localhost:3000/reasons (Promotions tab) — per-code`)
+  console.log(`    "Drove X recoveries / $Y MRR (30d)" metric increments`)
+  console.log('')
+  console.log(`Subscriber id (for SQL debugging):  ${churnRow.id}`)
+  console.log(`Improvement id (FK target):          ${promoEmail.improvementId}`)
+  console.log('')
+  console.log(`When done, clean up:`)
+  console.log(`    npm run promo:e2e -- --cleanup`)
 }
 
 main().then(() => process.exit(0)).catch((e) => { console.error('FAILED:', e); process.exit(1) })
