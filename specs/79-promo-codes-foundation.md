@@ -77,6 +77,7 @@ cooldown — all explicitly deferred (see Non-goals).
 | Anti-fatigue cooldown (no re-offer to same subscriber within N days) | Real future need; not blocking v1 utility |
 | Standalone `/promotions` analytics page | Inline metric on `/reasons` is the minimum-viable surface |
 | Lift-vs-baseline statistical analysis | Premature without per-recovery attribution working first |
+| Manual per-subscriber promo send from dashboard drawer | Genuinely useful (VIP / AI-miss escape hatch) but needs gate-check infrastructure + `applied_improvement_id` column from this spec to land first. Becomes **Spec 80** as a follow-up. |
 
 Each of these is a real future improvement; none are needed to make
 this slice trustworthy.
@@ -369,6 +370,7 @@ reference entirely.
 | 8 | Per-code metric placement | **Inline on /reasons** under each promo option. No separate analytics page. |
 | 9 | Rule disclosure | **Yes.** Subtitle under promo selector documents tier-1 + Price scope. |
 | 10 | E2E test infrastructure | **Stripe test mode** with `STRIPE_TEST_SECRET_KEY` env gate, matching existing pattern. |
+| 11 | Manual per-subscriber promo send | **Deferred to Spec 80.** Spec 79 lays the gate-check + attribution infrastructure that Spec 80 will reuse. Building manual first would duplicate that infrastructure; the order matters. |
 
 ## Acceptance criteria
 
