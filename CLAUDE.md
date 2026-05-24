@@ -33,6 +33,35 @@ Every UI decision must match this site exactly unless specified otherwise.
 
 ---
 
+## Working hygiene (read first, every session)
+
+**Repo location.** All work for this project happens in
+`/Users/tejay/projects/winback`. The bash shell's default cwd is
+`/Users/tejay/projects/winbackflow-sourcing` (a sibling project), and it
+silently reverts to that between tool calls. Every Bash command that
+touches code, runs scripts, hits `git`, or reads/writes files must
+start with `cd /Users/tejay/projects/winback &&` or use absolute paths
+under that root. Do **not** trust that an earlier `cd` is still in
+effect — the shell state does not persist.
+
+**Branch discipline.** Never make code changes on `main`. Every session
+— even tiny copy edits — starts on a feature branch. The pattern:
+
+1. Before the first edit of a session, run `git status` and
+   `git branch --show-current`.
+2. If on `main` or `master`, create a new feature branch
+   (`git switch -c <short-descriptive-name>`) before any edit.
+3. Make changes, commit in logical chunks, push the branch, open a PR.
+4. After a PR merges, do not assume the next session continues on the
+   same branch. Re-check before editing.
+
+If a commit accidentally lands on `main`, the recovery is:
+`git branch <name>` to save it → `git reset --hard origin/main` to
+roll local main back → `git switch <name>` → push the branch normally.
+The remote `main` is untouched as long as no push happened.
+
+---
+
 ## Project state
 
 Fresh Next.js 14 App Router project. It has Tailwind CSS, TypeScript, and shadcn/ui initialised.
