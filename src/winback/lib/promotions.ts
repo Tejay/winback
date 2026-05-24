@@ -452,7 +452,7 @@ export async function syncActivePromotionsFromStripe(
  */
 export async function loadAppliedPromotionForSubscriber(
   subscriberId: string,
-): Promise<WbPromotionMetadata | null> {
+): Promise<{ improvementId: string; promo: WbPromotionMetadata } | null> {
   const [latest] = await db
     .select({ improvementId: emailsSent.improvementId })
     .from(emailsSent)
@@ -489,5 +489,7 @@ export async function loadAppliedPromotionForSubscriber(
     return null
   }
 
-  return promo
+  // Spec 79 — also return the improvement id so the reactivate flow
+  // can record applied_improvement_id on the resulting recovery row.
+  return { improvementId: latest.improvementId, promo }
 }

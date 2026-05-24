@@ -87,9 +87,14 @@ export async function POST(
       metadata: {
         winback_subscriber_id: subscriberId,
         winback_customer_id: customer.id,
-        ...(appliedPromo ? { winback_applied_promotion_code_id: appliedPromo.stripePromotionCodeId } : {}),
+        // Spec 79 — also surface the improvement id so the checkout
+        // recovery handler can stamp applied_improvement_id directly.
+        ...(appliedPromo ? {
+          winback_applied_promotion_code_id: appliedPromo.promo.stripePromotionCodeId,
+          winback_applied_improvement_id:    appliedPromo.improvementId,
+        } : {}),
       },
-      ...(appliedPromo ? { discounts: [{ promotion_code: appliedPromo.stripePromotionCodeId }] } : {}),
+      ...(appliedPromo ? { discounts: [{ promotion_code: appliedPromo.promo.stripePromotionCodeId }] } : {}),
     })
 
     logEvent({

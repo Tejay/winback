@@ -124,7 +124,7 @@ export async function GET(
           if (appliedPromo) {
             try {
               await stripe.subscriptions.update(sub.id, {
-                discounts: [{ promotion_code: appliedPromo.stripePromotionCodeId }],
+                discounts: [{ promotion_code: appliedPromo.promo.stripePromotionCodeId }],
               })
             } catch (err) {
               console.warn('[reactivate] could not attach promotion on resume:', err)
@@ -133,7 +133,7 @@ export async function GET(
                 customerId: customer.id,
                 properties: {
                   subscriberId,
-                  stripePromotionCodeId: appliedPromo.stripePromotionCodeId,
+                  stripePromotionCodeId: appliedPromo.promo.stripePromotionCodeId,
                   context: 'resume',
                   errorMessage: err instanceof Error ? err.message : String(err),
                 },
@@ -148,6 +148,9 @@ export async function GET(
             newStripeSubId: sub.id,
             attributionType: 'strong',
             recoveryType: 'win_back',
+            // Spec 79 — attribution: which promotion drove this recovery.
+            // Null when the resume happened without a promo offer.
+            appliedImprovementId: appliedPromo?.improvementId ?? null,
           })
 
           await db
@@ -258,14 +261,19 @@ export async function GET(
         winback_customer_id: customer.id,
         // Spec 78 — surface the applied promo on the checkout completion
         // webhook so processCheckoutRecovery can persist it on the recovery
-        // row when the new subscription is created.
-        ...(appliedPromo ? { winback_applied_promotion_code_id: appliedPromo.stripePromotionCodeId } : {}),
+        // row when the new subscription is created. Spec 79 adds the
+        // improvement id alongside, so the recovery row's FK is populated
+        // directly without a metadata→improvement lookup.
+        ...(appliedPromo ? {
+          winback_applied_promotion_code_id: appliedPromo.promo.stripePromotionCodeId,
+          winback_applied_improvement_id:    appliedPromo.improvementId,
+        } : {}),
       },
       // Spec 78 — apply the promotion code on the resulting subscription.
       // Stripe attaches it to the subscription created by the checkout
       // session; the first invoice (and any subsequent invoices matching
       // the coupon's `duration`) will reflect the discount.
-      ...(appliedPromo ? { discounts: [{ promotion_code: appliedPromo.stripePromotionCodeId }] } : {}),
+      ...(appliedPromo ? { discounts: [{ promotion_code: appliedPromo.promo.stripePromotionCodeId }] } : {}),
     })
 
     return NextResponse.redirect(session.url!)

@@ -20,6 +20,12 @@ import { syncBilledTierFromStripe } from '@/src/winback/lib/subscription'
 import { takeSnapshot } from '@/src/winback/lib/mrr-snapshot'
 import { sendPlatformPaymentFailedEmail } from '@/src/winback/lib/billing-notifications'
 import { processDunningPaymentUpdate } from '@/src/winback/lib/dunning-checkout'
+import {
+  archivePromotionImprovement,
+  buildPromotionMetadata,
+  upsertPromotionImprovement,
+} from '@/src/winback/lib/promotions'
+import { improvements } from '@/lib/schema'
 
 // Spec 62 — pinned Stripe client (platform-side). Wraps getPlatformStripe
 // so the existing call sites (signature verification, retrievals) stay
@@ -186,6 +192,29 @@ export async function POST(req: Request) {
     // customer portal too). Only process on platform account.
     if (event.type === 'invoice.paid' && !event.account) {
       await processPlatformInvoiceEvent(event)
+    }
+    // Spec 79 — promo-code sync. Connect-side only (merchant Stripe).
+    // Mirrors create/update events to the merchant's wb_improvements
+    // rows so /reasons always reflects current Stripe state without the
+    // merchant having to click "Refresh from Stripe" manually.
+    if (
+      event.account &&
+      (event.type === 'promotion_code.created' ||
+       event.type === 'promotion_code.updated')
+    ) {
+      await processPromotionCodeUpsert(event)
+    }
+    // Coupon edits cascade to dependent promotion codes — re-fetch and
+    // re-upsert each one so their derived metadata (discount, duration,
+    // applies_to) stays in sync.
+    if (event.account && event.type === 'coupon.updated') {
+      await processCouponUpdated(event)
+    }
+    // Coupon deletion implicitly invalidates every promotion code on
+    // top of it. Archive the dependents so the matcher stops firing
+    // them and the merchant's selection is cleared if relevant.
+    if (event.account && event.type === 'coupon.deleted') {
+      await processCouponDeleted(event)
     }
   } catch (err) {
     console.error('Webhook processing error:', err)
@@ -499,6 +528,11 @@ async function processCheckoutRecovery(event: Stripe.Event) {
 
   const mrrCents = subscriber.mrrCents
 
+  // Spec 79 — improvement id surfaced from the reactivate route's metadata
+  // so the recovery row's FK to wb_improvements lights up the dashboard
+  // chip + per-code metric. Null when no promo was attached.
+  const appliedImprovementId = session.metadata?.winback_applied_improvement_id ?? null
+
   await db.insert(recoveries).values({
     subscriberId,
     customerId,
@@ -506,6 +540,7 @@ async function processCheckoutRecovery(event: Stripe.Event) {
     newStripeSubId: session.subscription as string ?? null,
     attributionType: 'strong',
     recoveryType: 'win_back',
+    appliedImprovementId,
   })
 
   // Spec 21b — also resolve any pending handoff
@@ -1091,9 +1126,142 @@ async function processPlatformInvoiceEvent(event: Stripe.Event) {
   }
 }
 
-// Billing-rewrite: removed processPromotionCodeUpsert / processCouponUpdated /
-// processCouponDeleted. Those handlers existed only to feed the perf-fee
-// promo machinery (applied_promotion_code_id on recoveries). With perf fees
-// gone and the column dropped, ingesting Stripe promo codes serves no
-// purpose. If platform-side coupon support is added later, write a new
-// dedicated handler — don't resurrect this one.
+// Spec 79 — promo-code sync handlers.
+//
+// Restored after being removed in the billing rewrite (the prior
+// removal was correct at the time: those handlers fed the deleted
+// perf-fee path's applied_promotion_code_id column). They're back now
+// with a strictly narrower purpose: keep wb_improvements rows in lock-
+// step with Stripe so the merchant doesn't have to click "Refresh from
+// Stripe" on /reasons every time they tweak a code. Nothing here
+// touches recoveries or billing.
+
+/**
+ * promotion_code.created / promotion_code.updated → upsert the merchant's
+ * wb_improvements row for this code. Resolves event.account →
+ * customers.id, instantiates the merchant's Stripe client (so
+ * buildPromotionMetadata can expand applies_to.products → prices), and
+ * defers to the existing upsertPromotionImprovement.
+ */
+async function processPromotionCodeUpsert(event: Stripe.Event): Promise<void> {
+  const accountId = event.account
+  if (!accountId) return
+
+  const cust = await findCustomerByConnectAccount(accountId)
+  if (!cust) {
+    console.warn('[promo-webhook] unknown connect account', accountId, 'for', event.type)
+    return
+  }
+  if (!cust.stripeAccessToken) {
+    console.warn('[promo-webhook] customer', cust.id, 'has no Stripe access token, skipping')
+    return
+  }
+
+  const promo = event.data.object as Stripe.PromotionCode
+  const stripe = getConnectStripe(decrypt(cust.stripeAccessToken))
+  const metadata = await buildPromotionMetadata(stripe, promo)
+  await upsertPromotionImprovement(cust.id, metadata)
+}
+
+/**
+ * coupon.updated → coupon edits don't fire promotion_code.updated
+ * events automatically (Stripe scopes those to changes on the
+ * promotion code itself). Walk every wb_improvements row that
+ * references this coupon, re-fetch its Stripe promotion code, and
+ * re-upsert with the freshly-rebuilt metadata.
+ */
+async function processCouponUpdated(event: Stripe.Event): Promise<void> {
+  const accountId = event.account
+  if (!accountId) return
+
+  const cust = await findCustomerByConnectAccount(accountId)
+  if (!cust?.stripeAccessToken) return
+
+  const coupon = event.data.object as Stripe.Coupon
+
+  const dependents = await db
+    .select({
+      id: improvements.id,
+      promotionMetadata: improvements.promotionMetadata,
+    })
+    .from(improvements)
+    .where(and(
+      eq(improvements.customerId, cust.id),
+      eq(improvements.kind, 'promotion'),
+    ))
+
+  const stripe = getConnectStripe(decrypt(cust.stripeAccessToken))
+  for (const row of dependents) {
+    const meta = row.promotionMetadata as {
+      stripeCouponId?: string
+      stripePromotionCodeId?: string
+    } | null
+    if (meta?.stripeCouponId !== coupon.id) continue
+    if (!meta.stripePromotionCodeId) continue
+    try {
+      const promo = await stripe.promotionCodes.retrieve(meta.stripePromotionCodeId)
+      const rebuilt = await buildPromotionMetadata(stripe, promo)
+      await upsertPromotionImprovement(cust.id, rebuilt)
+    } catch (err) {
+      console.error('[promo-webhook] coupon.updated cascade failed for',
+        meta.stripePromotionCodeId, err)
+    }
+  }
+}
+
+/**
+ * coupon.deleted → archive every dependent promotion improvement.
+ * Stripe also fires promotion_code updates marking each derived code
+ * inactive, but we archive directly here for determinism (the matcher
+ * shouldn't fire stale codes during the brief window between coupon
+ * deletion and the per-code event delivery).
+ */
+async function processCouponDeleted(event: Stripe.Event): Promise<void> {
+  const accountId = event.account
+  if (!accountId) return
+
+  const cust = await findCustomerByConnectAccount(accountId)
+  if (!cust) return
+
+  const coupon = event.data.object as Stripe.Coupon
+
+  const dependents = await db
+    .select({
+      id: improvements.id,
+      promotionMetadata: improvements.promotionMetadata,
+    })
+    .from(improvements)
+    .where(and(
+      eq(improvements.customerId, cust.id),
+      eq(improvements.kind, 'promotion'),
+    ))
+
+  for (const row of dependents) {
+    const meta = row.promotionMetadata as {
+      stripeCouponId?: string
+      stripePromotionCodeId?: string
+    } | null
+    if (meta?.stripeCouponId !== coupon.id) continue
+    if (!meta.stripePromotionCodeId) continue
+    await archivePromotionImprovement(cust.id, meta.stripePromotionCodeId)
+  }
+}
+
+/**
+ * Shared lookup. Returns null if the connect account isn't ours
+ * (events from other Stripe Connect users on the same webhook
+ * endpoint are silently ignored — same pattern as maybeRecomputeMrr).
+ */
+async function findCustomerByConnectAccount(
+  accountId: string,
+): Promise<{ id: string; stripeAccessToken: string | null } | null> {
+  const [cust] = await db
+    .select({
+      id: customers.id,
+      stripeAccessToken: customers.stripeAccessToken,
+    })
+    .from(customers)
+    .where(eq(customers.stripeAccountId, accountId))
+    .limit(1)
+  return cust ?? null
+}

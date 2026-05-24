@@ -28,6 +28,10 @@ export interface PromotionView {
   stripeAccountId:        string | null
   winbackChecks:          string[]       // restrictions we DO enforce per-subscriber
   merchantVerifies:       string[]       // restrictions we DON'T enforce — merchant problem
+  // Spec 79 — trailing 30d attribution. Zero when the promo has driven
+  // no recoveries; UI shows a "Drove X recoveries / $Y MRR" line otherwise.
+  recoveries30dCount:     number
+  recoveries30dMrrCents:  number
 }
 
 function StripeLink({ accountId, promotionCodeId }: { accountId: string | null; promotionCodeId: string }) {
@@ -168,8 +172,20 @@ export function PromotionsSection({
         </button>
       </div>
 
+      {/* Spec 79 — rule disclosure. Surfaces the hardcoded matcher
+          conditions (tier=1 + Price category) so merchants understand
+          what they're enabling, not what they might assume. */}
+      <div className="mt-5 rounded-xl border border-blue-100 bg-blue-50/50 px-4 py-3 text-xs text-slate-700 leading-relaxed">
+        Offered only to your <strong>top-tier subscribers</strong> whose
+        cancellation reason was <strong>price-related</strong>. Each promo
+        passes four real-time Stripe checks before it&rsquo;s sent (active,
+        not past redeem-by, redemption cap not hit, applies to the
+        subscriber&rsquo;s plan). Stripe makes the final eligibility call at
+        checkout.
+      </div>
+
       {/* Toggle row */}
-      <div className="mt-5 flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50 px-4 py-3">
+      <div className="mt-3 flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50 px-4 py-3">
         <div>
           <div className="text-sm font-medium text-slate-900">Send promo emails to price-cancellers</div>
           <div className="text-xs text-slate-500 mt-0.5">
@@ -258,6 +274,18 @@ export function PromotionsSection({
                       <StripeLink accountId={p.stripeAccountId} promotionCodeId={p.stripePromotionCodeId} />
                     </span>
                   </div>
+
+                  {/* Spec 79 — per-code 30d attribution. Only renders
+                      when this code has driven at least one recovery
+                      so unproven codes don't show a noisy "0 recoveries". */}
+                  {p.recoveries30dCount > 0 && (
+                    <div className="mt-1.5 text-xs text-emerald-700">
+                      Drove <strong>{p.recoveries30dCount}</strong>{' '}
+                      recover{p.recoveries30dCount === 1 ? 'y' : 'ies'} /{' '}
+                      <strong>${(p.recoveries30dMrrCents / 100).toLocaleString(undefined, { maximumFractionDigits: 0 })} MRR</strong>{' '}
+                      in the last 30 days.
+                    </div>
+                  )}
 
                   <div className="mt-2 grid grid-cols-2 gap-3 text-xs">
                     <div>

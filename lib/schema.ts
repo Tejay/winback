@@ -422,6 +422,12 @@ export const recoveries = pgTable('wb_recoveries', {
   // attributionType is 'strong' or 'weak'; neither bills a per-recovery
   // fee in the tiered-pricing model.
   recoveryType:      text('recovery_type'),
+  // Spec 79 — FK to the wb_improvements row (kind='promotion') that
+  // drove this recovery. Null for recoveries that didn't have a promo
+  // attached. Populated by reengagement-cron-v2's promo path. Powers
+  // the dashboard chip and /reasons per-code metric.
+  appliedImprovementId: uuid('applied_improvement_id')
+    .references(() => improvements.id, { onDelete: 'set null' }),
 })
 
 export const mrrSnapshots = pgTable('wb_mrr_snapshots', {
