@@ -48,6 +48,11 @@ const CONNECT_EVENTS = [
 const ACCOUNT_EVENTS = [
   'checkout.session.completed',
   'customer.subscription.deleted',
+  // Platform-side subscription updates → processPlatformSubscriptionUpdated
+  // syncs billed_tier from the (possibly-changed) Price. Without this
+  // event the handler only sees create/delete on the platform sub, which
+  // misses mid-life tier changes via Stripe Customer Portal.
+  'customer.subscription.updated',
   'invoice.payment_failed',
   'invoice.payment_succeeded',
   'invoice.paid',

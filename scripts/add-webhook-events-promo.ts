@@ -3,14 +3,25 @@
 // strictly additive: never deletes or recreates endpoints, only updates
 // their enabled_events list to include the missing events.
 //
-// Run with whichever Stripe key targets the environment you want to
+// Key selection: prefers STRIPE_RESTRICTED_KEY when present, falls back
+// to STRIPE_SECRET_KEY. The restricted key must have BOTH "Webhook
+// endpoints: Read" AND "Webhook endpoints: Write" (the read-only key
+// used by list-webhook-endpoints.ts is not enough — this script
+// mutates).
+//
+// Run with whichever environment file targets the env you want to
 // patch:
 //
 //   # Sandbox (already covered by setup-sandbox-webhook-endpoints.ts,
 //   # but this works as a no-touch alternative):
-//   STRIPE_SECRET_KEY=sk_test_… npx tsx scripts/add-webhook-events-promo.ts
+//   npx tsx --env-file=.env.local scripts/add-webhook-events-promo.ts
 //
-//   # Production:
+//   # Production via restricted key (recommended — least privilege):
+//   #   .env.production.tmp must contain STRIPE_RESTRICTED_KEY=rk_live_…
+//   #   with both Webhook-endpoints Read + Write permissions
+//   npx tsx --env-file=.env.production.tmp scripts/add-webhook-events-promo.ts
+//
+//   # Production via full secret key (one-off, key passed inline):
 //   STRIPE_SECRET_KEY=sk_live_… npx tsx scripts/add-webhook-events-promo.ts
 //
 // Per spec 79: these events fire on the merchant's connected account
@@ -33,11 +44,24 @@ const NEW_CONNECT_EVENTS = [
   'coupon.deleted',
 ] as const
 
+function detectMode(key: string): 'LIVE' | 'TEST' | '???' {
+  if (key.startsWith('sk_live_') || key.startsWith('rk_live_')) return 'LIVE'
+  if (key.startsWith('sk_test_') || key.startsWith('rk_test_')) return 'TEST'
+  return '???'
+}
+
+function resolveKey(): { key: string; varName: 'STRIPE_RESTRICTED_KEY' | 'STRIPE_SECRET_KEY' } {
+  const restricted = process.env.STRIPE_RESTRICTED_KEY
+  if (restricted) return { key: restricted, varName: 'STRIPE_RESTRICTED_KEY' }
+  const secret = process.env.STRIPE_SECRET_KEY
+  if (secret) return { key: secret, varName: 'STRIPE_SECRET_KEY' }
+  throw new Error('Neither STRIPE_RESTRICTED_KEY nor STRIPE_SECRET_KEY is set in env')
+}
+
 async function main(): Promise<void> {
-  const key = process.env.STRIPE_SECRET_KEY
-  if (!key) throw new Error('STRIPE_SECRET_KEY env var is required')
-  const mode = key.startsWith('sk_live_') ? 'LIVE' : key.startsWith('sk_test_') ? 'TEST' : '???'
-  console.log(`Mode: ${mode}  (key prefix: ${key.slice(0, 9)}…)`)
+  const { key, varName } = resolveKey()
+  const mode = detectMode(key)
+  console.log(`Mode: ${mode}  (using ${varName}, prefix: ${key.slice(0, 9)}…)`)
   console.log(`Adding events: ${NEW_CONNECT_EVENTS.join(', ')}\n`)
 
   const stripe = new Stripe(key, { apiVersion: STRIPE_API_VERSION })
