@@ -7,12 +7,21 @@
 //   - You're debugging why a handler never fires
 //   - You want to confirm add-webhook-events-promo.ts did the right thing
 //
+// Key selection: prefers STRIPE_RESTRICTED_KEY when present, falls back
+// to STRIPE_SECRET_KEY. Use a restricted key (rk_live_…) for prod audits
+// — Stripe → Developers → API keys → Create restricted key, grant
+// "Webhook endpoints: Read", save in .env.production.tmp.
+//
 // Usage:
 //
-//   # Sandbox / test mode:
+//   # Sandbox / test mode (uses STRIPE_SECRET_KEY from .env.local):
 //   npx tsx --env-file=.env.local scripts/list-webhook-endpoints.ts
 //
-//   # Production:
+//   # Production via restricted key (recommended — least privilege):
+//   #   .env.production.tmp must contain STRIPE_RESTRICTED_KEY=rk_live_…
+//   npx tsx --env-file=.env.production.tmp scripts/list-webhook-endpoints.ts
+//
+//   # Production via full secret key (one-off, key passed inline):
 //   STRIPE_SECRET_KEY=sk_live_… npx tsx scripts/list-webhook-endpoints.ts
 //
 // Type detection: a WebhookEndpoint is Connect when Stripe sets its
@@ -23,12 +32,25 @@ import 'dotenv/config'
 import Stripe from 'stripe'
 import { STRIPE_API_VERSION } from '../src/winback/lib/stripe'
 
-async function main(): Promise<void> {
-  const key = process.env.STRIPE_SECRET_KEY
-  if (!key) throw new Error('STRIPE_SECRET_KEY env var is required')
-  const mode = key.startsWith('sk_live_') ? 'LIVE' : key.startsWith('sk_test_') ? 'TEST' : '???'
+function detectMode(key: string): 'LIVE' | 'TEST' | '???' {
+  if (key.startsWith('sk_live_') || key.startsWith('rk_live_')) return 'LIVE'
+  if (key.startsWith('sk_test_') || key.startsWith('rk_test_')) return 'TEST'
+  return '???'
+}
 
-  console.log(`Mode: ${mode}  (key prefix: ${key.slice(0, 9)}…)\n`)
+function resolveKey(): { key: string; varName: 'STRIPE_RESTRICTED_KEY' | 'STRIPE_SECRET_KEY' } {
+  const restricted = process.env.STRIPE_RESTRICTED_KEY
+  if (restricted) return { key: restricted, varName: 'STRIPE_RESTRICTED_KEY' }
+  const secret = process.env.STRIPE_SECRET_KEY
+  if (secret) return { key: secret, varName: 'STRIPE_SECRET_KEY' }
+  throw new Error('Neither STRIPE_RESTRICTED_KEY nor STRIPE_SECRET_KEY is set in env')
+}
+
+async function main(): Promise<void> {
+  const { key, varName } = resolveKey()
+  const mode = detectMode(key)
+
+  console.log(`Mode: ${mode}  (using ${varName}, prefix: ${key.slice(0, 9)}…)\n`)
 
   const stripe = new Stripe(key, { apiVersion: STRIPE_API_VERSION })
   const eps = await stripe.webhookEndpoints.list({ limit: 100 })
