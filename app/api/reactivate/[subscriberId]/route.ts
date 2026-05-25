@@ -124,7 +124,7 @@ export async function GET(
           if (appliedPromo) {
             try {
               await stripe.subscriptions.update(sub.id, {
-                discounts: [{ promotion_code: appliedPromo.stripePromotionCodeId }],
+                discounts: [{ promotion_code: appliedPromo.promo.stripePromotionCodeId }],
               })
             } catch (err) {
               console.warn('[reactivate] could not attach promotion on resume:', err)
@@ -133,7 +133,7 @@ export async function GET(
                 customerId: customer.id,
                 properties: {
                   subscriberId,
-                  stripePromotionCodeId: appliedPromo.stripePromotionCodeId,
+                  stripePromotionCodeId: appliedPromo.promo.stripePromotionCodeId,
                   context: 'resume',
                   errorMessage: err instanceof Error ? err.message : String(err),
                 },
@@ -148,6 +148,9 @@ export async function GET(
             newStripeSubId: sub.id,
             attributionType: 'strong',
             recoveryType: 'win_back',
+            // Spec 79 — attribution: which promotion drove this recovery.
+            // Null when the resume happened without a promo offer.
+            appliedImprovementId: appliedPromo?.improvementId ?? null,
           })
 
           await db
@@ -245,28 +248,63 @@ export async function GET(
     // Reach here when: 1 active price AND (matches saved OR subscriber has no saved price)
     const priceId = subscriber.stripePriceId ?? activePrices[0].id
 
-    const session = await stripe.checkout.sessions.create({
-      mode: 'subscription',
-      customer: subscriber.stripeCustomerId,
-      line_items: [{ price: priceId, quantity: 1 }],
-      // Spec 36 — pass winback customer id so /welcome-back can render
-      // the merchant's brand (not Winback's).
-      success_url: `${baseUrl}/welcome-back?recovered=true&customer=${customer.id}`,
-      cancel_url: `${baseUrl}/welcome-back?recovered=false&customer=${customer.id}`,
-      metadata: {
-        winback_subscriber_id: subscriberId,
-        winback_customer_id: customer.id,
-        // Spec 78 — surface the applied promo on the checkout completion
-        // webhook so processCheckoutRecovery can persist it on the recovery
-        // row when the new subscription is created.
-        ...(appliedPromo ? { winback_applied_promotion_code_id: appliedPromo.stripePromotionCodeId } : {}),
-      },
-      // Spec 78 — apply the promotion code on the resulting subscription.
-      // Stripe attaches it to the subscription created by the checkout
-      // session; the first invoice (and any subsequent invoices matching
-      // the coupon's `duration`) will reflect the discount.
-      ...(appliedPromo ? { discounts: [{ promotion_code: appliedPromo.stripePromotionCodeId }] } : {}),
-    })
+    // Spec 79 fail-soft — if Stripe rejects the discount (most commonly:
+    // the promo was deleted in Stripe between email send and click),
+    // retry without the promo so the customer still completes
+    // reactivation. Mirrors the resume path's existing graceful
+    // degradation at lines 124-142 above. The discount is a nice-to-have
+    // attached to a price-cancellation winback; we always prefer
+    // recovering the subscriber over rejecting them over an edge case.
+    function buildSessionParams(opts: { withPromo: boolean }): Stripe.Checkout.SessionCreateParams {
+      return {
+        mode: 'subscription',
+        customer: subscriber.stripeCustomerId,
+        line_items: [{ price: priceId, quantity: 1 }],
+        // Spec 36 — pass winback customer id so /welcome-back can render
+        // the merchant's brand (not Winback's).
+        success_url: `${baseUrl}/welcome-back?recovered=true&customer=${customer.id}`,
+        cancel_url: `${baseUrl}/welcome-back?recovered=false&customer=${customer.id}`,
+        metadata: {
+          winback_subscriber_id: subscriberId,
+          winback_customer_id: customer.id,
+          // Spec 78 — surface the applied promo on the checkout completion
+          // webhook so processCheckoutRecovery can persist it on the
+          // recovery row. Spec 79 adds the improvement id alongside so
+          // the FK is populated without a metadata lookup.
+          ...(opts.withPromo && appliedPromo ? {
+            winback_applied_promotion_code_id: appliedPromo.promo.stripePromotionCodeId,
+            winback_applied_improvement_id:    appliedPromo.improvementId,
+          } : {}),
+        },
+        // Spec 78 — apply the promotion code on the resulting subscription.
+        ...(opts.withPromo && appliedPromo
+          ? { discounts: [{ promotion_code: appliedPromo.promo.stripePromotionCodeId }] }
+          : {}),
+      }
+    }
+
+    let session: Stripe.Checkout.Session
+    try {
+      session = await stripe.checkout.sessions.create(buildSessionParams({ withPromo: true }))
+    } catch (promoErr) {
+      if (appliedPromo) {
+        console.warn('[reactivate] could not attach promotion at checkout-create, retrying without:',
+          promoErr instanceof Error ? promoErr.message : String(promoErr))
+        logEvent({
+          name: 'promo_attach_failed',
+          customerId: customer.id,
+          properties: {
+            subscriberId,
+            stripePromotionCodeId: appliedPromo.promo.stripePromotionCodeId,
+            context: 'direct_checkout',
+            errorMessage: promoErr instanceof Error ? promoErr.message : String(promoErr),
+          },
+        })
+        session = await stripe.checkout.sessions.create(buildSessionParams({ withPromo: false }))
+      } else {
+        throw promoErr
+      }
+    }
 
     return NextResponse.redirect(session.url!)
   } catch (err) {

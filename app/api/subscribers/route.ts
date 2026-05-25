@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { db } from '@/lib/db'
-import { customers, churnedSubscribers, emailsSent, recoveries, subscriberReplies } from '@/lib/schema'
+import { customers, churnedSubscribers, emailsSent, recoveries, subscriberReplies, improvements } from '@/lib/schema'
 import { eq, and, or, ilike, desc, isNull, ne, sql, count, inArray, isNotNull, getTableColumns } from 'drizzle-orm'
 import { aiStateFilterCondition, isValidAiStateFilter, awaitingReplyExpr } from '@/lib/ai-state'
+import { formatPromotionChip, WbPromotionMetadataSchema } from '@/src/winback/lib/promotions'
 
 const DUNNING_REASON = 'Payment failed'
 
@@ -179,13 +180,41 @@ export async function GET(req: NextRequest) {
       .where(where),
   ])
 
-  // Billing-rewrite: applied-promotion chip removed alongside the
-  // perf-fee promo path. The applied_promotion_code_id column on
-  // wb_recoveries was dropped. If we add platform-side or merchant-side
-  // promo display later, build a fresh lookup — don't resurrect the join.
+  // Spec 79 — applied-promotion chip. Bulk-join the most recent recovery
+  // per subscriber (on the current page) to wb_improvements to get the
+  // promo metadata, then format the chip. Subscribers without a
+  // promo-driven recovery get null. Done as one query against the page
+  // size, not N+1.
+  const subscriberIds = rows.map((r) => r.id)
+  const chipBySubscriberId = new Map<string, string>()
+  if (subscriberIds.length > 0) {
+    const promoRows = await db
+      .select({
+        subscriberId:      recoveries.subscriberId,
+        recoveredAt:       recoveries.recoveredAt,
+        promotionMetadata: improvements.promotionMetadata,
+      })
+      .from(recoveries)
+      .innerJoin(improvements, eq(improvements.id, recoveries.appliedImprovementId))
+      .where(and(
+        inArray(recoveries.subscriberId, subscriberIds),
+        isNotNull(recoveries.appliedImprovementId),
+      ))
+      .orderBy(desc(recoveries.recoveredAt))
+
+    // Keep only the most recent promo per subscriber (rows come pre-
+    // sorted desc, so first write wins).
+    for (const row of promoRows) {
+      if (chipBySubscriberId.has(row.subscriberId)) continue
+      const parsed = WbPromotionMetadataSchema.safeParse(row.promotionMetadata)
+      if (!parsed.success) continue
+      chipBySubscriberId.set(row.subscriberId, formatPromotionChip(parsed.data))
+    }
+  }
+
   const rowsWithPromo = rows.map((r) => ({
     ...r,
-    appliedPromotionChip: null as string | null,
+    appliedPromotionChip: chipBySubscriberId.get(r.id) ?? null,
   }))
 
   return NextResponse.json({

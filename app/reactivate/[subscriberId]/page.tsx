@@ -145,9 +145,9 @@ export default async function ReactivateChooserPage({
               Discount applied
             </div>
             <div className="mt-1 text-sm text-emerald-900">
-              <span className="font-mono">{appliedPromo.code}</span>
+              <span className="font-mono">{appliedPromo.promo.code}</span>
               {' · '}
-              {formatPromotionTerms(appliedPromo)}
+              {formatPromotionTerms(appliedPromo.promo)}
             </div>
             <div className="mt-1 text-xs text-emerald-700/80">
               Automatically applied at checkout.

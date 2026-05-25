@@ -28,6 +28,10 @@ export interface PromotionView {
   stripeAccountId:        string | null
   winbackChecks:          string[]       // restrictions we DO enforce per-subscriber
   merchantVerifies:       string[]       // restrictions we DON'T enforce — merchant problem
+  // Spec 79 — trailing 30d attribution. Zero when the promo has driven
+  // no recoveries; UI shows a "Drove X recoveries / $Y MRR" line otherwise.
+  recoveries30dCount:     number
+  recoveries30dMrrCents:  number
 }
 
 function StripeLink({ accountId, promotionCodeId }: { accountId: string | null; promotionCodeId: string }) {
@@ -168,8 +172,20 @@ export function PromotionsSection({
         </button>
       </div>
 
+      {/* Spec 79 — rule disclosure. Surfaces the hardcoded matcher
+          conditions (tier=1 + Price category) so merchants understand
+          what they're enabling, not what they might assume. */}
+      <div className="mt-5 rounded-xl border border-blue-100 bg-blue-50/50 px-4 py-3 text-xs text-slate-700 leading-relaxed">
+        Offered only to your <strong>top-tier subscribers</strong> whose
+        cancellation reason was <strong>price-related</strong>. Each promo
+        passes four real-time Stripe checks before it&rsquo;s sent (active,
+        not past redeem-by, redemption cap not hit, applies to the
+        subscriber&rsquo;s plan). Stripe makes the final eligibility call at
+        checkout.
+      </div>
+
       {/* Toggle row */}
-      <div className="mt-5 flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50 px-4 py-3">
+      <div className="mt-3 flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50 px-4 py-3">
         <div>
           <div className="text-sm font-medium text-slate-900">Send promo emails to price-cancellers</div>
           <div className="text-xs text-slate-500 mt-0.5">
@@ -259,57 +275,41 @@ export function PromotionsSection({
                     </span>
                   </div>
 
-                  <div className="mt-2 grid grid-cols-2 gap-3 text-xs">
-                    <div>
-                      <div className="font-semibold text-emerald-700 uppercase tracking-wide text-[10px]">
-                        Winback checks
-                      </div>
-                      <ul className="mt-1 text-slate-600 space-y-0.5">
-                        {p.winbackChecks.map((c) => (
-                          <li key={c}>· {c}</li>
-                        ))}
-                      </ul>
+                  {/* Spec 79 — per-code 30d attribution. Only renders
+                      when this code has driven at least one recovery
+                      so unproven codes don't show a noisy "0 recoveries". */}
+                  {p.recoveries30dCount > 0 && (
+                    <div className="mt-1.5 text-xs text-emerald-700">
+                      Drove <strong>{p.recoveries30dCount}</strong>{' '}
+                      recover{p.recoveries30dCount === 1 ? 'y' : 'ies'} /{' '}
+                      <strong>${(p.recoveries30dMrrCents / 100).toLocaleString(undefined, { maximumFractionDigits: 0 })} MRR</strong>{' '}
+                      in the last 30 days.
                     </div>
-                    <div>
-                      <div className="font-semibold text-amber-700 uppercase tracking-wide text-[10px]">
-                        You verify
-                      </div>
-                      {p.merchantVerifies.length === 0 ? (
-                        <div className="mt-1 text-slate-400 italic">— none —</div>
-                      ) : (
-                        <ul className="mt-1 text-slate-600 space-y-0.5">
-                          {p.merchantVerifies.map((c) => (
-                            <li key={c}>· {c}</li>
-                          ))}
-                        </ul>
-                      )}
+                  )}
+
+                  {/* Spec 79 — inline restrictions warning, only when
+                      this promo has rules Stripe will enforce at checkout
+                      that we don't pre-check (first_time_transaction,
+                      minimum_amount, etc.). Silent otherwise. The two-
+                      column "Winback checks / You verify" grid was
+                      removed: the green column duplicated the rule-
+                      disclosure subtitle above, and "You verify"
+                      mislabelled what Stripe (not the merchant) actually
+                      enforces. */}
+                  {p.merchantVerifies.length > 0 && (
+                    <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                      <strong>Heads up.</strong> Stripe will also enforce
+                      these at checkout, so a subscriber who doesn&rsquo;t
+                      meet them will see a Stripe rejection on the
+                      reactivation page: {p.merchantVerifies.join('; ')}.
                     </div>
-                  </div>
+                  )}
                 </div>
               </label>
             )
           })}
         </div>
       )}
-
-      <div className="mt-5 p-4 bg-blue-50 border border-blue-100 rounded-xl text-xs text-blue-900 leading-relaxed">
-        <strong>How it works.</strong> Winback only emails the promo above when{' '}
-        the toggle is on AND the subscriber cancelled for price AND the four
-        Winback-checked restrictions pass. Restrictions under <em>You verify</em>{' '}
-        are evaluated by Stripe at click time — if a subscriber doesn&apos;t
-        meet them, they&apos;ll see a Stripe error on the reactivation page.
-        Pick a promo whose restrictions match the audience you want to reach.
-      </div>
-
-      <div className="mt-3 p-4 bg-slate-50 border border-slate-100 rounded-xl text-xs text-slate-600 leading-relaxed">
-        <strong>About our fee.</strong> Winback&apos;s 1× recovery fee is
-        charged on the customer&apos;s first paid invoice after they
-        reactivate — so promos reduce both the customer&apos;s payment and
-        our fee in lockstep.{' '}
-        <a href="/settings#billing" className="underline hover:text-slate-900">
-          Billing details ↗
-        </a>
-      </div>
 
       {/* Confirm dialog for promos with uncovered restrictions */}
       {pendingConfirm && (

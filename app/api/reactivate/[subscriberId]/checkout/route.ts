@@ -75,8 +75,13 @@ export async function POST(
   // discount the merchant promised in the email.
   const appliedPromo = await loadAppliedPromotionForSubscriber(subscriberId)
 
-  try {
-    const session = await stripe.checkout.sessions.create({
+  // Spec 79 fail-soft — if Stripe rejects the discount at session-create
+  // time (promo deleted between email send and click, or any future gate
+  // change we don't pre-check), retry without discounts rather than
+  // 500ing. Matches the resume path's existing graceful-degradation
+  // pattern in app/api/reactivate/[subscriberId]/route.ts.
+  function buildSessionParams(opts: { withPromo: boolean }): Stripe.Checkout.SessionCreateParams {
+    return {
       mode: 'subscription',
       customer: subscriber.stripeCustomerId,
       line_items: [{ price: priceId, quantity: 1 }],
@@ -87,10 +92,45 @@ export async function POST(
       metadata: {
         winback_subscriber_id: subscriberId,
         winback_customer_id: customer.id,
-        ...(appliedPromo ? { winback_applied_promotion_code_id: appliedPromo.stripePromotionCodeId } : {}),
+        // Spec 79 — also surface the improvement id so the checkout
+        // recovery handler can stamp applied_improvement_id directly.
+        ...(opts.withPromo && appliedPromo ? {
+          winback_applied_promotion_code_id: appliedPromo.promo.stripePromotionCodeId,
+          winback_applied_improvement_id:    appliedPromo.improvementId,
+        } : {}),
       },
-      ...(appliedPromo ? { discounts: [{ promotion_code: appliedPromo.stripePromotionCodeId }] } : {}),
-    })
+      ...(opts.withPromo && appliedPromo
+        ? { discounts: [{ promotion_code: appliedPromo.promo.stripePromotionCodeId }] }
+        : {}),
+    }
+  }
+
+  try {
+    let session: Stripe.Checkout.Session
+    try {
+      session = await stripe.checkout.sessions.create(buildSessionParams({ withPromo: true }))
+    } catch (promoErr) {
+      // Stripe rejected the discount (most commonly: promo was deleted
+      // in Stripe after the email went out). Log + retry without it so
+      // the customer still gets to reactivate, just at full price.
+      if (appliedPromo) {
+        console.warn('[reactivate-checkout] could not attach promotion, retrying without:',
+          promoErr instanceof Error ? promoErr.message : String(promoErr))
+        logEvent({
+          name: 'promo_attach_failed',
+          customerId: customer.id,
+          properties: {
+            subscriberId,
+            stripePromotionCodeId: appliedPromo.promo.stripePromotionCodeId,
+            context: 'chooser_checkout',
+            errorMessage: promoErr instanceof Error ? promoErr.message : String(promoErr),
+          },
+        })
+        session = await stripe.checkout.sessions.create(buildSessionParams({ withPromo: false }))
+      } else {
+        throw promoErr
+      }
+    }
 
     logEvent({
       name: 'reactivate_checkout_started',

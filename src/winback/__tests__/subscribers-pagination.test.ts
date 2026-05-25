@@ -45,12 +45,17 @@ vi.mock('@/lib/schema', () => ({
     body:         'body',
     receivedAt:   'received_at',
   },
-  // Spec 78 — referenced by the applied-promotion-chip lookup added
-  // after the main SELECT/COUNT. The test mock just needs symbolic
-  // identifiers; the chain is fully mocked via selectChain.
+  // Spec 78 / 79 — referenced by the applied-promotion-chip lookup
+  // added after the main SELECT/COUNT. The test mock just needs
+  // symbolic identifiers; the chain is fully mocked via selectChain.
+  // Spec 79 renamed the recovery→improvement FK from
+  // applied_promotion_code_id (dropped in 051) to applied_improvement_id
+  // (added in 053) — keeping the mock current.
   recoveries: {
-    subscriberId:           'subscriber_id',
-    appliedPromotionCodeId: 'applied_promotion_code_id',
+    subscriberId:         'subscriber_id',
+    recoveredAt:          'recovered_at',
+    planMrrCents:         'plan_mrr_cents',
+    appliedImprovementId: 'applied_improvement_id',
   },
   improvements: {
     id:                'id',
@@ -95,23 +100,26 @@ import { GET } from '@/app/api/subscribers/route'
 
 // Drizzle chain helper. SELECT chain: from → where → orderBy → limit → offset
 // (terminal, awaitable). COUNT chain: from → where (terminal, awaitable).
-// Spec 78 — promo-lookup chain adds .leftJoin between .from and .where.
+// Spec 78/79 — promo-lookup chain adds .leftJoin (spec 78) / .innerJoin
+// (spec 79's chip lookup) between .from and .where.
 function selectChain(rows: unknown[]) {
-  const step: { then: unknown; orderBy: unknown; limit: unknown; offset: unknown; from: unknown; where: unknown; leftJoin: unknown } = {
+  const step: { then: unknown; orderBy: unknown; limit: unknown; offset: unknown; from: unknown; where: unknown; leftJoin: unknown; innerJoin: unknown } = {
     then: (resolve: (v: unknown[]) => unknown) => Promise.resolve(rows).then(resolve),
-    orderBy:  vi.fn(),
-    limit:    vi.fn(),
-    offset:   vi.fn(),
-    from:     vi.fn(),
-    where:    vi.fn(),
-    leftJoin: vi.fn(),
+    orderBy:   vi.fn(),
+    limit:     vi.fn(),
+    offset:    vi.fn(),
+    from:      vi.fn(),
+    where:     vi.fn(),
+    leftJoin:  vi.fn(),
+    innerJoin: vi.fn(),
   }
-  ;(step.orderBy  as ReturnType<typeof vi.fn>).mockReturnValue(step)
-  ;(step.limit    as ReturnType<typeof vi.fn>).mockReturnValue(step)
-  ;(step.offset   as ReturnType<typeof vi.fn>).mockReturnValue(step)
-  ;(step.from     as ReturnType<typeof vi.fn>).mockReturnValue(step)
-  ;(step.where    as ReturnType<typeof vi.fn>).mockReturnValue(step)
-  ;(step.leftJoin as ReturnType<typeof vi.fn>).mockReturnValue(step)
+  ;(step.orderBy   as ReturnType<typeof vi.fn>).mockReturnValue(step)
+  ;(step.limit     as ReturnType<typeof vi.fn>).mockReturnValue(step)
+  ;(step.offset    as ReturnType<typeof vi.fn>).mockReturnValue(step)
+  ;(step.from      as ReturnType<typeof vi.fn>).mockReturnValue(step)
+  ;(step.where     as ReturnType<typeof vi.fn>).mockReturnValue(step)
+  ;(step.leftJoin  as ReturnType<typeof vi.fn>).mockReturnValue(step)
+  ;(step.innerJoin as ReturnType<typeof vi.fn>).mockReturnValue(step)
   return step
 }
 

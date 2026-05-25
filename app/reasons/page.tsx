@@ -17,8 +17,8 @@ function toIsoDateTime(v: unknown): string {
 }
 
 import { db } from '@/lib/db'
-import { customers, improvements, improvementMatches, churnedSubscribers, cancellationThemes } from '@/lib/schema'
-import { and, eq, desc, sql, gte, isNotNull, min, count } from 'drizzle-orm'
+import { customers, improvements, improvementMatches, churnedSubscribers, cancellationThemes, recoveries } from '@/lib/schema'
+import { and, eq, desc, sql, gte, isNotNull, min, count, inArray } from 'drizzle-orm'
 import { TopNav } from '@/components/top-nav'
 import { ImpersonationBanner } from '@/components/impersonation-banner'
 import { ReasonsTabs } from './reasons-tabs'
@@ -98,12 +98,43 @@ export default async function ReasonsPage() {
     .groupBy(improvements.id)
     .orderBy(desc(improvements.createdAt))
 
+  // Spec 79 — per-code 30d recovery metric. One bulk query against the
+  // full set of promotion improvement IDs, grouped by improvement.
+  // Returns count + MRR sum for each; null when zero. Used to render
+  // "Drove X recoveries / $Y MRR (30d)" under each promo option.
+  const promoImprovementIds = promotionRowsRaw.map((r) => r.id)
+  const recoveryMetricByImprovementId = new Map<string, { count: number; mrrCents: number }>()
+  if (promoImprovementIds.length > 0) {
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+    const metricRows = await db
+      .select({
+        improvementId: recoveries.appliedImprovementId,
+        recoveryCount: count(),
+        mrrCents:      sql<number>`COALESCE(SUM(${recoveries.planMrrCents}), 0)::int`,
+      })
+      .from(recoveries)
+      .where(and(
+        inArray(recoveries.appliedImprovementId, promoImprovementIds),
+        gte(recoveries.recoveredAt, thirtyDaysAgo),
+      ))
+      .groupBy(recoveries.appliedImprovementId)
+
+    for (const row of metricRows) {
+      if (!row.improvementId) continue
+      recoveryMetricByImprovementId.set(row.improvementId, {
+        count: Number(row.recoveryCount),
+        mrrCents: row.mrrCents,
+      })
+    }
+  }
+
   const promotionViews: PromotionView[] = []
   for (const row of promotionRowsRaw) {
     const parsed = WbPromotionMetadataSchema.safeParse(row.promotionMetadata)
     if (!parsed.success) continue
     const m = parsed.data
     const { winbackChecks, merchantVerifies } = describePromotionRestrictions(m)
+    const metric = recoveryMetricByImprovementId.get(row.id) ?? null
     promotionViews.push({
       id:           row.id,
       code:         m.code,
@@ -114,6 +145,8 @@ export default async function ReasonsPage() {
       stripeAccountId: customer.stripeAccountId,
       winbackChecks,
       merchantVerifies,
+      recoveries30dCount:    metric?.count ?? 0,
+      recoveries30dMrrCents: metric?.mrrCents ?? 0,
     })
   }
 

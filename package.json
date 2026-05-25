@@ -13,6 +13,7 @@
     "prompts:smoke": "tsx --env-file=.env.local scripts/smoke-prompts.ts",
     "emails:preview": "tsx scripts/preview-emails.ts && open /tmp/email-previews/index.html",
     "cancel:test": "tsx --env-file=.env.local scripts/test-cancellation-e2e.ts",
+    "promo:e2e": "tsx --env-file=.env.local scripts/test-promo-e2e.ts",
     "dev:webhook": "tsx --env-file=.env.local scripts/dev-webhook.ts",
     "dev:webhook:on": "tsx --env-file=.env.local scripts/dev-webhook.ts on",
     "dev:webhook:off": "tsx --env-file=.env.local scripts/dev-webhook.ts off",
