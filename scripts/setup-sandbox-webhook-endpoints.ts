@@ -36,6 +36,13 @@ const CONNECT_EVENTS = [
   'checkout.session.completed',
   'invoice.payment_failed',
   'invoice.payment_succeeded',
+  // Spec 79 — promo auto-sync. Webhook handlers in
+  // app/api/stripe/webhook/route.ts mirror merchant Stripe edits into
+  // wb_improvements so /reasons stays current without manual refresh.
+  'promotion_code.created',
+  'promotion_code.updated',
+  'coupon.updated',
+  'coupon.deleted',
 ]
 
 const ACCOUNT_EVENTS = [
