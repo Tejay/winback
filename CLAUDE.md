@@ -60,6 +60,23 @@ If a commit accidentally lands on `main`, the recovery is:
 roll local main back → `git switch <name>` → push the branch normally.
 The remote `main` is untouched as long as no push happened.
 
+**Always delete branches after merge.** When merging a PR:
+
+1. Use `gh pr merge <n> --squash --delete-branch` — the
+   `--delete-branch` flag removes the remote branch *and* the local
+   tracking branch in one shot.
+2. After every merge, run `git switch main && git fetch --prune` to
+   pull main forward and prune any other stale remote refs.
+3. If a local branch survives the prune (you had work on it but never
+   pushed, or pushed under a different name), delete it explicitly
+   with `git branch -D <name>` after confirming the commits are
+   already on `main`.
+
+Never leave merged-PR branches hanging around — they accumulate, get
+confused with active work, and the next session inherits the mess.
+Open PRs with abandoned branches are different: those are decisions
+to make, not housekeeping to do.
+
 ---
 
 ## Project state
