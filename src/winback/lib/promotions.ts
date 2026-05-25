@@ -467,12 +467,18 @@ export async function loadAppliedPromotionForSubscriber(
   const [imp] = await db
     .select({
       kind:     improvements.kind,
+      status:   improvements.status,
       metadata: improvements.promotionMetadata,
     })
     .from(improvements)
     .where(eq(improvements.id, latest.improvementId))
     .limit(1)
   if (!imp || imp.kind !== 'promotion') return null
+  // Spec 79 — archived improvements never get attached, regardless of
+  // what the cached metadata.active flag says. Archive can happen via
+  // webhook (coupon.deleted) or manual sync's reap pass, and neither
+  // touches the JSON blob — status is the truth.
+  if (imp.status === 'archived') return null
 
   const parsed = WbPromotionMetadataSchema.safeParse(imp.metadata)
   if (!parsed.success) return null
