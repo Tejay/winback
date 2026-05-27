@@ -5,6 +5,9 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { StatusBadge } from '@/components/status-badge'
 import { Pagination } from '@/components/pagination'
+import { SendPromoModal } from './promo/send-promo-modal'
+import { SendPromoBulkModal } from './promo/send-promo-bulk-modal'
+import type { PromoOption } from './promo/promo-dropdown'
 import { TrendingUp, CheckCircle, DollarSign, Users, Search, Zap, X, RotateCcw, Check, Loader2, Sparkles, MessageSquare, CreditCard, ChevronRight, ChevronDown, Copy, Mail, Send } from 'lucide-react'
 
 interface Subscriber {
@@ -62,6 +65,11 @@ interface Subscriber {
   // in /api/subscribers from recoveries.appliedPromotionCodeId joined
   // to the promotion's wb_improvements row.
   appliedPromotionChip?: string | null
+  // Spec 80 — subscriber's Stripe price id, used client-side by the
+  // send-promo modal to pre-check which promos pass the
+  // appliesToPriceIds gate (so the dropdown can grey out incompatible
+  // promos before the merchant clicks send).
+  stripePriceId?: string | null
   // Drawer redesign — the subscriber's most-recent inbound reply (shown
   // inline on awaiting rows) + whether the ball is in the founder's court.
   latestReplySnippet?: string | null
@@ -230,6 +238,14 @@ interface DashboardClientProps {
    *  no dunning / dunning-followup emails go out. Independent of
    *  the win-back pause — both can be active. */
   manuallyPausedDunningAtIso?: string | null
+  /** Spec 80 — list of merchant's published promotion improvements
+   *  for the drawer "Send promo offer" modal. Empty array hides the
+   *  action button. */
+  promoOptions?: PromoOption[]
+  /** Spec 80 — master promotions toggle. When false, the "Send promo
+   *  offer" button is hidden regardless of how many promos are
+   *  synced. */
+  promotionsEnabled?: boolean
 }
 
 export function DashboardClient({
@@ -245,6 +261,8 @@ export function DashboardClient({
   everSubscribed = false,
   manuallyPausedWinbackAtIso = null,
   manuallyPausedDunningAtIso = null,
+  promoOptions = [],
+  promotionsEnabled = false,
 }: DashboardClientProps) {
   const [stats, setStats] = useState<Stats>(EMPTY_STATS)
   // Spec 52 — `null` means "first fetch hasn't completed yet"; `[]` means
@@ -280,6 +298,13 @@ export function DashboardClient({
   const search = tab === 'winback' ? winbackSearch : paymentSearch
   const setSearch = tab === 'winback' ? setWinbackSearch : setPaymentSearch
   const [selected, setSelected] = useState<Subscriber | null>(null)
+  // Spec 80 — multi-select for the bulk-send flow. Stored as a Set of
+  // subscriber ids. Resets to empty whenever the visible page changes
+  // (filter / page / tab) so stale off-page selections don't get bulk-
+  // sent to. Reset effect lives further down with the other dep-driven
+  // resets.
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [bulkPromoModalOpen, setBulkPromoModalOpen] = useState(false)
   const [conversation, setConversation] = useState<ConversationMessage[] | null>(null)
   const [conversationLoading, setConversationLoading] = useState(false)
   const [expandedMessageIds, setExpandedMessageIds] = useState<Set<string>>(new Set())
@@ -289,6 +314,11 @@ export function DashboardClient({
     setExpandedMessageIds(new Set())
     setDetailsOpen(false)
   }, [selected?.id])
+
+  // Spec 80 — clear bulk selection whenever the visible cohort changes
+  // (filter / page / tab / search). Off-page rows shouldn't end up in
+  // a bulk send the merchant can no longer see.
+  useEffect(() => { setSelectedIds(new Set()) }, [tab, filter, search, page])
 
   useEffect(() => {
     if (!selected?.id) {
@@ -537,6 +567,11 @@ export function DashboardClient({
     window.location.href = '/billing/activate'
   }
 
+  // Spec 80 — drawer "Send promo offer" modal state. Open when the
+  // merchant clicks the action button on a churned subscriber drawer.
+  // Modal owns its own form state; this just tracks visibility.
+  const [promoModalOpen, setPromoModalOpen] = useState(false)
+
   // Drawer redesign — founder reply composer. 500-char Zod-enforced on
   // the server. On success, append the new outbound to the conversation
   // optimistically so the drawer reflects it before the refetch lands.
@@ -598,6 +633,10 @@ export function DashboardClient({
     { key: 'all',       label: 'All' },
     { key: 'awaiting',  label: 'Awaiting reply' },
     { key: 'high',      label: 'High recovery' },
+    // Spec 80 — surfaces the natural cohort for bulk promo sends.
+    // Multi-select + "Send promo offer →" turns this into a
+    // cohort-targeting workflow.
+    { key: 'price',     label: 'Price cancellations' },
     { key: 'recovered', label: 'Recovered' },
     { key: 'done',      label: 'Done' },
   ]
@@ -984,12 +1023,60 @@ export function DashboardClient({
         </div>
       </div>
 
+      {/* Spec 80 — bulk action bar. Appears the moment any subscriber
+          row is checked. Only on the win-back tab + when promotions
+          are enabled — the payment-recovery cohort doesn't have a
+          promo flow. */}
+      {tab === 'winback' && promotionsEnabled && promoOptions.length > 0 && selectedIds.size > 0 && (
+        <div className="mb-4 flex items-center justify-between rounded-xl bg-blue-50 border border-blue-200 px-4 py-2.5">
+          <div className="flex items-center gap-3 text-sm text-blue-900">
+            <span className="font-semibold tabular-nums">{selectedIds.size}</span>
+            <span>selected</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setSelectedIds(new Set())}
+              className="text-blue-700 hover:text-blue-900 text-sm font-medium px-3 py-1"
+            >
+              Clear
+            </button>
+            <button
+              onClick={() => setBulkPromoModalOpen(true)}
+              className="bg-blue-600 hover:bg-blue-700 text-white rounded-full text-sm font-medium px-4 py-1.5"
+            >
+              Send promo offer →
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Subscriber table — per-tab columns + interaction model */}
       {tab === 'winback' ? (
         <div className="bg-white rounded-2xl border border-slate-100 overflow-x-auto shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
           <table className="w-full">
             <thead>
               <tr className="bg-slate-50/60 border-b border-slate-100">
+                {/* Spec 80 — bulk-select column. Header checkbox
+                    toggles all visible rows. Only renders on win-back
+                    + when promotions are enabled (no point on the
+                    payment-recovery cohort). */}
+                {tab === 'winback' && promotionsEnabled && promoOptions.length > 0 && (
+                  <th className="py-3 pl-4 pr-2 w-[34px]">
+                    <input
+                      type="checkbox"
+                      aria-label="Select all visible"
+                      className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                      checked={!!subscribers && subscribers.length > 0 && subscribers.every((s) => selectedIds.has(s.id))}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setSelectedIds(new Set(subscribers?.map((s) => s.id) ?? []))
+                        } else {
+                          setSelectedIds(new Set())
+                        }
+                      }}
+                    />
+                  </th>
+                )}
                 <th className="text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400 py-3 pl-5 pr-4">Subscriber</th>
                 <th className="hidden lg:table-cell text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400 py-3 px-4">Plan</th>
                 <th className="hidden sm:table-cell text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400 py-3 px-4">Cancelled</th>
@@ -1012,8 +1099,30 @@ export function DashboardClient({
                 <tr
                   key={sub.id}
                   onClick={() => setSelected(sub)}
-                  className="hover:bg-slate-50/70 cursor-pointer transition-colors"
+                  className={`hover:bg-slate-50/70 cursor-pointer transition-colors ${
+                    selectedIds.has(sub.id) ? 'bg-blue-50/40' : ''
+                  }`}
                 >
+                  {/* Spec 80 — per-row bulk-select checkbox. stopPropagation
+                      so checkbox clicks don't bubble up to the row-level
+                      onClick (which would open the drawer). */}
+                  {tab === 'winback' && promotionsEnabled && promoOptions.length > 0 && (
+                    <td className="py-3.5 pl-4 pr-2 w-[34px]" onClick={(e) => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        aria-label={`Select ${sub.name ?? sub.email ?? 'subscriber'}`}
+                        className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                        checked={selectedIds.has(sub.id)}
+                        onChange={(e) => {
+                          setSelectedIds((prev) => {
+                            const next = new Set(prev)
+                            if (e.target.checked) next.add(sub.id); else next.delete(sub.id)
+                            return next
+                          })
+                        }}
+                      />
+                    </td>
+                  )}
                   <td className="py-3.5 pl-3 pr-4">
                     <div className="flex items-center gap-2.5">
                       {/* Unread-style dot — marks "the ball's in your court"
@@ -1180,6 +1289,22 @@ export function DashboardClient({
                 </div>
               </div>
             </div>
+
+            {/* Block 2: Spec 80 — manual promo offer action. Hidden when
+                the master promotions toggle is off OR no promos are
+                synced — both states make the action a no-op. Always
+                available regardless of auto-mode (VIP override). */}
+            {promotionsEnabled && promoOptions.length > 0 && (
+              <div className="px-5 py-3 border-t border-slate-100">
+                <button
+                  onClick={() => setPromoModalOpen(true)}
+                  className="w-full inline-flex items-center justify-center gap-2 text-sm font-medium text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 rounded-lg py-2 transition-colors"
+                >
+                  <DollarSign className="w-4 h-4" />
+                  Send promo offer
+                </button>
+              </div>
+            )}
 
             {/* Block 3: AI insight — Read + Worth knowing */}
             {hasInsight && (
@@ -1452,6 +1577,63 @@ export function DashboardClient({
         </>
         )
       })()}
+
+      {/* Spec 80 — manual promo modal. Rendered at the root so it
+          floats above the drawer rather than inside it. Reads
+          selected subscriber from parent state; modal owns its own
+          form. */}
+      {selected && (
+        <SendPromoModal
+          open={promoModalOpen}
+          subscriber={{
+            id:                 selected.id,
+            name:               selected.name,
+            email:              selected.email,
+            daysSinceCancel:    selected.cancelledAt
+              ? Math.floor((Date.now() - new Date(selected.cancelledAt).getTime()) / (1000 * 60 * 60 * 24))
+              : null,
+            planLabel:          `$${(selected.mrrCents / 100).toFixed(0)}/mo`,
+            stripePriceId:      selected.stripePriceId ?? null,
+            cancellationReason: selected.cancellationReason ?? null,
+          }}
+          promos={promoOptions}
+          onClose={() => setPromoModalOpen(false)}
+          onSent={() => {
+            // Refresh the subscriber list so the recently-contacted
+            // status flips and any chip eventually shows.
+            fetchData()
+          }}
+        />
+      )}
+
+      {/* Spec 80 — bulk send-promo modal. Opens from the blue action
+          bar when the merchant has selected one or more subscribers
+          in the table. Looks them up by id from the current page's
+          subscribers state. */}
+      <SendPromoBulkModal
+        open={bulkPromoModalOpen}
+        subscribers={(subscribers ?? [])
+          .filter((s) => selectedIds.has(s.id))
+          .map((s) => ({
+            id:            s.id,
+            name:          s.name,
+            email:         s.email,
+            mrrCents:      s.mrrCents,
+            stripePriceId: s.stripePriceId ?? null,
+          }))}
+        promos={promoOptions}
+        onClose={() => {
+          setBulkPromoModalOpen(false)
+          // Clear selection after the modal closes so re-opening
+          // doesn't show stale results.
+          setSelectedIds(new Set())
+        }}
+        onComplete={() => {
+          // Refresh the subscriber list so anyone newly 'contacted'
+          // reflects the bulk send.
+          fetchData()
+        }}
+      />
 
     </>
   )

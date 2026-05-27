@@ -13,11 +13,16 @@ import { logEvent } from '@/src/winback/lib/events'
  * round-trips when the merchant turns promos on for the first time and
  * picks one in the same flow.
  *
- * Body shape: { enabled?: boolean, selectedPromotionImprovementId?: string | null }
- *   - enabled: flips the toggle. Off = no promo emails regardless of selection.
+ * Body shape: { enabled?, selectedPromotionImprovementId?, autoModeEnabled? }
+ *   - enabled: flips the master toggle. Off = no promo emails at all.
  *   - selectedPromotionImprovementId: id of a published kind='promotion'
  *     improvement owned by this customer, or null to clear. We verify
  *     ownership before writing.
+ *   - autoModeEnabled: Spec 80. TRUE = matcher fires automatically for
+ *     tier-1 + Price cancellations. FALSE = manual mode (new default);
+ *     merchant sends per-subscriber via drawer or bulk modal on
+ *     /dashboard. Independent of `enabled` — both must be true for
+ *     the matcher path to fire.
  *
  * Path kept at /api/customer/promotions-enabled for backward compatibility
  * with the now-removed /settings toggle; the field is just the body shape.
@@ -25,9 +30,12 @@ import { logEvent } from '@/src/winback/lib/events'
 const Body = z.object({
   enabled:                          z.boolean().optional(),
   selectedPromotionImprovementId:   z.string().uuid().nullable().optional(),
+  autoModeEnabled:                  z.boolean().optional(),
 }).refine(
-  (b) => b.enabled !== undefined || b.selectedPromotionImprovementId !== undefined,
-  { message: 'must supply enabled or selectedPromotionImprovementId' },
+  (b) => b.enabled !== undefined
+      || b.selectedPromotionImprovementId !== undefined
+      || b.autoModeEnabled !== undefined,
+  { message: 'must supply enabled, selectedPromotionImprovementId, or autoModeEnabled' },
 )
 
 export async function PATCH(req: Request) {
@@ -78,6 +86,9 @@ export async function PATCH(req: Request) {
   if (parsed.data.selectedPromotionImprovementId !== undefined) {
     update.selectedPromotionImprovementId = parsed.data.selectedPromotionImprovementId
   }
+  if (parsed.data.autoModeEnabled !== undefined) {
+    update.promoAutoModeEnabled = parsed.data.autoModeEnabled
+  }
 
   await db.update(customers).set(update).where(eq(customers.id, customer.id))
 
@@ -87,6 +98,7 @@ export async function PATCH(req: Request) {
     properties: {
       enabled:                        parsed.data.enabled,
       selectedPromotionImprovementId: parsed.data.selectedPromotionImprovementId,
+      autoModeEnabled:                parsed.data.autoModeEnabled,
     },
   })
 

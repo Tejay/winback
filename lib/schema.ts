@@ -84,6 +84,16 @@ export const customers = pgTable('wb_customers', {
   // promotionsEnabled is true. Migration 046.
   selectedPromotionImprovementId: uuid('selected_promotion_improvement_id')
     .references((): AnyPgColumn => improvements.id, { onDelete: 'set null' }),
+  // Spec 80 — whether the automatic-matcher promo path is enabled.
+  // FALSE (default) = manual mode: matcher's tryPromotionPath
+  // short-circuits, merchants send via drawer or bulk on /dashboard.
+  // TRUE = today's behavior, matcher fires when subscriber matches
+  // tier=1 + Price + 4 Stripe gates. Migration 054 backfilled TRUE
+  // for any existing merchant with promotions_enabled=TRUE to
+  // preserve behavior. The drawer/bulk send actions remain
+  // available regardless of this flag (so auto-mode merchants can
+  // still VIP-override).
+  promoAutoModeEnabled:     boolean('promo_auto_mode_enabled').notNull().default(false),
   // Spec 41 — cumulative lifetime revenue saved across all this customer's
   // recoveries. Cached value: written daily by /api/cron/cumulative-revenue
   // and read directly by /api/stats. BIGINT because mrr × months at high
@@ -244,6 +254,15 @@ export const emailsSent = pgTable('wb_emails_sent', {
   // Spec 65 — links re-engagement emails to the improvement that triggered
   // them. NULL for non-re-engagement emails. Migration 039.
   improvementId:  uuid('improvement_id'),
+  // Spec 80 — audit trail for promo sends. 'automatic' = matcher-fired
+  // (today's only path before spec 80), 'manual' = merchant clicked
+  // the send-promo button. NULL on legacy rows is treated as
+  // 'automatic' (backfill at migration time). Migration 054.
+  source:         text('source'),
+  // Spec 80 — for 'source=manual' rows, the user who clicked send.
+  // NULL for automatic. ON DELETE SET NULL so deleting a user doesn't
+  // wipe their email history.
+  sentByUserId:   uuid('sent_by_user_id').references(() => users.id, { onDelete: 'set null' }),
 })
 
 // Spec 71 — append-only inbound reply history. One row per inbound reply

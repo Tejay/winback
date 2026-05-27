@@ -94,6 +94,17 @@ export async function GET(req: NextRequest) {
           sql`${churnedSubscribers.status} not in ('recovered', 'lost', 'skipped')`,
         )!,
       )
+    } else if (filter === 'price') {
+      // Spec 80 — surfaces the cohort the manual-mode bulk promo flow
+      // most often targets. Filters to subscribers the classifier
+      // categorised as Price-cancellation, and excludes ones already
+      // recovered/lost/skipped (no point sending to them).
+      conditions.push(
+        and(
+          eq(churnedSubscribers.cancellationCategory, 'Price'),
+          sql`${churnedSubscribers.status} not in ('recovered', 'lost', 'skipped')`,
+        )!,
+      )
     } else if (isValidAiStateFilter(filter)) {
       const cond = aiStateFilterCondition(filter)
       if (cond) conditions.push(cond)

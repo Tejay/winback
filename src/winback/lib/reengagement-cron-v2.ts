@@ -116,6 +116,12 @@ async function tryPromotionPath(
   customer: CustomerRow,
 ): Promise<PerSubscriberOutcome | null> {
   if (!customer.promotionsEnabled) return null
+  // Spec 80 — manual mode (the new default) short-circuits the matcher
+  // entirely. Merchants in manual mode send via the drawer or bulk
+  // action on /dashboard. The flag was backfilled to TRUE in migration
+  // 054 for any merchant who had promotions_enabled=TRUE before, so
+  // existing automatic-mode merchants keep their behavior.
+  if (!customer.promoAutoModeEnabled) return null
   if (!customer.selectedPromotionImprovementId) return null
   if (sub.tier !== 1) return null
   if (sub.cancellationCategory !== 'Price') return null

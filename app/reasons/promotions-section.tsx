@@ -54,11 +54,17 @@ function StripeLink({ accountId, promotionCodeId }: { accountId: string | null; 
 export function PromotionsSection({
   initial,
   promotionsEnabled,
+  autoModeEnabled,
   selectedId,
   stripeAccountId,
 }: {
   initial: PromotionView[]
   promotionsEnabled: boolean
+  // Spec 80 — when FALSE (the new default), the matcher's promo path
+  // short-circuits. Merchant sends per-subscriber via /dashboard
+  // drawer or bulk. When TRUE, today's matcher fires for tier-1 +
+  // Price cancellations.
+  autoModeEnabled: boolean
   selectedId: string | null
   stripeAccountId: string | null
 }) {
@@ -70,6 +76,7 @@ export function PromotionsSection({
   // Optimistic local state for the toggle + selection so the UI doesn't
   // wait a round-trip before reflecting the pick.
   const [enabledLocal, setEnabledLocal] = useState(promotionsEnabled)
+  const [autoModeLocal, setAutoModeLocal] = useState(autoModeEnabled)
   const [selectedLocal, setSelectedLocal] = useState<string | null>(selectedId)
   const [pendingConfirm, setPendingConfirm] = useState<PromotionView | null>(null)
   const [, startTransition] = useTransition()
@@ -96,6 +103,20 @@ export function PromotionsSection({
       startTransition(() => router.refresh())
     } catch (err) {
       setEnabledLocal(prev)
+      setSaveError(err instanceof Error ? err.message : 'Save failed')
+    }
+  }
+
+  // Spec 80 — flips the automatic-matcher path on/off. Manual sends
+  // (drawer + bulk on /dashboard) are unaffected by this toggle.
+  async function toggleAutoMode(next: boolean) {
+    const prev = autoModeLocal
+    setAutoModeLocal(next)
+    try {
+      await patch({ autoModeEnabled: next })
+      startTransition(() => router.refresh())
+    } catch (err) {
+      setAutoModeLocal(prev)
       setSaveError(err instanceof Error ? err.message : 'Save failed')
     }
   }
@@ -172,16 +193,50 @@ export function PromotionsSection({
         </button>
       </div>
 
-      {/* Spec 79 — rule disclosure. Surfaces the hardcoded matcher
-          conditions (tier=1 + Price category) so merchants understand
-          what they're enabling, not what they might assume. */}
+      {/* Spec 80 — mode disclosure. Branches on autoModeLocal: manual
+          mode explains the new dashboard workflow; automatic mode
+          restates the spec-79 matcher rules. */}
       <div className="mt-5 rounded-xl border border-blue-100 bg-blue-50/50 px-4 py-3 text-xs text-slate-700 leading-relaxed">
-        Offered only to your <strong>top-tier subscribers</strong> whose
-        cancellation reason was <strong>price-related</strong>. Each promo
-        passes four real-time Stripe checks before it&rsquo;s sent (active,
-        not past redeem-by, redemption cap not hit, applies to the
-        subscriber&rsquo;s plan). Stripe makes the final eligibility call at
-        checkout.
+        {autoModeLocal ? (
+          <>
+            <strong>Automatic mode.</strong> Offered to your{' '}
+            <strong>top-tier subscribers</strong> whose cancellation reason
+            was <strong>price-related</strong>. Each promo passes four
+            real-time Stripe checks before it&rsquo;s sent. Stripe makes the
+            final eligibility call at checkout. Dashboard send actions
+            remain available for VIP overrides.
+          </>
+        ) : (
+          <>
+            <strong>Manual mode.</strong> No promo emails go out
+            automatically. Open a churned subscriber from the{' '}
+            <a href="/dashboard" className="text-blue-700 underline">dashboard</a>{' '}
+            and click &ldquo;Send promo offer&rdquo; — or filter by
+            cancellation reason, multi-select, and send to a cohort.
+            Stripe gates still re-validate before every send.
+          </>
+        )}
+      </div>
+
+      {/* Spec 80 — automatic-mode toggle. When OFF, matcher's promo
+          path is skipped. Independent of the master toggle below;
+          both must be true for the matcher to fire. */}
+      <div className="mt-3 flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50 px-4 py-3">
+        <div>
+          <div className="text-sm font-medium text-slate-900">Automatic mode</div>
+          <div className="text-xs text-slate-500 mt-0.5">
+            When on, the matcher auto-sends to tier-1 + price-cancellation subscribers. When off, sends only happen from the dashboard.
+          </div>
+        </div>
+        <label className="relative inline-flex items-center cursor-pointer">
+          <input
+            type="checkbox"
+            className="sr-only peer"
+            checked={autoModeLocal}
+            onChange={(e) => toggleAutoMode(e.target.checked)}
+          />
+          <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-500 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600" />
+        </label>
       </div>
 
       {/* Toggle row */}
@@ -189,7 +244,7 @@ export function PromotionsSection({
         <div>
           <div className="text-sm font-medium text-slate-900">Send promo emails to price-cancellers</div>
           <div className="text-xs text-slate-500 mt-0.5">
-            When off, no promo is ever attached, regardless of selection below.
+            Master switch. When off, no promo is ever attached — automatic or manual.
           </div>
         </div>
         <label className="relative inline-flex items-center cursor-pointer">

@@ -1,14 +1,15 @@
 import { redirect } from 'next/navigation'
 import { auth, userIsAdmin } from '@/lib/auth'
 import { db } from '@/lib/db'
-import { customers, recoveries, churnedSubscribers, wbEvents } from '@/lib/schema'
-import { eq, and, ne, or, isNull, inArray, sql } from 'drizzle-orm'
+import { customers, recoveries, churnedSubscribers, wbEvents, improvements } from '@/lib/schema'
+import { eq, and, ne, or, isNull, inArray, sql, desc } from 'drizzle-orm'
 import { TopNav } from '@/components/top-nav'
 import { ImpersonationBanner } from '@/components/impersonation-banner'
 import { BillingPausedBanner } from '@/components/billing-paused-banner'
 import { DashboardClient } from './dashboard-client'
 import { isCustomerBillingHealthy } from '@/src/winback/lib/billing-enforcement'
 import { tierLabel as tierLabelFor, type TierKey } from '@/src/winback/lib/tiers'
+import { WbPromotionMetadataSchema, formatPromotionTerms } from '@/src/winback/lib/promotions'
 
 const DUNNING_REASON = 'Payment failed'
 
@@ -139,6 +140,39 @@ export default async function DashboardPage() {
       ? customer.pilotUntil
       : null
 
+  // Spec 80 — load the merchant's published promotions so the drawer
+  // "Send promo offer" modal can render the dropdown. Parsing the
+  // jsonb metadata here (server-side) keeps the client component pure
+  // and avoids shipping the full schema parser to the browser.
+  const promoRows = await db
+    .select({
+      id:                improvements.id,
+      promotionMetadata: improvements.promotionMetadata,
+    })
+    .from(improvements)
+    .where(and(
+      eq(improvements.customerId, customer.id),
+      eq(improvements.kind, 'promotion'),
+      eq(improvements.status, 'published'),
+    ))
+    .orderBy(desc(improvements.createdAt))
+
+  const promoOptions = promoRows.flatMap((r) => {
+    const parsed = WbPromotionMetadataSchema.safeParse(r.promotionMetadata)
+    if (!parsed.success) return []
+    const m = parsed.data
+    return [{
+      id:                r.id,
+      code:              m.code,
+      terms:             formatPromotionTerms(m),
+      active:            m.active,
+      redeemBy:          m.redeemBy,
+      maxRedemptions:    m.maxRedemptions,
+      timesRedeemed:     m.timesRedeemed,
+      appliesToPriceIds: m.appliesToPriceIds,
+    }]
+  })
+
   return (
     <>
       <ImpersonationBanner />
@@ -169,6 +203,8 @@ export default async function DashboardPage() {
             everSubscribed={everSubscribed}
             manuallyPausedWinbackAtIso={customer?.pausedAt ? customer.pausedAt.toISOString() : null}
             manuallyPausedDunningAtIso={customer?.pausedDunningAt ? customer.pausedDunningAt.toISOString() : null}
+            promoOptions={promoOptions}
+            promotionsEnabled={!!customer?.promotionsEnabled}
           />
         </div>
       </main>
