@@ -280,6 +280,7 @@ export default async function ReasonsPage() {
               promotionsProps={{
                 initial:               promotionViews,
                 promotionsEnabled:     !!customer.promotionsEnabled,
+                autoModeEnabled:       !!customer.promoAutoModeEnabled,
                 selectedId:            customer.selectedPromotionImprovementId ?? null,
                 stripeAccountId:       customer.stripeAccountId,
               }}
