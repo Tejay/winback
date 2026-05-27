@@ -5,6 +5,8 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { StatusBadge } from '@/components/status-badge'
 import { Pagination } from '@/components/pagination'
+import { SendPromoModal } from './promo/send-promo-modal'
+import type { PromoOption } from './promo/promo-dropdown'
 import { TrendingUp, CheckCircle, DollarSign, Users, Search, Zap, X, RotateCcw, Check, Loader2, Sparkles, MessageSquare, CreditCard, ChevronRight, ChevronDown, Copy, Mail, Send } from 'lucide-react'
 
 interface Subscriber {
@@ -62,6 +64,11 @@ interface Subscriber {
   // in /api/subscribers from recoveries.appliedPromotionCodeId joined
   // to the promotion's wb_improvements row.
   appliedPromotionChip?: string | null
+  // Spec 80 — subscriber's Stripe price id, used client-side by the
+  // send-promo modal to pre-check which promos pass the
+  // appliesToPriceIds gate (so the dropdown can grey out incompatible
+  // promos before the merchant clicks send).
+  stripePriceId?: string | null
   // Drawer redesign — the subscriber's most-recent inbound reply (shown
   // inline on awaiting rows) + whether the ball is in the founder's court.
   latestReplySnippet?: string | null
@@ -230,6 +237,14 @@ interface DashboardClientProps {
    *  no dunning / dunning-followup emails go out. Independent of
    *  the win-back pause — both can be active. */
   manuallyPausedDunningAtIso?: string | null
+  /** Spec 80 — list of merchant's published promotion improvements
+   *  for the drawer "Send promo offer" modal. Empty array hides the
+   *  action button. */
+  promoOptions?: PromoOption[]
+  /** Spec 80 — master promotions toggle. When false, the "Send promo
+   *  offer" button is hidden regardless of how many promos are
+   *  synced. */
+  promotionsEnabled?: boolean
 }
 
 export function DashboardClient({
@@ -245,6 +260,8 @@ export function DashboardClient({
   everSubscribed = false,
   manuallyPausedWinbackAtIso = null,
   manuallyPausedDunningAtIso = null,
+  promoOptions = [],
+  promotionsEnabled = false,
 }: DashboardClientProps) {
   const [stats, setStats] = useState<Stats>(EMPTY_STATS)
   // Spec 52 — `null` means "first fetch hasn't completed yet"; `[]` means
@@ -536,6 +553,11 @@ export function DashboardClient({
     setSubscribing(true)
     window.location.href = '/billing/activate'
   }
+
+  // Spec 80 — drawer "Send promo offer" modal state. Open when the
+  // merchant clicks the action button on a churned subscriber drawer.
+  // Modal owns its own form state; this just tracks visibility.
+  const [promoModalOpen, setPromoModalOpen] = useState(false)
 
   // Drawer redesign — founder reply composer. 500-char Zod-enforced on
   // the server. On success, append the new outbound to the conversation
@@ -1181,6 +1203,22 @@ export function DashboardClient({
               </div>
             </div>
 
+            {/* Block 2: Spec 80 — manual promo offer action. Hidden when
+                the master promotions toggle is off OR no promos are
+                synced — both states make the action a no-op. Always
+                available regardless of auto-mode (VIP override). */}
+            {promotionsEnabled && promoOptions.length > 0 && (
+              <div className="px-5 py-3 border-t border-slate-100">
+                <button
+                  onClick={() => setPromoModalOpen(true)}
+                  className="w-full inline-flex items-center justify-center gap-2 text-sm font-medium text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 rounded-lg py-2 transition-colors"
+                >
+                  <DollarSign className="w-4 h-4" />
+                  Send promo offer
+                </button>
+              </div>
+            )}
+
             {/* Block 3: AI insight — Read + Worth knowing */}
             {hasInsight && (
               <div className="px-5 py-3 border-t border-slate-100">
@@ -1452,6 +1490,34 @@ export function DashboardClient({
         </>
         )
       })()}
+
+      {/* Spec 80 — manual promo modal. Rendered at the root so it
+          floats above the drawer rather than inside it. Reads
+          selected subscriber from parent state; modal owns its own
+          form. */}
+      {selected && (
+        <SendPromoModal
+          open={promoModalOpen}
+          subscriber={{
+            id:                 selected.id,
+            name:               selected.name,
+            email:              selected.email,
+            daysSinceCancel:    selected.cancelledAt
+              ? Math.floor((Date.now() - new Date(selected.cancelledAt).getTime()) / (1000 * 60 * 60 * 24))
+              : null,
+            planLabel:          `$${(selected.mrrCents / 100).toFixed(0)}/mo`,
+            stripePriceId:      selected.stripePriceId ?? null,
+            cancellationReason: selected.cancellationReason ?? null,
+          }}
+          promos={promoOptions}
+          onClose={() => setPromoModalOpen(false)}
+          onSent={() => {
+            // Refresh the subscriber list so the recently-contacted
+            // status flips and any chip eventually shows.
+            fetchData()
+          }}
+        />
+      )}
 
     </>
   )

@@ -54,6 +54,12 @@ const schema = z.object({
   subjectOverride: z.string().min(1).max(300).optional(),
   bodyOverride:    z.string().min(1).max(10_000).optional(),
   allowDuplicate:  z.boolean().optional().default(false),
+  // dryRun=true runs all validation + draft generation but does NOT
+  // send, write emailsSent, write the dedup row, or update the
+  // subscriber. Used by the drawer modal to populate the email
+  // preview before the merchant clicks send. Returns the same shape
+  // as a real send plus `draft: { subject, body }`.
+  dryRun:          z.boolean().optional().default(false),
 })
 
 type ConflictReason =
@@ -89,7 +95,7 @@ export async function POST(
       { status: 400 },
     )
   }
-  const { improvementId, subjectOverride, bodyOverride, allowDuplicate } = parsed.data
+  const { improvementId, subjectOverride, bodyOverride, allowDuplicate, dryRun } = parsed.data
 
   // Resolve customer + ownership in one query — must own the subscriber.
   const [cust] = await db
@@ -224,6 +230,19 @@ export async function POST(
     }
     subject = subjectOverride ?? draft.subject
     body    = bodyOverride    ?? draft.body
+  }
+
+  // dryRun short-circuit — return the draft + the eligibility result
+  // without sending. The drawer modal uses this to populate the email
+  // preview before the merchant clicks "Send promo offer".
+  if (dryRun) {
+    return NextResponse.json({
+      ok:            true,
+      dryRun:        true,
+      improvementId: promoRow.id,
+      promotionCode: promoRow.promotionMetadata.code,
+      draft:         { subject, body },
+    })
   }
 
   // Send via Resend.
