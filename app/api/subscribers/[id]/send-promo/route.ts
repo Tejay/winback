@@ -22,7 +22,7 @@ import { sendEmail, buildFromDisplayName } from '@/src/winback/lib/email'
 import { logEvent } from '@/src/winback/lib/events'
 
 /**
- * Spec 80 — POST /api/subscribers/[subscriberId]/send-promo
+ * Spec 80 — POST /api/subscribers/[id]/send-promo
  *
  * Merchant-initiated promo send for one churned subscriber. Used by
  * the drawer "Send promo offer" action (and by the bulk-modal flow,
@@ -79,14 +79,16 @@ const RECENT_SEND_WINDOW_DAYS = 30
 
 export async function POST(
   req: Request,
-  { params }: { params: Promise<{ subscriberId: string }> },
+  { params }: { params: Promise<{ id: string }> },
 ) {
   const session = await auth()
   if (!session?.user?.id) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const { subscriberId } = await params
+  // Slug is `id` (matches sibling routes under app/api/subscribers/[id]/*);
+  // Next.js requires consistent slug names within a dynamic-path tree.
+  const { id: subscriberId } = await params
 
   const parsed = schema.safeParse(await req.json().catch(() => null))
   if (!parsed.success) {
