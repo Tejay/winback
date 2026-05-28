@@ -23,11 +23,20 @@
 //      applied_improvement_id → dashboard chip + per-code 30d metric
 //      light up
 //
+// Spec 80 — pass --mode=manual to exercise the manual-mode flow
+// instead. In manual mode the matcher is gated off (auto-mode flag
+// set to false on the merchant before steps 6/7 run), and step 7
+// becomes a hand-off: open /dashboard and click "Send promo offer"
+// in the drawer or via bulk-select. The script auto-flips the
+// merchant's auto-mode flag to match whichever path was requested,
+// so re-running with different modes is safe.
+//
 // Cleanup deletes the test customer, subscription, churned_subscribers,
 // recovery, and emailsSent rows.
 //
 // Usage:
-//   npm run promo:e2e             # full run
+//   npm run promo:e2e                       # full auto-mode run
+//   npm run promo:e2e -- --mode=manual      # manual-mode setup, then hand off
 //   npm run promo:e2e -- --cleanup
 //
 // SAFETY:
@@ -88,6 +97,7 @@ async function resolveMerchant() {
       stripeAccountId:                 customers.stripeAccountId,
       stripeAccessToken:               customers.stripeAccessToken,
       promotionsEnabled:               customers.promotionsEnabled,
+      promoAutoModeEnabled:            customers.promoAutoModeEnabled,
       selectedPromotionImprovementId:  customers.selectedPromotionImprovementId,
     })
     .from(customers)
@@ -103,8 +113,23 @@ async function resolveMerchant() {
     stripeAccountId:                row.stripeAccountId,
     accessToken:                    decrypt(row.stripeAccessToken),
     promotionsEnabled:              row.promotionsEnabled,
+    promoAutoModeEnabled:           row.promoAutoModeEnabled,
     selectedPromotionImprovementId: row.selectedPromotionImprovementId,
   }
+}
+
+/**
+ * Spec 80 — toggle promo_auto_mode_enabled. The script needs to be
+ * explicit about which mode it's exercising; the merchant might have
+ * either setting persisted from previous runs. Returns the new value
+ * for log clarity.
+ */
+async function setAutoModeEnabled(customerId: string, enabled: boolean): Promise<boolean> {
+  await db
+    .update(customers)
+    .set({ promoAutoModeEnabled: enabled, updatedAt: new Date() })
+    .where(eq(customers.id, customerId))
+  return enabled
 }
 
 async function cleanup(): Promise<void> {
@@ -143,7 +168,14 @@ async function main(): Promise<void> {
     return
   }
 
-  console.log('=== Promo-flow e2e (Spec 79) ===\n')
+  // Spec 80 — --mode=manual exercises the manual-mode workflow: matcher
+  // step is skipped, customer is flipped to manual mode, and the
+  // script hands off to the dashboard for the human to click "Send
+  // promo offer" (the whole point of manual mode is human action).
+  // Default mode = 'auto' (the original Spec 79 flow).
+  const mode = process.argv.includes('--mode=manual') ? 'manual' : 'auto'
+
+  console.log(`=== Promo-flow e2e (mode: ${mode}) ===\n`)
 
   // ─── 1) Pre-check ─────────────────────────────────────────────────────
   console.log('[1/7] Pre-check: merchant has a promo selected')
@@ -159,6 +191,16 @@ async function main(): Promise<void> {
   if (!merchant.selectedPromotionImprovementId) {
     console.error(`\n  ✗ ABORT: no selected promo. Pick one on /reasons first.\n`)
     process.exit(1)
+  }
+  // Spec 80 — flip the customer's auto-mode setting to match what
+  // we're testing. Without this, a stale persisted value from a
+  // previous run would silently pick the wrong path.
+  const newAutoMode = mode === 'auto'
+  if (merchant.promoAutoModeEnabled !== newAutoMode) {
+    await setAutoModeEnabled(merchant.id, newAutoMode)
+    console.log(`    flipped promoAutoModeEnabled: ${merchant.promoAutoModeEnabled} → ${newAutoMode}`)
+  } else {
+    console.log(`    promoAutoModeEnabled = ${merchant.promoAutoModeEnabled} (already correct)`)
   }
   const [selectedPromo] = await db
     .select({
@@ -252,21 +294,43 @@ async function main(): Promise<void> {
     console.warn(`    ⚠ classifier landed category=${classified.cancellationCategory}, expected Price. Promo path won't fire.`)
   }
 
-  // ─── 7) Run reengagement matcher → promo email ────────────────────────
-  // processSubscriberForReengagement returns { kind: 'emailed', improvementId }
-  // for both the regular improvement-match path AND the promo path. Promo
-  // vs regular is distinguished by the improvement's kind ('promotion' vs
-  // 'product') — we cross-check that on the email row below.
-  console.log('\n[7/7] Run reengagement matcher (promo path)')
-  const outcome = await processSubscriberForReengagement(classified, { bypassCooldown: true })
-  console.log(`    outcome.kind = ${outcome?.kind ?? '(null)'}`)
-  if (outcome?.kind === 'emailed') {
-    console.log(`    improvementId = ${outcome.improvementId}`)
-  } else if (outcome?.kind === 'skipped') {
-    console.log(`    reason        = ${outcome.reason}`)
-    console.warn(`    ⚠ Promo path did not fire. Check tier/category above.`)
-  } else if (outcome?.kind === 'error') {
-    console.log(`    errorMessage  = ${outcome.errorMessage}`)
+  // ─── 7) Trigger the send ──────────────────────────────────────────────
+  // Auto mode: matcher fires automatically. Manual mode: matcher is
+  // gated off by the auto-mode flag (we set above), so we skip
+  // straight to handing off to the human — who must open /dashboard
+  // and click "Send promo offer" on this subscriber. The whole point
+  // of manual mode is the human-in-the-loop step; scripting the click
+  // would be inauthentic.
+  if (mode === 'auto') {
+    console.log('\n[7/7] Run reengagement matcher (promo path)')
+    // processSubscriberForReengagement returns { kind: 'emailed', improvementId }
+    // for both the regular improvement-match path AND the promo path. Promo
+    // vs regular is distinguished by the improvement's kind ('promotion' vs
+    // 'product') — we cross-check that on the email row below.
+    const outcome = await processSubscriberForReengagement(classified, { bypassCooldown: true })
+    console.log(`    outcome.kind = ${outcome?.kind ?? '(null)'}`)
+    if (outcome?.kind === 'emailed') {
+      console.log(`    improvementId = ${outcome.improvementId}`)
+    } else if (outcome?.kind === 'skipped') {
+      console.log(`    reason        = ${outcome.reason}`)
+      console.warn(`    ⚠ Promo path did not fire. Check tier/category above.`)
+    } else if (outcome?.kind === 'error') {
+      console.log(`    errorMessage  = ${outcome.errorMessage}`)
+    }
+  } else {
+    console.log('\n[7/7] Manual mode — matcher SKIPPED. Hand-off to dashboard.')
+    console.log(`    promo_auto_mode_enabled = false`)
+    console.log(`    subscriberId            = ${classified.id}`)
+    console.log('')
+    console.log('    → Open http://localhost:3000/dashboard')
+    console.log(`    → Find the "${TEST_SUB_NAME}" row in the win-back table`)
+    console.log('    → Open the drawer + click "Send promo offer"')
+    console.log('    → OR check the row + use the bulk action bar (multi-select test)')
+    console.log('    → Modal opens; pick the synced promo; click Send.')
+    console.log('')
+    console.log('    Re-run this script (without --mode=manual) to also assert')
+    console.log('    a promo email landed afterwards.')
+    return
   }
 
   // Read back the promo email that was sent
