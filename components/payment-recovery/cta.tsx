@@ -1,11 +1,12 @@
 import Link from 'next/link'
 
 /**
- * Final CTA on /payment-recovery. De-risks before asking — three short
- * lines that surface the pricing shape, time-to-value, and the no-card-
- * at-signup reassurance that's already true. Headline + button unchanged.
- * Pricing details still link out to the home /pricing page (combined
- * billing for both flows).
+ * Final CTA on /payment-recovery. De-risks before asking — two short
+ * lines that surface time-to-value and the no-card-at-signup
+ * reassurance that's already true. The "$99/mo flat" bullet was
+ * removed when the billing rewrite replaced flat pricing with
+ * MRR-based tiers; pricing details now live entirely on /pricing
+ * (combined billing for both flows).
  */
 export function Cta() {
   return (
@@ -19,13 +20,6 @@ export function Cta() {
         </h2>
 
         <ul className="mt-7 space-y-2 text-sm text-slate-600 max-w-md mx-auto text-left">
-          <li className="flex items-baseline gap-2">
-            <span className="text-blue-600 font-semibold flex-shrink-0">·</span>
-            <span>
-              <span className="font-semibold text-slate-900">$99/mo flat</span> &mdash;
-              payment recovery included, no per-save cut
-            </span>
-          </li>
           <li className="flex items-baseline gap-2">
             <span className="text-blue-600 font-semibold flex-shrink-0">·</span>
             <span>
