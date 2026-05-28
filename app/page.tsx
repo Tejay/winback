@@ -12,7 +12,7 @@ import { Footer } from '@/components/landing/footer'
  *
  * Structure:
  *   <StickyNav />                — site nav with feature links
- *   <Hero>                       — "Recover customers. Automatically."
+ *   <Hero>                       — "Stop losing customers to failed cards and cold cancellations."
  *   <TrustStrip>                 — Stripe Connect · no card · $0 until delivery
  *   <TwoPillarTeaser />          — differentiator header ("Read the actual
  *                                  reason. Respond specifically.") + colored-
@@ -40,13 +40,17 @@ export default function LandingPage() {
             For subscription businesses losing customers every month
           </div>
 
-          <h1 className="mt-6 text-center tracking-tight leading-[1.05] max-w-4xl">
-            <span className="block text-4xl sm:text-6xl font-bold text-slate-900">
-              Recover customers.
-            </span>
-            <span className="block text-4xl sm:text-6xl font-bold text-green-500">
-              Automatically.
-            </span>
+          {/* Headline frames the two failure modes explicitly. Inline
+              green emphasis on "failed cards" + "cold cancellations"
+              draws the eye to the specific threats; the rest of the
+              statement stays calm black. Avoids over-promising
+              "automatic" now that spec 80 made manual mode the new-
+              merchant default for promo offers. */}
+          <h1 className="mt-6 text-center tracking-tight leading-[1.05] max-w-4xl text-4xl sm:text-6xl font-bold text-slate-900">
+            Stop losing customers to{' '}
+            <span className="text-green-500 whitespace-nowrap">failed cards</span>
+            {' '}and{' '}
+            <span className="text-green-500 whitespace-nowrap">cold cancellations</span>.
           </h1>
 
           <p className="mt-6 text-base sm:text-lg text-slate-600 max-w-2xl text-center leading-relaxed">
@@ -54,8 +58,8 @@ export default function LandingPage() {
             ways subscription customers slip away. WinbackFlow is{' '}
             <span className="text-slate-900 font-medium">one platform that catches both</span>{' '}
             &mdash; always-on payment recovery for failed cards, and
-            cancellation listening that emails the right subscribers
-            when you ship the fix they asked for. Two kinds of lost
+            cancellation monitoring that emails the right subscribers
+            when you ship the change that matches. Two kinds of lost
             revenue, one Stripe connection.
           </p>
 
