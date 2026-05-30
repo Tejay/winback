@@ -211,6 +211,15 @@ export async function ensurePlatformSubscription(
       activatedAt: now,
       billedTier: flatRateCents !== null ? 'custom' : resolvedTier!,
       billedChangedAt: now,
+      // 2026-05-29 — auto-un-pause both scopes. If the merchant
+      // previously hit "I'm done · pause" on the dashboard banner
+      // (which sets both pausedAt + pausedDunningAt) and is now
+      // subscribing, we treat the subscribe as the strongest possible
+      // "I want this running" signal — null both timestamps so sends
+      // resume immediately. Without this, the merchant subscribes,
+      // sees healthy billing, and silently still gets no sends.
+      pausedAt:        null,
+      pausedDunningAt: null,
       updatedAt: now,
     })
     .where(eq(customers.id, wbCustomerId))

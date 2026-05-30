@@ -331,6 +331,8 @@ export default async function SettingsPage({
                   currentPeriodEndIso={
                     subscriptionDetails.currentPeriodEnd?.toISOString() ?? null
                   }
+                  trailing30dRecoveredUsdMinor={trailing30dRecoveredUsdMinor}
+                  priceUsdMinor={priceForDisplay}
                 />
               )}
             </div>
@@ -400,6 +402,7 @@ export default async function SettingsPage({
           <DangerZone
             pausedWinback={!!customer?.pausedAt}
             pausedDunning={!!customer?.pausedDunningAt}
+            hasActiveSub={!!customer?.stripeSubscriptionId}
           />
         </div>
       </main>

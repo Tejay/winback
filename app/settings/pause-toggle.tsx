@@ -9,6 +9,12 @@ interface PauseToggleProps {
   scope: PauseScope
   initialPaused: boolean
   compact?: boolean
+  /** 2026-05-29 — when false (no active platform subscription),
+   *  un-pausing is refused by /api/settings/pause with 403
+   *  subscribe_first. The toggle disables the un-pause direction
+   *  and surfaces "Subscribe to resume" copy so the UI matches the
+   *  API rule instead of letting the merchant click into a 403. */
+  hasActiveSub?: boolean
 }
 
 const SCOPE_LABELS: Record<PauseScope, {
@@ -37,14 +43,27 @@ const SCOPE_LABELS: Record<PauseScope, {
   },
 }
 
-export function PauseToggle({ scope, initialPaused, compact = false }: PauseToggleProps) {
+export function PauseToggle({
+  scope,
+  initialPaused,
+  compact = false,
+  hasActiveSub = true,
+}: PauseToggleProps) {
   const router = useRouter()
   const [paused, setPaused] = useState(initialPaused)
   const [loading, setLoading] = useState(false)
 
   const copy = SCOPE_LABELS[scope]
 
+  // Un-pause requires an active platform subscription (matches the API
+  // gate at /api/settings/pause). When paused + no sub, the toggle is
+  // visually disabled and clicks no-op — the UI tells the merchant
+  // they need to subscribe via the danger-zone label, and the dashboard
+  // banner is the single-click path to do that.
+  const unpauseBlocked = paused && !hasActiveSub
+
   async function toggle() {
+    if (unpauseBlocked) return  // defence in depth — button is also disabled
     const next = !paused
     if (next && !confirm(copy.confirmCopy)) return
 
@@ -57,7 +76,15 @@ export function PauseToggle({ scope, initialPaused, compact = false }: PauseTogg
     setLoading(false)
 
     if (!res.ok) {
-      alert('Could not update. Please try again.')
+      // API may still 403 if state shifted between server-render and
+      // click. Surface the server's message when it's the sub gate so
+      // the merchant sees the same explanation either way.
+      const body = await res.json().catch(() => null)
+      if (res.status === 403 && body?.error === 'subscribe_first') {
+        alert('Subscribe before un-pausing — sends are gated on an active subscription.')
+      } else {
+        alert('Could not update. Please try again.')
+      }
       return
     }
 
@@ -68,10 +95,11 @@ export function PauseToggle({ scope, initialPaused, compact = false }: PauseTogg
   const switchEl = (
     <button
       onClick={toggle}
-      disabled={loading}
+      disabled={loading || unpauseBlocked}
       aria-pressed={paused}
       aria-label={paused ? `Resume ${copy.noun} sending` : `Pause ${copy.noun} sending`}
-      className={`relative inline-flex h-6 w-11 flex-shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-rose-500 focus:ring-offset-2 disabled:opacity-50 ${
+      title={unpauseBlocked ? 'Subscribe to resume sends' : undefined}
+      className={`relative inline-flex h-6 w-11 flex-shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-rose-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed ${
         paused ? 'bg-amber-500' : 'bg-green-500'
       }`}
     >
@@ -85,11 +113,18 @@ export function PauseToggle({ scope, initialPaused, compact = false }: PauseTogg
 
   if (compact) {
     return (
-      <div className="flex items-center gap-2">
-        <span className="text-xs font-medium text-slate-500">
-          {paused ? 'Paused' : 'Live'}
-        </span>
-        {switchEl}
+      <div className="flex flex-col items-end gap-1">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-medium text-slate-500">
+            {paused ? 'Paused' : 'Live'}
+          </span>
+          {switchEl}
+        </div>
+        {unpauseBlocked && (
+          <span className="text-[11px] text-slate-500">
+            Subscribe to resume sends
+          </span>
+        )}
       </div>
     )
   }
@@ -101,7 +136,9 @@ export function PauseToggle({ scope, initialPaused, compact = false }: PauseTogg
           {paused ? `${copy.noun === 'win-back' ? 'Win-back' : 'Payment recovery'} is paused` : `${copy.noun === 'win-back' ? 'Win-back' : 'Payment recovery'} is live`}
         </div>
         <div className="text-xs text-slate-500 mt-0.5">
-          {paused ? copy.pausedDesc : copy.liveDesc}
+          {unpauseBlocked
+            ? 'Subscribe to resume sends — un-pause is gated on an active subscription.'
+            : paused ? copy.pausedDesc : copy.liveDesc}
         </div>
       </div>
       {switchEl}

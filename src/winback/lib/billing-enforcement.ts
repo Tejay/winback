@@ -21,19 +21,32 @@
  *   unpaid             → UNHEALTHY (retries exhausted, sub suspended)
  *   paused             → UNHEALTHY (intentional Stripe-side pause)
  *
- * Customers with no Stripe subscription yet (haven't activated, or
- * activated but no card yet) are treated as healthy — the "$0 until
- * first save" promise should hold for pre-activation merchants.
+ * Pre-subscription policy (2026-05-29 — anti-free-rider gate):
+ *   - activatedAt IS NULL                       → healthy (no save yet,
+ *     "$0 until first save" promise holds)
+ *   - activatedAt IS NOT NULL AND no sub        → UNHEALTHY (first save
+ *     delivered, no card on file — the celebration banner asks for one;
+ *     classifier + sends pause until the merchant adds a card)
+ *   - pilotUntil > now()                        → healthy (pilots bypass
+ *     the gate regardless of activation/sub state)
  *
- * Call sites:
+ * Call sites — BULK / background paths only (the cache earns its keep
+ * here because these loop over many subscribers per cron and would
+ * otherwise hammer Stripe):
  *   - src/winback/lib/classifier-tick.ts — skip the row per tick if
  *     unhealthy (leaves classified_at NULL so it resumes when billing
  *     heals)
  *   - src/winback/lib/email.ts — skip sendEmail / sendReplyEmail /
  *     sendDunningEmail / sendDunningFollowupEmail when unhealthy
  *
- * Visible at the customer in: components/billing-paused-banner.tsx —
- * red strip on the dashboard explaining the suspension.
+ * NOT used by the dashboard red banner. As of 2026-05-30 the
+ * BillingPausedBanner is driven by a LIVE Stripe sub-status read in
+ * app/dashboard/page.tsx (getSubscriptionDetails), not this cached
+ * value — a user-facing banner must never show a stale answer from the
+ * wrong module instance. This cache tolerates a few minutes of
+ * staleness because a cron firing slightly stale is invisible; a
+ * merchant staring at a wrong banner is not. The two paths
+ * deliberately use the same UNHEALTHY_SUB_STATUSES set so they agree.
  *
  * Caching: in-memory TTL of 5 minutes per customer-id. Survives within
  * a single Vercel function instance; cold instances will re-read.
@@ -66,9 +79,10 @@ const cache = new Map<string, CacheEntry>()
  * behalf (classification, email sends), false when we should skip and
  * surface a banner instead.
  *
- * Customers with no stripeSubscriptionId on file are healthy — they
- * haven't been billed yet and the "$0 until first delivery" promise
- * applies.
+ * Pre-subscription merchants: healthy while activatedAt IS NULL, then
+ * unhealthy once activated (= proof-of-value delivered) until they
+ * either add a card OR the pilot window covers them. See module header
+ * for the full policy.
  */
 export async function isCustomerBillingHealthy(customerId: string): Promise<boolean> {
   const now = Date.now()
@@ -78,16 +92,36 @@ export async function isCustomerBillingHealthy(customerId: string): Promise<bool
   }
 
   const [row] = await db
-    .select({ stripeSubscriptionId: customers.stripeSubscriptionId })
+    .select({
+      stripeSubscriptionId: customers.stripeSubscriptionId,
+      activatedAt:          customers.activatedAt,
+      pilotUntil:           customers.pilotUntil,
+    })
     .from(customers)
     .where(eq(customers.id, customerId))
     .limit(1)
 
-  // No sub on file → pre-activation merchant. Healthy by definition;
-  // we won't be charging them anything yet.
-  if (!row?.stripeSubscriptionId) {
+  // Pilot carve-out: an active pilot bypasses every other gate. This
+  // mirrors the bypass in activation.ts (no platform sub is ever
+  // created during a pilot window) so the same merchant doesn't get
+  // paused by THIS gate while their pilot covers them.
+  const onPilot = !!row?.pilotUntil && row.pilotUntil.getTime() > now
+  if (onPilot) {
     cache.set(customerId, { healthy: true, expiresAt: now + CACHE_TTL_MS })
     return true
+  }
+
+  // No sub on file. Two sub-cases now (2026-05-29 gate flip):
+  //   - activatedAt IS NULL → still pre-activation, healthy. The
+  //     "$0 until first save" promise holds; classifier + sends run.
+  //   - activatedAt IS NOT NULL → first save delivered, no card on
+  //     file. Pause until they subscribe. The dashboard banner
+  //     ("Add a card · unlock the queue") IS the ask; this gate is
+  //     what makes that ask true.
+  if (!row?.stripeSubscriptionId) {
+    const healthy = !row?.activatedAt
+    cache.set(customerId, { healthy, expiresAt: now + CACHE_TTL_MS })
+    return healthy
   }
 
   let healthy = true

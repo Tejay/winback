@@ -246,6 +246,26 @@ interface DashboardClientProps {
    *  offer" button is hidden regardless of how many promos are
    *  synced. */
   promotionsEnabled?: boolean
+  /** 2026-05-29 — top-3 next-up subscribers for the first-save banner's
+   *  "locked queue preview" (variant B). Empty when atRiskCount=0 or
+   *  the customer is past the trial state. */
+  queuePreview?: QueuePreviewRow[]
+  /** 2026-05-29 — recommended-tier monthly price (USD minor units) for
+   *  the banner's right-rail "Flat $X/mo for your band" copy. */
+  recommendedTierPriceCents?: number
+  /** 2026-05-29 — recommended-tier display label (Starter/Growth/Scale)
+   *  for the banner copy. */
+  recommendedTierLabel?: string
+}
+
+// 2026-05-29 — banner queue preview row shape. Mirrors the page.tsx
+// query's projection so it can flow through unchanged.
+export type QueuePreviewRow = {
+  name: string | null
+  mrrCents: number
+  cohort: 'win_back' | 'payment_recovery'
+  reasonShort: string | null
+  badgeLabel: string
 }
 
 export function DashboardClient({
@@ -263,6 +283,9 @@ export function DashboardClient({
   manuallyPausedDunningAtIso = null,
   promoOptions = [],
   promotionsEnabled = false,
+  queuePreview = [],
+  recommendedTierPriceCents = 99_00,
+  recommendedTierLabel = 'Starter',
 }: DashboardClientProps) {
   const [stats, setStats] = useState<Stats>(EMPTY_STATS)
   // Spec 52 — `null` means "first fetch hasn't completed yet"; `[]` means
@@ -660,7 +683,13 @@ export function DashboardClient({
   // state: first recovery delivered (activatedAt set) AND no subscription
   // AND not on pilot. Server-derived; no localStorage dismissal.
   const isPaused = !onPilot && isTrial && !!activatedAtIso
-  const showBanner = isPaused && !!firstRecovery
+  // 2026-05-29 — "I'm done · pause" implicit opt-out signal: when the
+  // merchant has paused BOTH scopes from the banner's secondary action
+  // (or from Settings), suppress the first-save celebration. Otherwise
+  // a new save would re-fire confetti on a clearly-opted-out account.
+  const explicitlyOptedOut =
+    !!manuallyPausedWinbackAtIso && !!manuallyPausedDunningAtIso
+  const showBanner = isPaused && !!firstRecovery && !explicitlyOptedOut
 
   // Spec 55 — Settings-paused state. Independent of the billing-paused
   // state (spec 51/53) — both can render simultaneously.
@@ -773,6 +802,9 @@ export function DashboardClient({
           onSubscribe={handleSubscribe}
           subscribing={subscribing}
           error={subscribeError}
+          queuePreview={queuePreview}
+          recommendedTierPriceCents={recommendedTierPriceCents}
+          recommendedTierLabel={recommendedTierLabel}
         />
       )}
 
@@ -1810,6 +1842,9 @@ function FirstRecoveryBanner({
   onSubscribe,
   subscribing,
   error,
+  queuePreview,
+  recommendedTierPriceCents,
+  recommendedTierLabel,
 }: {
   firstRecovery: { name: string | null; mrrCents: number }
   atRiskCount: number
@@ -1820,7 +1855,44 @@ function FirstRecoveryBanner({
   onSubscribe: () => void
   subscribing: boolean
   error: string | null
+  queuePreview: QueuePreviewRow[]
+  recommendedTierPriceCents: number
+  recommendedTierLabel: string
 }) {
+  // 2026-05-29 — "I'm done · pause WinbackFlow" secondary action.
+  // Pauses BOTH scopes via the existing /api/settings/pause endpoint
+  // (sequential calls, one per scope). The banner stays visible until
+  // the page reloads with both pause timestamps set, which signals to
+  // the parent that the merchant has explicitly opted out and the
+  // celebration should not re-render.
+  const [pauseConfirmOpen, setPauseConfirmOpen] = useState(false)
+  const [pausing, setPausing]                   = useState(false)
+  const [pauseError, setPauseError]             = useState<string | null>(null)
+
+  async function handlePauseConfirm() {
+    setPausing(true)
+    setPauseError(null)
+    try {
+      for (const scope of ['winback', 'dunning'] as const) {
+        const res = await fetch('/api/settings/pause', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ scope, paused: true }),
+        })
+        if (!res.ok) {
+          const txt = await res.text().catch(() => '')
+          throw new Error(txt || `Pause failed (${res.status})`)
+        }
+      }
+      // Reload so the page picks up the new pausedAt + pausedDunningAt
+      // timestamps and stops rendering this banner.
+      window.location.reload()
+    } catch (e: unknown) {
+      setPauseError(e instanceof Error ? e.message : 'Pause failed')
+      setPausing(false)
+    }
+  }
+
   // Activation-celebration banner. Fires on the dashboard when a
   // delivered recovery exists but the customer has no active platform
   // subscription. Treats the moment as a proof-of-value win, NOT as a
@@ -1840,9 +1912,15 @@ function FirstRecoveryBanner({
     : 'Your first save just landed.'
   const subhead =
     atRiskCount > 0
-      ? `Subscribe to keep going on the ${moreNoun}.`
+      ? everSubscribed
+        ? `${recoveredName} is recovered. ${atRiskCount} more in line.`
+        : `${recoveredName} is recovered. Here's who's next in line.`
       : 'Subscribe to keep WinbackFlow running.'
-  const ctaLabel = everSubscribed ? 'Re-subscribe →' : 'Review and subscribe →'
+  const ctaLabel = everSubscribed
+    ? 'Re-subscribe · unlock the queue'
+    : 'Add a card · unlock the queue'
+  // Right-rail tier price ("Flat $299/mo for the Growth band.")
+  const tierPriceUsd = (recommendedTierPriceCents / 100).toFixed(0)
 
   // Confetti — fires once per session per banner mount. Imports the
   // package lazily so the dashboard's initial JS bundle doesn't pay the
@@ -1911,6 +1989,14 @@ function FirstRecoveryBanner({
           50%  { transform: scale(1.25) rotate(8deg); opacity: 1; }
           100% { transform: scale(1) rotate(0deg); opacity: 1; }
         }
+        @keyframes wb-cta-pulse {
+          0%   { box-shadow: 0 0 0 0 rgba(16,185,129,.55); }
+          70%  { box-shadow: 0 0 0 14px rgba(16,185,129,0); }
+          100% { box-shadow: 0 0 0 0 rgba(16,185,129,0); }
+        }
+        .wb-cta-primary { background-color: #059669; }
+        .wb-cta-primary:hover:not(:disabled) { background-color: #047857; }
+        .wb-cta-primary:active:not(:disabled) { background-color: #065f46; }
       `}</style>
 
       <div className="relative">
@@ -1942,30 +2028,131 @@ function FirstRecoveryBanner({
           </div>
         )}
 
-        {atRiskCount > 0 && (
-          <p className="text-sm text-slate-700 leading-relaxed mb-5">
-            <strong className="text-red-700">${atRiskAnnualUsd}/yr</strong> at risk across{' '}
-            <strong className="text-slate-900">{atRiskCount} {atRiskNoun}</strong> in your queue{cohortBreakdown}.
-          </p>
+        {/* 2026-05-29 — locked queue preview. Turns the abstract
+            "$X/yr at risk across N more" into named subscribers with
+            real reasons + MRR. The header line keeps the original
+            cohort breakdown copy for at-a-glance scanning. */}
+        {queuePreview.length > 0 && (
+          <div className="bg-white rounded-xl border border-slate-200 overflow-hidden mb-5 shadow-sm">
+            <div className="px-4 py-2.5 border-b border-slate-100 flex items-center justify-between bg-slate-50/60">
+              <div className="text-sm font-semibold text-slate-900">
+                Queue · {atRiskCount} {atRiskCount === 1 ? 'subscriber' : 'subscribers'} paused
+              </div>
+              {atRiskMrrAnnualizedCents > 0 && (
+                <div className="text-xs text-slate-500">
+                  <span className="text-red-600 font-bold">${atRiskAnnualUsd}/yr</span> at risk{cohortBreakdown}
+                </div>
+              )}
+            </div>
+            <ul className="divide-y divide-slate-100">
+              {queuePreview.map((row, i) => {
+                const initial = (row.name ?? '?').trim().slice(0, 1).toUpperCase()
+                const cohortIsPayment = row.cohort === 'payment_recovery'
+                return (
+                  <li key={i} className="px-4 py-3 flex items-center gap-3">
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center font-semibold text-sm flex-shrink-0 ${cohortIsPayment ? 'bg-rose-100 text-rose-700' : 'bg-indigo-100 text-indigo-700'}`}>
+                      {initial}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium text-slate-900 truncate">
+                        {row.name ?? 'Unnamed subscriber'}
+                      </div>
+                      <div className="text-xs text-slate-500 truncate">
+                        {row.reasonShort ?? '—'}
+                      </div>
+                    </div>
+                    <div className="text-sm font-semibold text-slate-700 whitespace-nowrap">
+                      ${(row.mrrCents / 100).toFixed(0)}/mo
+                    </div>
+                    <span className="ml-2 px-2 py-0.5 rounded-md bg-amber-50 text-amber-700 text-[11px] font-semibold whitespace-nowrap">
+                      {row.badgeLabel}
+                    </span>
+                  </li>
+                )
+              })}
+              {atRiskCount > queuePreview.length && (
+                <li className="px-4 py-2.5 text-center text-xs text-slate-500">
+                  + {atRiskCount - queuePreview.length} more · all paused until you add a card
+                </li>
+              )}
+            </ul>
+          </div>
         )}
 
-        <div className="flex flex-wrap items-center gap-4">
-          <button
-            onClick={onSubscribe}
-            disabled={subscribing}
-            className="bg-[#0f172a] text-white rounded-full px-6 py-2.5 text-sm font-semibold hover:bg-[#1e293b] inline-flex items-center gap-2 shadow-md disabled:opacity-60 disabled:cursor-not-allowed"
+        {/* Loud CTA + right-rail price. Pulse ring draws the eye to the
+            primary action without overpowering the celebration colour. */}
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          {/* 2026-05-29 — converted from a JS-handled button to a Next
+              <Link> so browser-native navigation handles the click.
+              Mirrors the BillingPausedBanner's "Update card" link which
+              the user confirmed works. Eliminates "did the React click
+              handler fire?" as a debugging variable. The onClick is
+              still attached so the loading state + console.log fire
+              when JS IS healthy, but Link's href is the authoritative
+              navigation path. */}
+          <Link
+            href="/billing/activate"
+            onClick={() => { if (!subscribing) onSubscribe() }}
+            aria-disabled={subscribing}
+            className="wb-cta-primary inline-flex items-center gap-2 text-white text-base font-semibold px-6 py-3.5 rounded-xl no-underline transition-colors"
+            style={{
+              backgroundColor: '#059669',
+              boxShadow: '0 6px 18px -6px rgba(5,150,105,.45)',
+              ...(subscribing ? { opacity: 0.6, pointerEvents: 'none' } : { animation: 'wb-cta-pulse 2.4s infinite' }),
+            }}
           >
             {subscribing ? 'Loading…' : ctaLabel}
-          </button>
-          <span className="text-xs text-slate-500">
-            Flat monthly fee priced by your MRR · Cancel anytime, no retention friction
-          </span>
+            {!subscribing && (
+              <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
+                <line x1="5" y1="12" x2="19" y2="12"/>
+                <polyline points="12 5 19 12 12 19"/>
+              </svg>
+            )}
+          </Link>
+          <div className="text-sm text-slate-500 leading-tight text-right">
+            <div>Flat <span className="font-semibold text-slate-700">${tierPriceUsd}/mo</span> for the {recommendedTierLabel} band.</div>
+            <div className="text-slate-400">Sends pause until a card is on file · cancel anytime.</div>
+          </div>
         </div>
         {error && (
           <p className="text-xs text-red-600 mt-3">
             Couldn&apos;t continue to billing: {error}. Try again, or contact support if it persists.
           </p>
         )}
+
+        {/* "I'm done" secondary action — small text link, expands to an
+            inline confirm so the merchant can't accidentally pause from
+            a single click. Pauses BOTH scopes via /api/settings/pause. */}
+        <div className="mt-5 pt-4 border-t border-slate-100/80">
+          {pauseConfirmOpen ? (
+            <div className="flex flex-wrap items-center gap-3 text-sm">
+              <span className="text-slate-700">
+                Pause all WinbackFlow activity? Sends stop now. You can resume from Settings <strong>after you subscribe</strong> — un-pause is gated on an active subscription.
+              </span>
+              <button
+                onClick={handlePauseConfirm}
+                disabled={pausing}
+                className="text-rose-700 font-semibold hover:underline disabled:opacity-50"
+              >
+                {pausing ? 'Pausing…' : 'Yes, pause'}
+              </button>
+              <button
+                onClick={() => { setPauseConfirmOpen(false); setPauseError(null) }}
+                className="text-slate-500 hover:underline"
+              >
+                Cancel
+              </button>
+              {pauseError && <span className="text-rose-600 text-xs">{pauseError}</span>}
+            </div>
+          ) : (
+            <button
+              onClick={() => setPauseConfirmOpen(true)}
+              className="text-xs text-slate-500 hover:text-slate-700 hover:underline"
+            >
+              I&apos;m done · pause WinbackFlow
+            </button>
+          )}
+        </div>
       </div>
     </div>
   )
