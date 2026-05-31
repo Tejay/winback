@@ -60,6 +60,38 @@ describe('isCustomerBillingHealthy', () => {
     expect(mockSubscriptionsRetrieve).not.toHaveBeenCalled()
   })
 
+  // 2026-05-29 — first-save paywall gate (PR #169). Once a recovery is
+  // delivered (activatedAt set) but the merchant hasn't subscribed, we
+  // stop spending on their behalf. This is the anti-free-rider gate.
+  it('returns FALSE when activated but no sub on file (first-save paywall gate)', async () => {
+    mockSelect.mockReturnValueOnce(
+      selectReturning([{ stripeSubscriptionId: null, activatedAt: new Date('2026-05-20'), pilotUntil: null }]),
+    )
+
+    expect(await isCustomerBillingHealthy('cust_activated_unpaid')).toBe(false)
+    // No Stripe call — the gate decides from DB state alone.
+    expect(mockSubscriptionsRetrieve).not.toHaveBeenCalled()
+  })
+
+  it('returns TRUE for an active pilot even when activated with no sub (pilot bypass)', async () => {
+    const future = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+    mockSelect.mockReturnValueOnce(
+      selectReturning([{ stripeSubscriptionId: null, activatedAt: new Date('2026-05-20'), pilotUntil: future }]),
+    )
+
+    expect(await isCustomerBillingHealthy('cust_pilot')).toBe(true)
+    expect(mockSubscriptionsRetrieve).not.toHaveBeenCalled()
+  })
+
+  it('applies the gate once the pilot window has expired (activated, no sub, pilot in past)', async () => {
+    const past = new Date(Date.now() - 24 * 60 * 60 * 1000)
+    mockSelect.mockReturnValueOnce(
+      selectReturning([{ stripeSubscriptionId: null, activatedAt: new Date('2026-05-20'), pilotUntil: past }]),
+    )
+
+    expect(await isCustomerBillingHealthy('cust_pilot_expired')).toBe(false)
+  })
+
   it.each([
     ['active',     true],
     ['trialing',   true],
