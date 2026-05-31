@@ -7,9 +7,9 @@
  * render without further client-side reshaping.
  */
 
-import { sql, and, eq, gte, inArray } from 'drizzle-orm'
+import { sql, and, eq, gte, inArray, isNotNull, isNull, or } from 'drizzle-orm'
 import { getDbReadOnly } from '../db'
-import { wbEvents, recoveries, users } from '../schema'
+import { wbEvents, recoveries, users, customers } from '../schema'
 
 /**
  * Spec 26 — full set of error-class event names. Matches the entries logged
@@ -86,7 +86,10 @@ export interface OverviewRollup {
     /** Spec 26 — replaces `replies` (weak signal once volume's up). */
     handoffs: number
     recoveries: { strong: number; weak: number; organic: number; total: number }
-    /** Spec 26 — strong (billable) MRR recovered today, in cents. */
+    /** Strong-attribution MRR recovered today, in cents. NOTE: post
+     *  billing-rewrite there is no per-recovery fee — this is a
+     *  value-delivered health signal, NOT platform revenue. (Was
+     *  labelled "billable" in the perf-fee era; relabelled 2026-05-29.) */
     mrrCents: number
     errors: {
       total: number
@@ -98,9 +101,44 @@ export interface OverviewRollup {
     emailsSent: number[]
     handoffs: number[]
     recoveries: number[]
-    /** Spec 26 — strong MRR (cents) per day, last 7 days. */
+    /** Strong-attribution MRR (cents) per day, last 7 days. */
     mrrCents: number[]
     errors: number[]
+  }
+  /**
+   * 2026-05-29 — the first-save paywall cohort. After the pause-at-first
+   * -save gate (PR #169), merchants who've had a recovery delivered but
+   * haven't subscribed are parked in a paused state. This surfaces how
+   * many are stuck there and how much gate activity is happening, so the
+   * gate's conversion impact is visible instead of silent.
+   */
+  paywall: {
+    /** Point-in-time: customers past the gate (activated, no sub, not on
+     *  an active pilot). The "stuck at the paywall right now" number. */
+    stuckAtPaywall: number
+    /** Today's count of classifier/send skips caused by the gate. Rising
+     *  = more work being suppressed for unpaid-but-activated merchants. */
+    gateSkipsToday: number
+    /** Today's count of un-pause attempts blocked for lack of a sub —
+     *  direct demand signal for the gated service. */
+    unpauseBlockedToday: number
+  }
+  /**
+   * 2026-05-29 — platform revenue health. Replaces what the gutted
+   * /admin/billing page no longer shows after the perf-fee removal:
+   * tier mix + subscription churn are the business metrics now.
+   */
+  billing: {
+    /** Customers with a live platform sub, grouped by billed tier. */
+    tierDistribution: { starter: number; growth: number; scale: number; enterprise: number; custom: number }
+    /** Customers flagged requires_sales (Enterprise hand-off backlog). */
+    requiresSales: number
+    /** Platform-sub cancellations in the last 7 days (churn). */
+    subsCanceled7d: number
+    /** Platform-sub reactivations in the last 7 days. */
+    reactivations7d: number
+    /** Platform invoice failures today (renewal/dunning health). */
+    invoiceFailedToday: number
   }
   /**
    * Spec 26.5 — actionable growth + health signals (replaces the old static
@@ -212,9 +250,10 @@ async function errorBuckets(days: number): Promise<number[]> {
 }
 
 /**
- * Spec 26 — strong (billable) MRR recovered today, in cents.
- * Sources from wb_recoveries directly, not wb_events, because the events
- * row only stores the per-recovery cents and we want the sum.
+ * Strong-attribution MRR recovered today, in cents. Sources from
+ * wb_recoveries directly (the events row only stores per-recovery cents;
+ * we want the sum). Value-delivered signal, not platform revenue — see
+ * the OverviewRollup.today.mrrCents doc.
  */
 async function mrrCentsToday(): Promise<number> {
   const since = startOfTodayUtc()
@@ -232,8 +271,8 @@ async function mrrCentsToday(): Promise<number> {
 }
 
 /**
- * Spec 26 — strong-MRR daily buckets for the last `days` days. Same padding
- * scheme as dailyBucketsForEvent.
+ * Strong-attribution MRR daily buckets for the last `days` days. Same
+ * padding scheme as dailyBucketsForEvent.
  */
 async function mrrCentsBuckets(days: number): Promise<number[]> {
   const since = nDaysAgo(days - 1)
@@ -284,12 +323,68 @@ async function signupsSince(since: Date): Promise<number> {
 }
 
 async function trialToPaidSince(since: Date): Promise<number> {
-  // billing_card_captured fires when a founder completes the platform card
-  // capture flow — the moment trial → paid happens on our side.
+  // 2026-05-29 — count platform_subscription_created (emitted by
+  // ensurePlatformSubscription the moment a sub is written). This is the
+  // true trial→paid moment in the tiered model. Previously counted
+  // billing_card_captured, which fires at card capture — a step BEFORE
+  // the subscription actually exists, so it could over-count abandoned
+  // activations.
   const [row] = await getDbReadOnly()
     .select({ n: sql<number>`count(*)::int` })
     .from(wbEvents)
-    .where(and(eq(wbEvents.name, 'billing_card_captured'), gte(wbEvents.createdAt, since)))
+    .where(and(eq(wbEvents.name, 'platform_subscription_created'), gte(wbEvents.createdAt, since)))
+  return row?.n ?? 0
+}
+
+/**
+ * 2026-05-29 — paywall cohort: point-in-time count of customers parked
+ * past the first-save gate (activated, no sub, not on an active pilot).
+ * Mirrors the predicate in isCustomerBillingHealthy so the number
+ * matches who's actually being gated.
+ */
+async function stuckAtPaywallNow(): Promise<number> {
+  const now = new Date()
+  const [row] = await getDbReadOnly()
+    .select({ n: sql<number>`count(*)::int` })
+    .from(customers)
+    .where(and(
+      isNotNull(customers.activatedAt),
+      isNull(customers.stripeSubscriptionId),
+      or(
+        isNull(customers.pilotUntil),
+        sql`${customers.pilotUntil} <= ${now}`,
+      ),
+    ))
+  return row?.n ?? 0
+}
+
+/**
+ * Customers with a live platform subscription, grouped by billed tier.
+ * The platform's revenue mix. Only counts rows with a sub on file (a
+ * stale billed_tier on a canceled customer shouldn't inflate the count).
+ */
+async function tierDistribution(): Promise<OverviewRollup['billing']['tierDistribution']> {
+  const rows = await getDbReadOnly()
+    .select({
+      tier: customers.billedTier,
+      n: sql<number>`count(*)::int`,
+    })
+    .from(customers)
+    .where(isNotNull(customers.stripeSubscriptionId))
+    .groupBy(customers.billedTier)
+
+  const out = { starter: 0, growth: 0, scale: 0, enterprise: 0, custom: 0 }
+  for (const r of rows) {
+    if (r.tier && r.tier in out) out[r.tier as keyof typeof out] = r.n
+  }
+  return out
+}
+
+async function requiresSalesCount(): Promise<number> {
+  const [row] = await getDbReadOnly()
+    .select({ n: sql<number>`count(*)::int` })
+    .from(customers)
+    .where(eq(customers.requiresSales, true))
   return row?.n ?? 0
 }
 
@@ -334,6 +429,20 @@ export async function buildOverviewRollup(): Promise<OverviewRollup> {
     conversions7d,
     customersActive24h,
     customersActive7d,
+    // 2026-05-29 — paywall cohort.
+    stuckAtPaywall,
+    gateClassifierSkipsToday,
+    gateSendSkipsToday,
+    unpauseBlockedToday,
+    // 2026-05-29 — billing / revenue health.
+    tierDist,
+    requiresSales,
+    subsCanceled7d,
+    reactivations7d,
+    invoiceFailedToday,
+    // Red-light sparklines for the two billing signals.
+    subsCanceledSpark,
+    invoiceFailedSpark,
   ] = await Promise.all([
     countEventsSince('email_sent', todayStart),
     // Spec 26 — replaces replies (which was a weak signal). Handoffs map
@@ -353,6 +462,17 @@ export async function buildOverviewRollup(): Promise<OverviewRollup> {
     trialToPaidSince(sevenDaysAgo),
     customersActiveSince(oneDayAgo),
     customersActiveSince(sevenDaysAgo),
+    stuckAtPaywallNow(),
+    countEventsSince('classifier_skipped_billing_unhealthy', todayStart),
+    countEventsSince('send_skipped_billing_unhealthy', todayStart),
+    countEventsSince('customer_unpause_blocked_no_sub', todayStart),
+    tierDistribution(),
+    requiresSalesCount(),
+    countEventsSince('platform_subscription_canceled', sevenDaysAgo),
+    countEventsSince('platform_subscription_reactivated', sevenDaysAgo),
+    countEventsSince('billing_invoice_failed', todayStart),
+    dailyBucketsForEvent('platform_subscription_canceled', 7),
+    dailyBucketsForEvent('billing_invoice_failed', 7),
   ])
 
   // Red lights: any metric where today > 3 × median(last 7 days, excluding today).
@@ -362,6 +482,11 @@ export async function buildOverviewRollup(): Promise<OverviewRollup> {
     // Replies → handoffs swap also flows through to red-light detection.
     // A sudden handoff spike is the most useful early-warning of prompt regression.
     { metric: 'handoffs', today: handoffsToday, spark: handoffsSpark },
+    // 2026-05-29 — billing early-warnings. A churn wave (sub cancels) or a
+    // dunning wave (invoice failures) is exactly the kind of thing an admin
+    // wants flagged the day it starts, not discovered at month-end.
+    { metric: 'subs_canceled', today: subsCanceledSpark[subsCanceledSpark.length - 1] ?? 0, spark: subsCanceledSpark },
+    { metric: 'invoice_failed', today: invoiceFailedToday, spark: invoiceFailedSpark },
   ]
   for (const c of checks) {
     const past = c.spark.slice(0, -1)  // exclude today's bucket
@@ -397,6 +522,18 @@ export async function buildOverviewRollup(): Promise<OverviewRollup> {
       conversions7d,
       customersActive24h,
       customersActive7d,
+    },
+    paywall: {
+      stuckAtPaywall,
+      gateSkipsToday: gateClassifierSkipsToday + gateSendSkipsToday,
+      unpauseBlockedToday,
+    },
+    billing: {
+      tierDistribution: tierDist,
+      requiresSales,
+      subsCanceled7d,
+      reactivations7d,
+      invoiceFailedToday,
     },
     redLights,
   }
