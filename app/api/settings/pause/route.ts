@@ -42,12 +42,45 @@ export async function POST(req: Request) {
   const now = paused ? new Date() : null
 
   const [customer] = await db
-    .select({ id: customers.id })
+    .select({
+      id:                   customers.id,
+      stripeSubscriptionId: customers.stripeSubscriptionId,
+    })
     .from(customers)
     .where(eq(customers.userId, session.user.id))
     .limit(1)
   if (!customer) {
     return NextResponse.json({ error: 'Customer not found' }, { status: 404 })
+  }
+
+  // 2026-05-29 — asymmetric pause/un-pause rule.
+  // Pausing is always allowed (an active merchant can pause; a paused
+  // merchant can re-pause the other scope; etc.). Un-pausing requires
+  // an active platform subscription — without it, sends would be gated
+  // off by isCustomerBillingHealthy anyway (activatedAt + no sub →
+  // unhealthy), so flipping the toggle would lie about the actual
+  // state. Block at the API layer so the toggle never silently fails
+  // and the danger-zone UI's "Subscribe to resume" message has teeth.
+  if (!paused && !customer.stripeSubscriptionId) {
+    // Log the blocked attempt — it's behaviourally interesting (the
+    // merchant tried to resume without subscribing, signal of
+    // unpause-pressure on the no-sub state). Useful for measuring
+    // conversion lift if we ever surface a one-click subscribe path
+    // from the danger zone.
+    await logEvent({
+      name: 'customer_unpause_blocked_no_sub',
+      customerId: customer.id,
+      userId: session.user.id,
+      properties: { scope },
+    })
+    return NextResponse.json(
+      {
+        error: 'subscribe_first',
+        message:
+          'Subscribe before un-pausing — sends are gated on an active subscription.',
+      },
+      { status: 403 },
+    )
   }
 
   await db

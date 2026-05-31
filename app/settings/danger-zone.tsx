@@ -5,9 +5,14 @@ import { PauseToggle } from './pause-toggle'
 interface DangerZoneProps {
   pausedWinback: boolean
   pausedDunning: boolean
+  /** 2026-05-29 — un-pause requires an active platform subscription.
+   *  Forwarded to PauseToggle so it disables the un-pause click and
+   *  shows "Subscribe to resume sends" when the toggle is paused
+   *  without a sub. Pause direction is always allowed. */
+  hasActiveSub: boolean
 }
 
-export function DangerZone({ pausedWinback, pausedDunning }: DangerZoneProps) {
+export function DangerZone({ pausedWinback, pausedDunning, hasActiveSub }: DangerZoneProps) {
   return (
     <div className="bg-rose-50/40 border border-rose-200 rounded-2xl p-6 mt-6">
       <div className="text-xs font-semibold tracking-widest uppercase text-rose-600">
@@ -41,7 +46,7 @@ export function DangerZone({ pausedWinback, pausedDunning }: DangerZoneProps) {
             </div>
           </div>
           <div className="flex-shrink-0">
-            <PauseToggle scope="winback" initialPaused={pausedWinback} compact />
+            <PauseToggle scope="winback" initialPaused={pausedWinback} compact hasActiveSub={hasActiveSub} />
           </div>
         </div>
       </div>
@@ -65,7 +70,7 @@ export function DangerZone({ pausedWinback, pausedDunning }: DangerZoneProps) {
             </div>
           </div>
           <div className="flex-shrink-0">
-            <PauseToggle scope="dunning" initialPaused={pausedDunning} compact />
+            <PauseToggle scope="dunning" initialPaused={pausedDunning} compact hasActiveSub={hasActiveSub} />
           </div>
         </div>
       </div>

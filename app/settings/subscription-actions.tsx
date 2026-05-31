@@ -7,6 +7,17 @@ interface SubscriptionActionsProps {
   status: string  // Stripe Subscription status — 'active' | 'past_due' | etc.
   cancelAtPeriodEnd: boolean
   currentPeriodEndIso: string | null
+  /** 2026-05-29 — retention math surfaced in the cancel-confirm dialog.
+   *  Trailing-30d recovered MRR in USD minor units. When passed
+   *  together with priceUsdMinor and the ROI >= 1×, the confirm copy
+   *  leads with "Last 30 days WinbackFlow recovered $X — N× what you
+   *  paid." Mirrors the convention in tier-transparency-block.tsx —
+   *  never show a sub-1× ratio, that's worse marketing than nothing. */
+  trailing30dRecoveredUsdMinor?: number
+  /** Merchant's current monthly fee in USD minor units. Drives both the
+   *  ROI denominator and the "$X/mo subscription" line in the confirm
+   *  copy (currently hardcoded to $99 — incorrect for Growth+ tiers). */
+  priceUsdMinor?: number | null
 }
 
 /**
@@ -23,6 +34,8 @@ export function SubscriptionActions({
   status,
   cancelAtPeriodEnd,
   currentPeriodEndIso,
+  trailing30dRecoveredUsdMinor = 0,
+  priceUsdMinor = null,
 }: SubscriptionActionsProps) {
   const router = useRouter()
   const [busy, setBusy] = useState(false)
@@ -80,10 +93,36 @@ export function SubscriptionActions({
   }
 
   if (confirming) {
+    // 2026-05-29 — retention slug. Show the ROI math first so the
+    // merchant sees what they're walking away from BEFORE the
+    // "you'll keep access through the cycle" mechanical line. Hidden
+    // when ROI < 1× (sub-1× ratios undermine the pitch — same rule
+    // tier-transparency-block.tsx applies for the dashboard view).
+    const recoveredUsd = trailing30dRecoveredUsdMinor / 100
+    const monthlyFeeUsd = priceUsdMinor != null ? priceUsdMinor / 100 : null
+    const roiMultiple =
+      priceUsdMinor != null && priceUsdMinor > 0
+        ? trailing30dRecoveredUsdMinor / priceUsdMinor
+        : null
+    const showRetentionSlug = roiMultiple != null && roiMultiple >= 1
+    // "Your $X/mo subscription" — was hardcoded to $99 (Starter). Read
+    // from priceUsdMinor when available so Growth ($299) / Scale ($699)
+    // merchants see the right number.
+    const feeLabel =
+      monthlyFeeUsd != null ? `$${monthlyFeeUsd.toLocaleString()}/mo` : '$99/mo'
     return (
       <div className="mt-4 pt-4 border-t border-slate-100">
+        {showRetentionSlug && (
+          <p className="text-sm text-slate-900 mb-2">
+            Last 30 days, WinbackFlow recovered{' '}
+            <strong>
+              ${recoveredUsd.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+            </strong>{' '}
+            for you — <strong>{roiMultiple.toFixed(1)}× what you paid</strong>.
+          </p>
+        )}
         <p className="text-sm text-slate-700">
-          Cancel your $99/mo subscription? You'll keep access through the
+          Cancel your {feeLabel} subscription? You&apos;ll keep access through the
           current cycle, then no further charges.
         </p>
         {/* Visual hierarchy intentionally inverts: the safe action (Keep) is
