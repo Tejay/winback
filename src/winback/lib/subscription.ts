@@ -224,6 +224,20 @@ export async function ensurePlatformSubscription(
     })
     .where(eq(customers.id, wbCustomerId))
 
+  // 2026-05-29 — true conversion signal. Fires at the exact moment a
+  // platform subscription is written, which is the real trial→paid
+  // moment in the tiered model. The admin overview counts this for its
+  // conversion metric (more precise than billing_card_captured, which
+  // fires at card capture — a step before the sub actually exists).
+  await logEvent({
+    name: 'platform_subscription_created',
+    customerId: wbCustomerId,
+    properties: {
+      stripeSubscriptionId: subscription.id,
+      tier: flatRateCents !== null ? 'custom' : resolvedTier,
+    },
+  })
+
   return { subscriptionId: subscription.id, created: true }
 }
 

@@ -41,6 +41,20 @@ interface OverviewRollup {
     customersActive24h: number
     customersActive7d: number
   }
+  /** 2026-05-29 — first-save paywall cohort. */
+  paywall: {
+    stuckAtPaywall: number
+    gateSkipsToday: number
+    unpauseBlockedToday: number
+  }
+  /** 2026-05-29 — platform revenue health. */
+  billing: {
+    tierDistribution: { starter: number; growth: number; scale: number; enterprise: number; custom: number }
+    requiresSales: number
+    subsCanceled7d: number
+    reactivations7d: number
+    invoiceFailedToday: number
+  }
   redLights: Array<{ metric: string; today: number; median7d: number }>
   cronHealth: Array<{
     name: string
@@ -161,7 +175,11 @@ export function OverviewClient() {
                       })()
                     : rl.metric === 'handoffs'
                       ? '/admin/events?name=founder_handoff_triggered'
-                      : '/admin/events'
+                      : rl.metric === 'subs_canceled'
+                        ? '/admin/events?name=platform_subscription_canceled'
+                        : rl.metric === 'invoice_failed'
+                          ? '/admin/events?name=billing_invoice_failed'
+                          : '/admin/events'
                 }
                 className="ml-auto text-xs underline"
               >
@@ -213,6 +231,70 @@ export function OverviewClient() {
             today={data.growth.customersActive24h}
             sevenDay={data.growth.customersActive7d}
             sevenDayLabel="7d unique"
+            valueColor="text-slate-900"
+          />
+        </div>
+      </section>
+
+      {/* 2026-05-29 — first-save paywall cohort. Surfaces the gate from
+          PR #169: how many merchants are parked post-first-save without a
+          sub, and how much gate activity / un-pause pressure there is. */}
+      <section>
+        <div className="text-xs font-semibold uppercase tracking-widest text-slate-500 mb-3">
+          Paywall &amp; activation
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <GrowthTile
+            label="Stuck at paywall"
+            today={data.paywall.stuckAtPaywall}
+            sevenDay={data.paywall.stuckAtPaywall}
+            sevenDayLabel="awaiting card"
+            valueColor={data.paywall.stuckAtPaywall > 0 ? 'text-amber-600' : 'text-slate-900'}
+          />
+          <GrowthTile
+            label="Gate skips (today)"
+            today={data.paywall.gateSkipsToday}
+            sevenDay={data.paywall.gateSkipsToday}
+            sevenDayLabel="classify + send"
+            valueColor="text-slate-900"
+          />
+          <GrowthTile
+            label="Un-pause blocked (today)"
+            today={data.paywall.unpauseBlockedToday}
+            sevenDay={data.paywall.unpauseBlockedToday}
+            sevenDayLabel="no-sub attempts"
+            valueColor={data.paywall.unpauseBlockedToday > 0 ? 'text-amber-600' : 'text-slate-900'}
+          />
+        </div>
+      </section>
+
+      {/* 2026-05-29 — platform revenue health. Replaces what /admin/billing
+          stopped showing after the perf-fee removal: tier mix + sub churn. */}
+      <section>
+        <div className="text-xs font-semibold uppercase tracking-widest text-slate-500 mb-3">
+          Billing &amp; revenue
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+          <TierDistributionTile dist={data.billing.tierDistribution} requiresSales={data.billing.requiresSales} />
+          <GrowthTile
+            label="Subs canceled (7d)"
+            today={data.billing.subsCanceled7d}
+            sevenDay={data.billing.reactivations7d}
+            sevenDayLabel="reactivations"
+            valueColor={data.billing.subsCanceled7d > 0 ? 'text-red-600' : 'text-slate-900'}
+          />
+          <GrowthTile
+            label="Invoice failures (today)"
+            today={data.billing.invoiceFailedToday}
+            sevenDay={data.billing.invoiceFailedToday}
+            sevenDayLabel="dunning"
+            valueColor={data.billing.invoiceFailedToday > 0 ? 'text-red-600' : 'text-slate-900'}
+          />
+          <GrowthTile
+            label="Requires sales"
+            today={data.billing.requiresSales}
+            sevenDay={data.billing.requiresSales}
+            sevenDayLabel="Enterprise backlog"
             valueColor="text-slate-900"
           />
         </div>
@@ -446,6 +528,47 @@ function GrowthTile({
         <div className="text-xs text-slate-400">
           today &middot; {sevenDay.toLocaleString()} {sevenDayLabel}
         </div>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * 2026-05-29 — tier mix tile. Compact breakdown of active subscriptions
+ * by billed tier, with the total as the headline number. Gives the
+ * revenue mix at a glance without leaving the overview.
+ */
+function TierDistributionTile({
+  dist,
+  requiresSales,
+}: {
+  dist: { starter: number; growth: number; scale: number; enterprise: number; custom: number }
+  requiresSales: number
+}) {
+  const total = dist.starter + dist.growth + dist.scale + dist.enterprise + dist.custom
+  const rows: Array<[string, number]> = [
+    ['Starter', dist.starter],
+    ['Growth', dist.growth],
+    ['Scale', dist.scale],
+    ['Enterprise', dist.enterprise],
+    ['Custom', dist.custom],
+  ]
+  return (
+    <div className="bg-white rounded-2xl border border-slate-200 p-4">
+      <div className="text-xs font-semibold uppercase tracking-widest text-slate-500 mb-2">
+        Active subs by tier
+      </div>
+      <div className="flex items-baseline gap-3 mb-2">
+        <div className="text-3xl font-bold text-slate-900">{total.toLocaleString()}</div>
+        <div className="text-xs text-slate-400">active subscriptions</div>
+      </div>
+      <div className="space-y-0.5">
+        {rows.map(([label, n]) => (
+          <div key={label} className="flex items-center justify-between text-xs">
+            <span className="text-slate-500">{label}</span>
+            <span className="tabular-nums text-slate-700 font-medium">{n.toLocaleString()}</span>
+          </div>
+        ))}
       </div>
     </div>
   )
