@@ -9,6 +9,7 @@ import { callWithRetry } from './retry'
 import {
   renderDunningEmailHtml,
   renderWinbackEmailHtml,
+  renderPersonalExitEmailHtml,
   renderPasswordResetHtml,
   renderVerificationEmailHtml,
   renderOnboardingNudgeHtml,
@@ -145,6 +146,22 @@ Ready to give us another try? Resubscribe here:
 ${reactivationUrl(subscriberId)}
 
 — — —
+If you'd rather not hear from us, unsubscribe: ${unsubscribeUrl(subscriberId)}`
+}
+
+/**
+ * Personal-exit text/plain footer — the multipart text counterpart to
+ * renderPersonalExitEmailHtml. Mirrors that layout in plain text so the
+ * clients that show the text part see the same shape: reply cue first,
+ * resubscribe close to the note, unsubscribe last. Used only by the
+ * exit-email send path (style='personal').
+ */
+export function appendPersonalFooter(body: string, subscriberId: string, _fromName: string): string {
+  return `${body}
+
+↩ Just hit reply — comes straight to me, I read every one.
+Changed your mind? Resubscribe: ${reactivationUrl(subscriberId)}
+
 If you'd rather not hear from us, unsubscribe: ${unsubscribeUrl(subscriberId)}`
 }
 
@@ -324,8 +341,17 @@ export async function sendEmail(params: {
   body: string
   fromName: string
   subscriberId: string
+  /**
+   * Render style. Default 'marketing' = the card + Resubscribe button +
+   * unsubscribe footer (every existing caller — promo, re-engagement,
+   * resend — keeps this untouched). 'personal' = the plain listen-and-
+   * learn exit-email render: no card/eyebrow/button, reply cue, demoted
+   * resubscribe link, unsubscribe at the bottom. Only scheduleExitEmail
+   * opts into 'personal'. See renderPersonalExitEmailHtml.
+   */
+  style?: 'personal' | 'marketing'
 }): Promise<{ messageId: string }> {
-  const { to, subject, body, fromName, subscriberId } = params
+  const { to, subject, body, fromName, subscriberId, style = 'marketing' } = params
 
   if (await isDoNotContact(subscriberId)) {
     console.log('Skipping email — subscriber unsubscribed:', subscriberId)
@@ -349,12 +375,20 @@ export async function sendEmail(params: {
   // Sign-off is code-owned: ensure exactly one in the body BEFORE rendering
   // so text + HTML stay consistent. See ensureSignoff().
   const signedBody = ensureSignoff(body, fromName)
-  const fullBody = appendStandardFooter(signedBody, subscriberId, fromName)
-  const html     = renderWinbackEmailHtml({
-    body: signedBody,
-    reactivationUrl: reactivationUrl(subscriberId),
-    unsubscribeUrl:  unsubscribeUrl(subscriberId),
-  })
+  const fullBody = style === 'personal'
+    ? appendPersonalFooter(signedBody, subscriberId, fromName)
+    : appendStandardFooter(signedBody, subscriberId, fromName)
+  const html     = style === 'personal'
+    ? renderPersonalExitEmailHtml({
+        body: signedBody,
+        reactivationUrl: reactivationUrl(subscriberId),
+        unsubscribeUrl:  unsubscribeUrl(subscriberId),
+      })
+    : renderWinbackEmailHtml({
+        body: signedBody,
+        reactivationUrl: reactivationUrl(subscriberId),
+        unsubscribeUrl:  unsubscribeUrl(subscriberId),
+      })
 
   // Spec 28 — wrap the Resend send so transient 429s are absorbed inside
   // the function call rather than bubbling up as webhook 5xxs.
@@ -451,6 +485,12 @@ export async function scheduleExitEmail(params: {
     body,
     fromName,
     subscriberId,
+    // Exit email is the listen-and-learn first touch — render it as a
+    // plain personal note (no card / button) to maximise replies. Both
+    // exit triggers (classifier-tick + pause-drain drain) route through
+    // here, so this single arg covers every exit send. See
+    // renderPersonalExitEmailHtml.
+    style: 'personal',
   })
 
   // sendEmail returns empty messageId if DNC — shouldn't happen here (we pre-checked) but guard anyway

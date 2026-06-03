@@ -271,6 +271,62 @@ export function renderWinbackEmailHtml(i: {
 }
 
 /**
+ * Personal exit email (Tier 1/2 listen-and-learn first touch).
+ *
+ * The exit email's job is to get a REPLY, not a click. The marketing
+ * shell above (card + blue eyebrow + dark Resubscribe button) reads as
+ * an automated sequence and suppresses replies. This renderer strips
+ * all of that: no card chrome, no eyebrow, no CTA button — just the
+ * founder's note on a plain white background, ending in the question
+ * the copy already asked.
+ *
+ * Layout (top → bottom):
+ *   - body verbatim (greeting → 2-sentence question → sign-off)
+ *   - reply cue: "↩ Just hit reply — comes straight to me…"
+ *   - "Changed your mind? Resubscribe" link, close to the text (the
+ *     low-pressure path for the minority ready to return)
+ *   - hairline, then "Don't want these emails? Unsubscribe." at the
+ *     very bottom — kept identical to the original email's opt-out, so
+ *     a visible opt-out is always present (we don't rely on Gmail's
+ *     native header chip).
+ *
+ * A ~560px max-width wrapper keeps it from sprawling full-width on
+ * desktop, but there is deliberately no border / background card.
+ */
+export function renderPersonalExitEmailHtml(i: {
+  body:            string
+  reactivationUrl: string
+  unsubscribeUrl:  string
+}): string {
+  const bodyParas = renderBodyParagraphs(i.body)
+  return `
+<!doctype html>
+<html>
+  <head><meta charset="utf-8"></head>
+  <body style="margin:0;padding:0;background:#ffffff;font-family:'Helvetica Neue',Arial,sans-serif;color:#202124;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#ffffff;padding:24px 0;">
+      <tr><td align="left">
+        <table role="presentation" width="560" cellpadding="0" cellspacing="0" border="0" style="max-width:560px;">
+          <tr><td style="padding:8px 24px 0;">
+            ${bodyParas}
+            <p style="margin:18px 0 4px;font-size:13px;line-height:1.6;color:#5f6368;">
+              ↩ Just hit reply — comes straight to me, I read every one.
+            </p>
+            <p style="margin:4px 0 0;font-size:13px;line-height:1.6;color:#5f6368;">
+              Changed your mind? <a href="${escapeHtml(i.reactivationUrl)}" style="color:#5f6368;text-decoration:underline;">Resubscribe</a>
+            </p>
+            <p style="margin:48px 0 0;padding-top:14px;border-top:1px solid #e8eaed;font-size:12px;line-height:1.6;color:#94a3b8;">
+              Don&#39;t want these emails? <a href="${escapeHtml(i.unsubscribeUrl)}" style="color:#94a3b8;text-decoration:underline;">Unsubscribe</a>.
+            </p>
+          </td></tr>
+        </table>
+      </td></tr>
+    </table>
+  </body>
+</html>`.trim()
+}
+
+/**
  * Password reset — single dark "Reset password" button, no unsub
  * footer (transactional/account-recovery; same precedent as the
  * text-only version in email.ts:sendPasswordResetEmail).
