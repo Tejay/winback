@@ -7,7 +7,12 @@
  * snapshots — so cosmetic tweaks to padding/colors don't churn the tests.
  */
 import { describe, it, expect } from 'vitest'
-import { renderDunningEmailHtml, escapeHtml } from '../lib/email-html'
+import {
+  renderDunningEmailHtml,
+  renderWinbackEmailHtml,
+  renderPersonalExitEmailHtml,
+  escapeHtml,
+} from '../lib/email-html'
 
 const baseInputs = {
   customerName: 'Eve',
@@ -162,5 +167,57 @@ describe('renderDunningEmailHtml (Spec 37)', () => {
 
     expect(html).toContain('— Tej &amp; Co')
     expect(html).not.toContain('— Tej & Co')
+  })
+})
+
+// PR — personal exit email vs marketing win-back render.
+const exitInputs = {
+  body: 'Hi Priya,\n\nFair point on the price — pricing fit is real and I’d rather know than guess. What price would have worked?\n\n— Thejas',
+  reactivationUrl: 'https://app.example.com/api/reactivate/sub_1',
+  unsubscribeUrl:  'https://app.example.com/api/unsubscribe/sub_1?t=tok',
+}
+
+describe('renderPersonalExitEmailHtml (listen-and-learn exit email)', () => {
+  const html = renderPersonalExitEmailHtml(exitInputs)
+
+  it('has NO Resubscribe button (the marketing CTA pill)', () => {
+    // The marketing render wraps the CTA label in a dark pill table cell.
+    // Personal render must not produce that button — resubscribe is only a
+    // small text link.
+    expect(html).not.toContain('background:#0f172a;border-radius:9999px')
+  })
+
+  it('includes the reply cue (the reply-maximising line)', () => {
+    expect(html).toContain('Just hit reply')
+  })
+
+  it('demotes resubscribe to a plain text link, not a button', () => {
+    expect(html).toContain('Changed your mind?')
+    expect(html).toContain(exitInputs.reactivationUrl)
+  })
+
+  it('keeps a visible in-body unsubscribe at the bottom', () => {
+    expect(html).toContain('Unsubscribe')
+    expect(html).toContain(exitInputs.unsubscribeUrl)
+  })
+
+  it('has no blue uppercase eyebrow or grey card backdrop', () => {
+    expect(html).not.toContain('text-transform:uppercase')      // eyebrow
+    expect(html).not.toContain('background:#f5f5f5')            // grey card backdrop
+  })
+
+  it('escapes the body (XSS safety)', () => {
+    const evil = renderPersonalExitEmailHtml({ ...exitInputs, body: '<script>alert(1)</script>' })
+    expect(evil).toContain('&lt;script&gt;')
+    expect(evil).not.toContain('<script>alert(1)</script>')
+  })
+})
+
+describe('renderWinbackEmailHtml (marketing render — regression guard)', () => {
+  const html = renderWinbackEmailHtml(exitInputs)
+
+  it('STILL renders the dark Resubscribe button', () => {
+    expect(html).toContain('background:#0f172a;border-radius:9999px')
+    expect(html).toContain('Resubscribe')
   })
 })
