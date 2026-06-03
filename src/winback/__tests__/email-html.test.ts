@@ -213,6 +213,23 @@ describe('renderPersonalExitEmailHtml (listen-and-learn exit email)', () => {
   })
 })
 
+describe('renderWinbackEmailHtml — reply cue (re-engagement opt-in)', () => {
+  it('omits the reply cue by default (promo / default marketing)', () => {
+    const html = renderWinbackEmailHtml(exitInputs)
+    expect(html).not.toContain('or just reply if you have a question')
+    // still has the button
+    expect(html).toContain('background:#0f172a;border-radius:9999px')
+  })
+
+  it('adds the reply cue under the button when replyCue=true (re-engagement)', () => {
+    const html = renderWinbackEmailHtml({ ...exitInputs, replyCue: true })
+    expect(html).toContain('or just reply if you have a question')
+    // button is still present — reply cue is additive, not a replacement
+    expect(html).toContain('background:#0f172a;border-radius:9999px')
+    expect(html).toContain('Resubscribe')
+  })
+})
+
 describe('renderWinbackEmailHtml (marketing render — regression guard)', () => {
   const html = renderWinbackEmailHtml(exitInputs)
 

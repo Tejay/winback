@@ -134,17 +134,27 @@ function listUnsubscribeHeaders(subscriberId: string) {
  * Note: dunning emails use a different footer (update-payment link, no
  * reactivation) — see sendDunningEmail() for that variant.
  */
-export function appendStandardFooter(body: string, subscriberId: string, fromName: string): string {
+export function appendStandardFooter(
+  body: string,
+  subscriberId: string,
+  fromName: string,
+  opts: { replyCue?: boolean } = {},
+): string {
   // NOTE: the sign-off ("— Name") is NOT added here anymore. It belongs to
   // the body, guaranteed by ensureSignoff() before this runs — so it renders
   // consistently in BOTH the text (this) and HTML (renderWinbackEmailHtml,
   // which takes the raw body) paths. This footer only adds the resubscribe
   // CTA + unsubscribe line.
+  // opts.replyCue mirrors the HTML reply cue (re-engagement only): a reply
+  // invitation under the resubscribe link in the text/plain part.
+  const replyCueLine = opts.replyCue
+    ? `\n↩ or just reply if you have a question — comes straight to me.\n`
+    : ''
   return `${body}
 
 Ready to give us another try? Resubscribe here:
 ${reactivationUrl(subscriberId)}
-
+${replyCueLine}
 — — —
 If you'd rather not hear from us, unsubscribe: ${unsubscribeUrl(subscriberId)}`
 }
@@ -350,8 +360,17 @@ export async function sendEmail(params: {
    * opts into 'personal'. See renderPersonalExitEmailHtml.
    */
   style?: 'personal' | 'marketing'
+  /**
+   * Marketing-only: add the "↩ or just reply if you have a question"
+   * cue beneath the Resubscribe button (HTML + text). Used by the
+   * re-engagement path ("I shipped your thing") — a high-intent,
+   * personal moment. Ignored when style='personal' (the exit render
+   * already leads with a reply cue). Default false (promo stays
+   * button-only).
+   */
+  replyCue?: boolean
 }): Promise<{ messageId: string }> {
-  const { to, subject, body, fromName, subscriberId, style = 'marketing' } = params
+  const { to, subject, body, fromName, subscriberId, style = 'marketing', replyCue = false } = params
 
   if (await isDoNotContact(subscriberId)) {
     console.log('Skipping email — subscriber unsubscribed:', subscriberId)
@@ -377,7 +396,7 @@ export async function sendEmail(params: {
   const signedBody = ensureSignoff(body, fromName)
   const fullBody = style === 'personal'
     ? appendPersonalFooter(signedBody, subscriberId, fromName)
-    : appendStandardFooter(signedBody, subscriberId, fromName)
+    : appendStandardFooter(signedBody, subscriberId, fromName, { replyCue })
   const html     = style === 'personal'
     ? renderPersonalExitEmailHtml({
         body: signedBody,
@@ -388,6 +407,7 @@ export async function sendEmail(params: {
         body: signedBody,
         reactivationUrl: reactivationUrl(subscriberId),
         unsubscribeUrl:  unsubscribeUrl(subscriberId),
+        replyCue,
       })
 
   // Spec 28 — wrap the Resend send so transient 429s are absorbed inside
