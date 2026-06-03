@@ -76,6 +76,21 @@ interface Subscriber {
   awaitingReply?: boolean
 }
 
+/**
+ * A subscriber is "closed" — already recovered, written off, or opted out —
+ * and therefore not a valid promo target. Used to (a) grey the row's
+ * interaction affordances and (b) keep the "Select all & offer" shortcut
+ * from grabbing rows that shouldn't receive an offer.
+ */
+function isClosedSubscriber(s: Subscriber): boolean {
+  return (
+    s.status === 'recovered' ||
+    s.status === 'lost' ||
+    s.status === 'skipped' ||
+    !!s.doNotContact
+  )
+}
+
 type ConversationMessage =
   | {
       direction: 'outbound'
@@ -1055,6 +1070,54 @@ export function DashboardClient({
         </div>
       </div>
 
+      {/* 2026-05-30 — zero-selection discoverability hint. The bulk-promo
+          flow used to be invisible until a row was already checked
+          (chicken-and-egg: you had to guess to tick a box before the
+          "Send promo offer" bar appeared). This bar surfaces the
+          capability BEFORE any selection, with a one-click
+          "select all open rows + open the bulk modal" shortcut. Same
+          gate as the bulk bar below; shows only when nothing is selected
+          and there's at least one open (promotable) row on the page.
+          The price-filter copy is sharpened because that's the cohort
+          the promo flow is designed for. */}
+      {tab === 'winback' && promotionsEnabled && promoOptions.length > 0 && selectedIds.size === 0 &&
+        (subscribers ?? []).some((s) => !isClosedSubscriber(s)) && (
+        <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-2.5">
+          <div className="flex items-center gap-2 text-sm text-slate-600">
+            <DollarSign className="w-4 h-4 text-slate-400 flex-shrink-0" />
+            <span>
+              {filter === 'price' ? (
+                <>
+                  <span className="font-semibold text-slate-900 tabular-nums">{totalSubs}</span>{' '}
+                  cancelled on price —{' '}
+                  {promoOptions.length === 1 ? (
+                    <>offer them <span className="font-medium text-slate-900">{promoOptions[0].code}</span> ({promoOptions[0].terms}) in one send.</>
+                  ) : (
+                    <>the cohort promos are built for. Offer one in a single send.</>
+                  )}
+                </>
+              ) : (
+                <>Tick subscribers to send a promo offer to several at once.</>
+              )}
+            </span>
+          </div>
+          <button
+            onClick={() => {
+              const openIds = (subscribers ?? [])
+                .filter((s) => !isClosedSubscriber(s))
+                .map((s) => s.id)
+              if (openIds.length === 0) return
+              setSelectedIds(new Set(openIds))
+              setBulkPromoModalOpen(true)
+            }}
+            className="self-start sm:self-auto inline-flex items-center gap-1.5 rounded-full bg-[#0f172a] hover:bg-[#1e293b] text-white text-sm font-medium px-4 py-1.5 whitespace-nowrap"
+          >
+            <DollarSign className="w-4 h-4" />
+            Select all &amp; offer →
+          </button>
+        </div>
+      )}
+
       {/* Spec 80 — bulk action bar. Appears the moment any subscriber
           row is checked. Only on the win-back tab + when promotions
           are enabled — the payment-recovery cohort doesn't have a
@@ -1119,7 +1182,7 @@ export function DashboardClient({
             </thead>
             <tbody className="divide-y divide-slate-50">
               {(subscribers ?? []).map((sub) => {
-                const isClosed = sub.status === 'recovered' || sub.status === 'lost' || sub.status === 'skipped' || !!sub.doNotContact
+                const isClosed = isClosedSubscriber(sub)
                 const initial = (sub.name?.trim()?.[0] ?? sub.email?.trim()?.[0] ?? '?').toUpperCase()
                 const showSnippet = !!(sub.awaitingReply && sub.latestReplySnippet)
                 const avatarClass =
