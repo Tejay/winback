@@ -468,6 +468,11 @@ export async function processSubscriberForReengagement(
       body:         draft.body,
       fromName,
       subscriberId: sub.id,
+      // "I shipped your thing" is high-intent + personal: keep the
+      // Resubscribe button primary, but add a reply path for the
+      // curious-but-not-ready reader. Promo path (tryPromotionPath
+      // above) stays button-only.
+      replyCue:     true,
     })
 
     if (messageId) {

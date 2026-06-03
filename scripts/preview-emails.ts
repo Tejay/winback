@@ -54,12 +54,26 @@ Fair point on the price — pricing fit is real and I'd rather know than guess. 
   // NOTE: these now render the MARKETING shell (promo / re-engagement
   // path). The exit email itself uses the personal render above.
   {
-    filename: '01-winback-tier1.html',
-    label:    'Marketing render (re-engagement / promo) — for comparison',
+    filename: '01-reengagement-reply-cue.html',
+    label:    'Re-engagement ("I shipped your thing") — MARKETING render + reply cue',
     html: renderWinbackEmailHtml({
-      body: `Hi Sarah,
+      body: `Hi Jordan,
 
-Fair call on the CSV cap — 1,000 rows was limiting after four months of daily use. I rebuilt it last week so it's uncapped now — if that was the blocker, it's gone.
+I just shipped the Slack integration you wanted — messages post to any channel the moment a new order comes in. Worth another look?
+
+— Thejas`,
+      reactivationUrl: 'https://winbackflow.co/api/reactivate/example-uuid',
+      unsubscribeUrl:  'https://winbackflow.co/api/unsubscribe/example-uuid?t=tok',
+      replyCue: true,
+    }),
+  },
+  {
+    filename: '01b-promo-button-only.html',
+    label:    'Promo offer — MARKETING render, button only (no reply cue)',
+    html: renderWinbackEmailHtml({
+      body: `Hi Sam,
+
+Saw price was the holdup — I've put 20% off your next 3 months on the table with code WINBACK20. Worth another look?
 
 — Alex`,
       reactivationUrl: 'https://winbackflow.co/api/reactivate/example-uuid',

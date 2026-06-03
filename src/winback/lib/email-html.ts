@@ -166,6 +166,15 @@ interface EmailLayoutInputs {
    */
   cta?:            CtaInput
   /**
+   * When true, render a quiet grey reply-invitation line directly beneath
+   * the CTA button: "↩ or just reply if you have a question — comes
+   * straight to me." Used by the re-engagement email ("I shipped your
+   * thing") — a high-intent, personal moment where the Resubscribe button
+   * stays primary but a reply path captures the curious-but-not-ready
+   * reader. Off for promo (button-only).
+   */
+  replyCue?:       boolean
+  /**
    * Optional small grey footer line. Used for unsubscribe ("Don't want
    * these? Unsubscribe."), or any de-emphasised tertiary action.
    */
@@ -213,6 +222,9 @@ function renderEmailShell(i: EmailLayoutInputs): string {
     ? `<p style="margin:0 0 8px 0;font-size:12px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:#3b82f6;">${escapeHtml(i.tone)}</p>`
     : ''
   const ctaBlock = i.cta ? renderCtaButton(i.cta) : ''
+  const replyCueBlock = i.replyCue
+    ? `<p style="margin:12px 0 0 0;font-size:13px;line-height:1.6;color:#5f6368;">↩ or just reply if you have a question — comes straight to me.</p>`
+    : ''
   const footerBlock = i.footer
     ? `<tr><td style="border-top:1px solid #e2e8f0;padding:16px 40px;">
             <p style="margin:0;font-size:11px;line-height:1.5;color:#94a3b8;">
@@ -232,6 +244,7 @@ function renderEmailShell(i: EmailLayoutInputs): string {
             ${toneBlock}
             ${renderBodyParagraphs(i.body)}
             ${ctaBlock}
+            ${replyCueBlock}
           </td></tr>
           ${footerBlock}
         </table>
@@ -259,10 +272,13 @@ export function renderWinbackEmailHtml(i: {
   body:             string
   reactivationUrl:  string
   unsubscribeUrl:   string
+  /** Re-engagement opt-in: adds the reply cue under the button. */
+  replyCue?:        boolean
 }): string {
   return renderEmailShell({
     body: i.body,
     cta:  { label: 'Resubscribe', url: i.reactivationUrl },
+    replyCue: i.replyCue,
     footer: {
       text: "Don't want these emails?",
       link: { label: 'Unsubscribe', url: i.unsubscribeUrl },
