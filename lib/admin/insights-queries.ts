@@ -223,22 +223,34 @@ export async function buildInsights(window: InsightsWindow = '30d'): Promise<Ins
   const payingMerchants = tierCounts.starter + tierCounts.growth + tierCounts.scale + tierCounts.enterprise + tierCounts.custom
   const arpaCents = payingMerchants > 0 ? Math.round(mrrCents / payingMerchants) : 0
 
-  // Attribution rows → fixed shape
+  // Attribution rows → fixed shape. Catch-all into 'organic' so the split
+  // always sums to the windowed total (mirrors recoveriesTodaySplit in
+  // rollups.ts: strong / weak / else→organic). 'else' covers null (already
+  // coalesced) and any unexpected value.
   const recoveriesByAttribution = {
     strong:  { n: 0, cents: 0 },
     weak:    { n: 0, cents: 0 },
     organic: { n: 0, cents: 0 },
   }
   for (const r of attributionRows) {
-    const k = r.type as keyof typeof recoveriesByAttribution
-    if (k in recoveriesByAttribution) recoveriesByAttribution[k] = { n: r.n, cents: Number(r.cents) }
+    const cents = Number(r.cents)
+    const bucket = r.type === 'strong' ? recoveriesByAttribution.strong
+                 : r.type === 'weak'   ? recoveriesByAttribution.weak
+                 : recoveriesByAttribution.organic
+    bucket.n += r.n
+    bucket.cents += cents
   }
 
-  // Mode rows → win-back vs card-save
+  // Mode rows → win-back vs card-save. CANONICAL bucketing (see
+  // stats.ts:aggregateRecoveryRows): card_save → card-save; win_back OR
+  // null OR anything-else → win-back. Accumulate so legacy null/unknown
+  // rows land in win-back and the split always sums to the total.
   const byMode = { winBack: { n: 0, cents: 0 }, cardSave: { n: 0, cents: 0 } }
   for (const r of modeRows) {
-    if (r.mode === 'win_back')  byMode.winBack  = { n: r.n, cents: Number(r.cents) }
-    if (r.mode === 'card_save') byMode.cardSave = { n: r.n, cents: Number(r.cents) }
+    const cents = Number(r.cents)
+    const bucket = r.mode === 'card_save' ? byMode.cardSave : byMode.winBack
+    bucket.n += r.n
+    bucket.cents += cents
   }
 
   const terminal = recoveredCount + lostCount
