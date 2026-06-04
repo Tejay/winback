@@ -20,6 +20,10 @@ interface Detail {
     // Spec 77 — non-null when this customer is on a negotiated flat-rate
     // deal. Drives the "Custom pricing" admin section below.
     customMonthlyCents: number | null
+    // PR B — header support context.
+    billedTier: string | null
+    activatedAt: string | null
+    stripeSubscriptionId: string | null
   }
   stripeHealth: {
     lastActivityAt: string | null
@@ -48,12 +52,19 @@ interface Detail {
   subscriberCount: number
 }
 
+type Tab = 'overview' | 'emails' | 'events' | 'billing'
+
+const TIER_LABELS: Record<string, string> = {
+  starter: 'Starter', growth: 'Growth', scale: 'Scale', enterprise: 'Enterprise', custom: 'Custom',
+}
+
 export function CustomerDetailClient({ customerId }: { customerId: string }) {
   const [data, setData] = useState<Detail | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [actionMsg, setActionMsg] = useState<string | null>(null)
   const [showImpersonate, setShowImpersonate] = useState(false)
+  const [tab, setTab] = useState<Tab>('overview')
 
   const load = useCallback(async () => {
     setError(null)
@@ -94,156 +105,187 @@ export function CustomerDetailClient({ customerId }: { customerId: string }) {
 
   const id = data.identity
 
-  return (
-    <div className="space-y-6">
-      <Link href="/admin/customers" className="text-xs text-slate-500 hover:underline">
-        ← Back to customers
-      </Link>
+  const paused = !!id.pausedAt
+  const tierLabel = id.customMonthlyCents !== null
+    ? 'Custom'
+    : id.billedTier ? (TIER_LABELS[id.billedTier] ?? id.billedTier) : null
 
-      <header>
-        <div className="text-xs font-semibold uppercase tracking-widest text-blue-600 mb-1">
-          Customer
+  const TABS: Array<{ key: Tab; label: string; badge?: string }> = [
+    { key: 'overview', label: 'Overview' },
+    { key: 'emails',   label: 'Emails',  badge: data.recentEmails.length ? String(data.recentEmails.length) : undefined },
+    { key: 'events',   label: 'Events',  badge: data.recentEvents.length ? String(data.recentEvents.length) : undefined },
+    { key: 'billing',  label: 'Billing' },
+  ]
+
+  return (
+    <div className="space-y-4">
+      {/* Breadcrumb */}
+      <div className="text-xs text-slate-500">
+        <Link href="/admin/customers" className="hover:text-slate-700">Customers</Link>
+        <span className="text-slate-300"> / </span>
+        <span className="text-slate-700 font-medium">{id.founderName ?? id.productName ?? id.email}</span>
+      </div>
+
+      {/* Sticky header: identity + badges + actions, always visible across tabs */}
+      <header className="bg-white rounded-2xl border border-slate-200 p-5 sticky top-2 z-20">
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div className="min-w-0">
+            <h1 className="text-2xl font-bold text-slate-900 truncate">
+              {id.founderName ?? id.email}
+              {id.productName && <span className="ml-2 text-base font-normal text-slate-500">· {id.productName}</span>}
+            </h1>
+            <div className="text-sm text-slate-500 font-mono">{id.email}</div>
+            <div className="flex flex-wrap items-center gap-1.5 mt-2">
+              <Badge tone={id.plan === 'paid' ? 'green' : 'slate'}>{id.plan ?? 'trial'}</Badge>
+              {tierLabel && <Badge tone="blue">{tierLabel}{id.customMonthlyCents !== null ? ` $${(id.customMonthlyCents / 100).toFixed(0)}/mo` : ''}</Badge>}
+              <Badge tone={id.stripeConnected ? 'green' : 'red'}>{id.stripeConnected ? '✓ Stripe' : '✗ Stripe'}</Badge>
+              {id.activatedAt && <Badge tone="slate">activated</Badge>}
+              {paused && <Badge tone="amber">⏸ paused</Badge>}
+              {data.openHandoffs > 0 && <Badge tone="amber">{data.openHandoffs} open handoff{data.openHandoffs === 1 ? '' : 's'}</Badge>}
+              {data.stripeHealth.recentOauthErrors > 0 && <Badge tone="red">{data.stripeHealth.recentOauthErrors} OAuth err (7d)</Badge>}
+              <Link href={`/admin/subscribers?customerId=${id.id}`} className="text-xs text-blue-600 hover:underline ml-1">
+                {data.subscriberCount} subscriber{data.subscriberCount === 1 ? '' : 's'} →
+              </Link>
+            </div>
+          </div>
+
+          {/* Action buttons — always reachable, no scrolling mid-incident */}
+          <div className="flex flex-wrap gap-1.5 shrink-0">
+            <ActionButton
+              onClick={() => action('pause-customer', { paused: !id.pausedAt }, id.pausedAt ? 'Resumed sending' : 'Paused all sending')}
+              disabled={busy !== null} busy={busy === 'pause-customer'} tone="slate"
+            >
+              {paused ? 'Resume sending' : 'Pause sending'}
+            </ActionButton>
+            <ActionButton
+              onClick={() => { if (!confirm('Force OAuth reset will clear the customer\'s Stripe access token. They will need to reconnect on next login. Continue?')) return; action('force-oauth-reset', {}, 'OAuth reset') }}
+              disabled={busy !== null} busy={busy === 'force-oauth-reset'} tone="amber"
+            >
+              OAuth reset
+            </ActionButton>
+            <ActionButton
+              onClick={() => { if (data.openHandoffs === 0) return; if (!confirm(`Resolve ${data.openHandoffs} open handoff(s) for this customer?`)) return; action('resolve-handoff', {}, 'Handoffs resolved') }}
+              disabled={busy !== null || data.openHandoffs === 0} tone="slate"
+            >
+              Resolve handoffs{data.openHandoffs > 0 ? ` (${data.openHandoffs})` : ''}
+            </ActionButton>
+            <ActionButton onClick={() => setShowImpersonate(true)} disabled={busy !== null} tone="red">
+              Impersonate
+            </ActionButton>
+          </div>
         </div>
-        <h1 className="text-3xl font-bold text-slate-900">
-          {id.founderName ?? id.email}
-          {id.productName && (
-            <span className="ml-2 text-base font-normal text-slate-500">({id.productName})</span>
-          )}
-        </h1>
-        <p className="text-sm text-slate-500">{id.email}</p>
-        <div className="mt-2">
-          <Link
-            href={`/admin/subscribers?customerId=${id.id}`}
-            className="text-sm text-blue-600 hover:underline"
-          >
-            View {data.subscriberCount} subscriber{data.subscriberCount === 1 ? '' : 's'} →
-          </Link>
-        </div>
+
+        {actionMsg && (
+          <div className={`text-sm rounded-lg px-3 py-1.5 mt-3 ${
+            actionMsg.startsWith('✓')
+              ? 'bg-green-50 text-green-800 border border-green-200'
+              : 'bg-red-50 text-red-800 border border-red-200'
+          }`}>{actionMsg}</div>
+        )}
       </header>
 
-      {actionMsg && (
-        <div className={`text-sm rounded-xl px-3 py-2 ${
-          actionMsg.startsWith('✓')
-            ? 'bg-green-50 text-green-800 border border-green-200'
-            : 'bg-red-50 text-red-800 border border-red-200'
-        }`}>{actionMsg}</div>
+      {/* Tabs */}
+      <div className="bg-white border border-slate-200 rounded-full p-0.5 inline-flex text-sm">
+        {TABS.map((t) => (
+          <button
+            key={t.key}
+            onClick={() => setTab(t.key)}
+            className={`px-4 py-1.5 rounded-full font-medium flex items-center gap-1.5 ${
+              tab === t.key ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-50'
+            }`}
+          >
+            {t.label}
+            {t.badge && <span className={`text-[10px] rounded-full px-1.5 ${tab === t.key ? 'bg-white/20' : 'bg-slate-100 text-slate-500'}`}>{t.badge}</span>}
+          </button>
+        ))}
+      </div>
+
+      {/* Tab content */}
+      {tab === 'overview' && (
+        <div className="space-y-4">
+          <Section label="Identity">
+            <KV k="Email" v={id.email} />
+            <KV k="Notification email" v={id.notificationEmail ?? '(uses signin email)'} />
+            <KV k="Plan" v={id.plan ?? 'trial'} />
+            <KV k="Tier" v={tierLabel ?? '(no active sub)'} />
+            <KV k="Paused" v={id.pausedAt ? `since ${new Date(id.pausedAt).toLocaleString()}` : 'no'} />
+            <KV k="Activated" v={id.activatedAt ? new Date(id.activatedAt).toLocaleString() : 'not activated'} />
+            <KV k="Created" v={new Date(id.createdAt).toLocaleString()} />
+          </Section>
+
+          <Section label="Stripe health">
+            <KV k="Account" v={id.stripeAccountId ?? '(not connected)'} />
+            <KV k="Token" v={id.stripeConnected ? '✓ present' : '✗ missing/expired'} />
+            <KV k="Subscription" v={id.stripeSubscriptionId ?? '(none — not paying)'} />
+            <KV k="Last activity" v={data.stripeHealth.lastActivityAt
+              ? new Date(data.stripeHealth.lastActivityAt).toLocaleString()
+              : 'no events on record'} />
+            <KV k="OAuth errors (7d)" v={String(data.stripeHealth.recentOauthErrors)} />
+          </Section>
+        </div>
       )}
 
-      <Section label="Identity">
-        <KV k="Email" v={id.email} />
-        <KV k="Notification email" v={id.notificationEmail ?? '(uses signin email)'} />
-        <KV k="Plan" v={id.plan ?? 'trial'} />
-        <KV k="Paused" v={id.pausedAt ? `since ${new Date(id.pausedAt).toLocaleString()}` : 'no'} />
-        <KV k="Created" v={new Date(id.createdAt).toLocaleString()} />
-      </Section>
+      {tab === 'emails' && (
+        <Section label="Recent emails (last 20)">
+          {data.recentEmails.length === 0 ? (
+            <div className="text-sm text-slate-400 px-4 py-3">No emails yet.</div>
+          ) : (
+            <table className="w-full text-sm">
+              <tbody className="divide-y divide-slate-100">
+                {data.recentEmails.map((e) => (
+                  <tr key={e.id} className="hover:bg-slate-50">
+                    <td className="px-4 py-2 text-xs text-slate-500 w-20">{relTime(e.sentAt)}</td>
+                    <td className="px-4 py-2 text-xs font-mono">{e.type}</td>
+                    <td className="px-4 py-2 text-slate-700">{e.subject ?? '—'}</td>
+                    <td className="px-4 py-2 text-xs text-slate-500">→ {e.subscriberEmail ?? '?'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </Section>
+      )}
 
-      <Section label="Stripe health">
-        <KV k="Account" v={id.stripeAccountId ?? '(not connected)'} />
-        <KV k="Token" v={id.stripeConnected ? '✓ present' : '✗ missing/expired'} />
-        <KV k="Last activity" v={data.stripeHealth.lastActivityAt
-          ? new Date(data.stripeHealth.lastActivityAt).toLocaleString()
-          : 'no events on record'} />
-        <KV k="OAuth errors (7d)" v={String(data.stripeHealth.recentOauthErrors)} />
-      </Section>
+      {tab === 'events' && (
+        <Section label="Recent events (last 50)" rightSlot={
+          <Link href={`/admin/events?customer=${id.id}`} className="text-xs text-blue-600 hover:underline">
+            view all events →
+          </Link>
+        }>
+          {data.recentEvents.length === 0 ? (
+            <div className="text-sm text-slate-400 px-4 py-3">No events yet.</div>
+          ) : (
+            <table className="w-full text-sm">
+              <tbody className="divide-y divide-slate-100">
+                {data.recentEvents.map((e) => (
+                  <tr key={e.id}>
+                    <td className="px-4 py-2 text-xs text-slate-500 w-20">{relTime(e.createdAt)}</td>
+                    <td className="px-4 py-2 text-xs font-mono text-slate-700">{e.name}</td>
+                    <td className="px-4 py-2 text-xs font-mono text-slate-500 truncate max-w-md">
+                      {JSON.stringify(e.properties)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </Section>
+      )}
 
-      <Section label="Recent emails (last 20)">
-        {data.recentEmails.length === 0 ? (
-          <div className="text-sm text-slate-400 px-4 py-3">No emails yet.</div>
-        ) : (
-          <table className="w-full text-sm">
-            <tbody className="divide-y divide-slate-100">
-              {data.recentEmails.map((e) => (
-                <tr key={e.id} className="hover:bg-slate-50">
-                  <td className="px-4 py-2 text-xs text-slate-500 w-20">{relTime(e.sentAt)}</td>
-                  <td className="px-4 py-2 text-xs font-mono">{e.type}</td>
-                  <td className="px-4 py-2 text-slate-700">{e.subject ?? '—'}</td>
-                  <td className="px-4 py-2 text-xs text-slate-500">→ {e.subscriberEmail ?? '?'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </Section>
-
-      <Section label="Recent events (last 50)" rightSlot={
-        <Link href={`/admin/events?customer=${id.id}`} className="text-xs text-blue-600 hover:underline">
-          view all events →
-        </Link>
-      }>
-        {data.recentEvents.length === 0 ? (
-          <div className="text-sm text-slate-400 px-4 py-3">No events yet.</div>
-        ) : (
-          <table className="w-full text-sm">
-            <tbody className="divide-y divide-slate-100">
-              {data.recentEvents.map((e) => (
-                <tr key={e.id}>
-                  <td className="px-4 py-2 text-xs text-slate-500 w-20">{relTime(e.createdAt)}</td>
-                  <td className="px-4 py-2 text-xs font-mono text-slate-700">{e.name}</td>
-                  <td className="px-4 py-2 text-xs font-mono text-slate-500 truncate max-w-md">
-                    {JSON.stringify(e.properties)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </Section>
-
-      <Section label="Billing snapshot">
-        <KV k="Platform Stripe customer" v={id.stripePlatformCustomerId ?? '(no platform card on file)'} />
-      </Section>
-
-      <CustomPricingSection
-        customerId={customerId}
-        currentCents={id.customMonthlyCents}
-        onChanged={load}
-      />
-
-      <section className="bg-white rounded-2xl border border-amber-200 p-5">
-        <div className="text-xs font-semibold uppercase tracking-widest text-amber-700 mb-2">
-          Emergency actions ⚠
+      {tab === 'billing' && (
+        <div className="space-y-4">
+          <Section label="Billing snapshot">
+            <KV k="Tier" v={tierLabel ?? '(no active sub)'} />
+            <KV k="Platform subscription" v={id.stripeSubscriptionId ?? '(none)'} />
+            <KV k="Platform Stripe customer" v={id.stripePlatformCustomerId ?? '(no platform card on file)'} />
+          </Section>
+          <CustomPricingSection
+            customerId={customerId}
+            currentCents={id.customMonthlyCents}
+            onChanged={load}
+          />
         </div>
-        <p className="text-sm text-slate-600 mb-3">
-          All actions are audit-logged to <code>wb_events</code>.
-        </p>
-        <div className="flex flex-wrap gap-2">
-          <button
-            onClick={() => action('pause-customer', { paused: !id.pausedAt }, id.pausedAt ? 'Resumed sending' : 'Paused all sending')}
-            disabled={busy !== null}
-            className="border border-slate-200 bg-white text-slate-700 rounded-full px-4 py-2 text-sm font-medium hover:bg-slate-50 disabled:opacity-50"
-          >
-            {busy === 'pause-customer' ? '…' : id.pausedAt ? 'Resume sending' : 'Pause all sending'}
-          </button>
-          <button
-            onClick={() => {
-              if (!confirm('Force OAuth reset will clear the customer\'s Stripe access token. They will need to reconnect on next login. Continue?')) return
-              action('force-oauth-reset', {}, 'OAuth reset')
-            }}
-            disabled={busy !== null}
-            className="border border-amber-200 bg-amber-50 text-amber-800 rounded-full px-4 py-2 text-sm font-medium hover:bg-amber-100 disabled:opacity-50"
-          >
-            {busy === 'force-oauth-reset' ? '…' : 'Force OAuth reset'}
-          </button>
-          <button
-            onClick={() => {
-              if (data.openHandoffs === 0) return
-              if (!confirm(`Resolve ${data.openHandoffs} open handoff(s) for this customer?`)) return
-              action('resolve-handoff', {}, 'Handoffs resolved')
-            }}
-            disabled={busy !== null || data.openHandoffs === 0}
-            className="border border-slate-200 bg-white text-slate-700 rounded-full px-4 py-2 text-sm font-medium hover:bg-slate-50 disabled:opacity-50"
-          >
-            Resolve {data.openHandoffs} open handoff{data.openHandoffs === 1 ? '' : 's'}
-          </button>
-          <button
-            onClick={() => setShowImpersonate(true)}
-            disabled={busy !== null}
-            className="border border-red-200 bg-red-50 text-red-800 rounded-full px-4 py-2 text-sm font-medium hover:bg-red-100 disabled:opacity-50"
-          >
-            Impersonate
-          </button>
-        </div>
-      </section>
+      )}
 
       {showImpersonate && (
         <ImpersonateModal
@@ -253,6 +295,41 @@ export function CustomerDetailClient({ customerId }: { customerId: string }) {
         />
       )}
     </div>
+  )
+}
+
+type BadgeTone = 'green' | 'amber' | 'red' | 'blue' | 'slate'
+function Badge({ tone, children }: { tone: BadgeTone; children: React.ReactNode }) {
+  const cls: Record<BadgeTone, string> = {
+    green: 'bg-green-50 text-green-700 border-green-200',
+    amber: 'bg-amber-50 text-amber-700 border-amber-200',
+    red:   'bg-red-50 text-red-700 border-red-200',
+    blue:  'bg-blue-50 text-blue-700 border-blue-200',
+    slate: 'bg-slate-100 text-slate-600 border-slate-200',
+  }
+  return <span className={`inline-flex items-center px-2 py-0.5 text-[11px] font-medium rounded-full border ${cls[tone]}`}>{children}</span>
+}
+
+function ActionButton({
+  onClick, disabled, busy, tone, children,
+}: {
+  onClick: () => void
+  disabled: boolean
+  busy?: boolean
+  tone: 'slate' | 'amber' | 'red'
+  children: React.ReactNode
+}) {
+  const cls = tone === 'red'   ? 'border-red-200 bg-red-50 text-red-800 hover:bg-red-100'
+            : tone === 'amber' ? 'border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100'
+            : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className={`border rounded-full px-3.5 py-1.5 text-xs font-medium disabled:opacity-50 ${cls}`}
+    >
+      {busy ? '…' : children}
+    </button>
   )
 }
 
