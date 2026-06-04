@@ -109,6 +109,22 @@ export async function POST(
     return NextResponse.json({ error: 'Customer not found' }, { status: 404 })
   }
 
+  // 2026-06 — hard lock. The master "Send promo emails" switch must be a
+  // real stop, not just a hidden dashboard button. Block here too (applies
+  // to dryRun + real send) so promotionsEnabled=false can never attach a
+  // promo, even if the request reaches the API directly. Mirrors the
+  // automatic path, which already refuses when promotionsEnabled is false
+  // (getApplicablePromotionForSubscriber).
+  if (!cust.promotionsEnabled) {
+    return NextResponse.json(
+      {
+        error: 'promotions_disabled',
+        message: 'Promotions are turned off. Enable them on the Reasons → Promotions tab to send promo offers.',
+      },
+      { status: 403 },
+    )
+  }
+
   const [sub] = await db
     .select()
     .from(churnedSubscribers)

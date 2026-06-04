@@ -113,12 +113,18 @@ export function PromoDropdown({ promos, subscriber, selectedId, onSelect }: Prop
               <span className="font-mono text-sm text-slate-900">{p.code}</span>
               <span className="text-sm text-slate-500">·</span>
               <span className="text-sm text-slate-700">{p.terms}</span>
-              <span className="ml-auto">
-                <GateChip
-                  status={gate.ok ? 'ok' : 'fail'}
-                  label={gate.ok ? 'All 4 gates pass' : gate.reason}
-                />
-              </span>
+              {/* Only badge a PROBLEM. A working promo shows no chip — the
+                  merchant assumes their codes work; they only need to be
+                  warned (in plain words: "Expired", "Wrong plan", …) when
+                  one won't. The positive signal lives in the bulk modal's
+                  "Send to N eligible" count, not a per-promo "passes" badge
+                  that was internal jargon ("All 4 gates pass") and, in bulk,
+                  misleading across mixed plans. */}
+              {!gate.ok && (
+                <span className="ml-auto">
+                  <GateChip status="fail" label={gate.reason} />
+                </span>
+              )}
             </div>
           </label>
         )

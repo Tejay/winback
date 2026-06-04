@@ -157,10 +157,22 @@ describe('POST /api/subscribers/[id]/send-promo — ownership + subscriber', () 
     expect(body.error).toBe('Customer not found')
   })
 
+  it('returns 403 promotions_disabled when the master switch is off (hard lock)', async () => {
+    mockAuth.mockResolvedValueOnce({ user: { id: 'u1' } })
+    // Customer found, but promotionsEnabled = false → the route must refuse
+    // before doing any subscriber/improvement work. This is the API-level
+    // hard stop behind the Promotions tab's "Don't offer a discount" mode.
+    mockSelect.mockReturnValueOnce(selectChain([{ id: 'cust-1', promotionsEnabled: false }]))
+    const res = await POST(makeReq(VALID_BODY), makeParams('sub-1'))
+    expect(res.status).toBe(403)
+    const body = await (res as { json: () => Promise<{ error: string }> }).json()
+    expect(body.error).toBe('promotions_disabled')
+  })
+
   it('returns 409 subscriber_not_found when subscriber is not owned', async () => {
     mockAuth.mockResolvedValueOnce({ user: { id: 'u1' } })
     mockSelect
-      .mockReturnValueOnce(selectChain([{ id: 'cust-1' }])) // customer OK
+      .mockReturnValueOnce(selectChain([{ id: 'cust-1', promotionsEnabled: true }])) // customer OK
       .mockReturnValueOnce(selectChain([]))                  // subscriber lookup empty
     const res = await POST(makeReq(VALID_BODY), makeParams('sub-1'))
     expect(res.status).toBe(409)
@@ -171,7 +183,7 @@ describe('POST /api/subscribers/[id]/send-promo — ownership + subscriber', () 
   it('returns 409 subscriber_no_email when subscriber has no email on file', async () => {
     mockAuth.mockResolvedValueOnce({ user: { id: 'u1' } })
     mockSelect
-      .mockReturnValueOnce(selectChain([{ id: 'cust-1' }]))
+      .mockReturnValueOnce(selectChain([{ id: 'cust-1', promotionsEnabled: true }]))
       .mockReturnValueOnce(selectChain([{ id: 'sub-1', email: null }]))
     const res = await POST(makeReq(VALID_BODY), makeParams('sub-1'))
     expect(res.status).toBe(409)
@@ -184,7 +196,7 @@ describe('POST /api/subscribers/[id]/send-promo — improvement validation', () 
   it('returns 409 improvement_not_found when the improvement is unknown OR belongs to another customer', async () => {
     mockAuth.mockResolvedValueOnce({ user: { id: 'u1' } })
     mockSelect
-      .mockReturnValueOnce(selectChain([{ id: 'cust-1' }]))
+      .mockReturnValueOnce(selectChain([{ id: 'cust-1', promotionsEnabled: true }]))
       .mockReturnValueOnce(selectChain([{ id: 'sub-1', email: 'x@y.z', stripePriceId: 'p1' }]))
       .mockReturnValueOnce(selectChain([])) // improvement lookup empty
     const res = await POST(makeReq(VALID_BODY), makeParams('sub-1'))
@@ -196,7 +208,7 @@ describe('POST /api/subscribers/[id]/send-promo — improvement validation', () 
   it('returns 409 improvement_not_promotion when kind != promotion', async () => {
     mockAuth.mockResolvedValueOnce({ user: { id: 'u1' } })
     mockSelect
-      .mockReturnValueOnce(selectChain([{ id: 'cust-1' }]))
+      .mockReturnValueOnce(selectChain([{ id: 'cust-1', promotionsEnabled: true }]))
       .mockReturnValueOnce(selectChain([{ id: 'sub-1', email: 'x@y.z', stripePriceId: 'p1' }]))
       .mockReturnValueOnce(selectChain([{
         id: 'imp-1', kind: 'product', status: 'published',
@@ -211,7 +223,7 @@ describe('POST /api/subscribers/[id]/send-promo — improvement validation', () 
   it('returns 409 improvement_archived when the row is archived', async () => {
     mockAuth.mockResolvedValueOnce({ user: { id: 'u1' } })
     mockSelect
-      .mockReturnValueOnce(selectChain([{ id: 'cust-1' }]))
+      .mockReturnValueOnce(selectChain([{ id: 'cust-1', promotionsEnabled: true }]))
       .mockReturnValueOnce(selectChain([{ id: 'sub-1', email: 'x@y.z', stripePriceId: 'p1' }]))
       .mockReturnValueOnce(selectChain([{
         id: 'imp-1', kind: 'promotion', status: 'archived',
@@ -227,7 +239,7 @@ describe('POST /api/subscribers/[id]/send-promo — improvement validation', () 
 describe('POST /api/subscribers/[id]/send-promo — gate + anti-fatigue', () => {
   function baseSubMocks() {
     mockSelect
-      .mockReturnValueOnce(selectChain([{ id: 'cust-1' }]))
+      .mockReturnValueOnce(selectChain([{ id: 'cust-1', promotionsEnabled: true }]))
       .mockReturnValueOnce(selectChain([{ id: 'sub-1', email: 'x@y.z', stripePriceId: 'p1', mrrCents: 1000 }]))
       .mockReturnValueOnce(selectChain([{
         id: 'imp-1', kind: 'promotion', status: 'published',
@@ -290,7 +302,7 @@ describe('POST /api/subscribers/[id]/send-promo — dryRun + send writes', () =>
   function happyPath() {
     mockAuth.mockResolvedValueOnce({ user: { id: 'u1' } })
     mockSelect
-      .mockReturnValueOnce(selectChain([{ id: 'cust-1', founderName: 'Tej', productName: 'Fitness' }]))
+      .mockReturnValueOnce(selectChain([{ id: 'cust-1', founderName: 'Tej', productName: 'Fitness', promotionsEnabled: true }]))
       .mockReturnValueOnce(selectChain([{
         id: 'sub-1', email: 'x@y.z', name: 'Sarah', stripePriceId: 'p1', mrrCents: 1000, triggerNeed: 'cheaper plan',
       }]))
