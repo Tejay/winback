@@ -268,7 +268,6 @@ function ReasonRow({
       <div className="flex items-start gap-4">
         <div className="text-xs text-slate-400 w-24 pt-0.5 flex-shrink-0">
           <div className="font-medium text-slate-700">{formatDate(r.dateShipped)}</div>
-          {r.preempted && <div className="text-slate-400 text-[10px] mt-0.5">pre-emptive</div>}
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center justify-between gap-2">
@@ -282,17 +281,17 @@ function ReasonRow({
             </button>
           </div>
           <p className="text-sm text-slate-500 mt-1">{r.description}</p>
-          {/* Spec 75 — addresses pattern + match count. Slate-400 weight
-              so neither competes with the title. Match count hidden when
-              0 (visual noise on freshly-added rows). */}
-          <div className="flex flex-wrap items-center gap-x-3 mt-1.5 text-xs text-slate-400">
-            {r.addressesPattern && (
-              <span>Addresses: <span className="text-slate-600">{r.addressesPattern}</span></span>
-            )}
-            {r.matchedCount > 0 && (
-              <span>Matched: <span className="text-slate-600">{r.matchedCount} customer{r.matchedCount === 1 ? '' : 's'}</span></span>
-            )}
-          </div>
+          {/* Match count — the real signal (is this reason doing work?).
+              The "Addresses: <pattern>" line + the "pre-emptive" label were
+              removed: addressesPattern had no capture path in the UI, never
+              affected matching/sending, and the cancellation themes already
+              own that pattern relationship (incl. the post-ship insight).
+              Hidden when 0 to avoid noise on freshly-added rows. */}
+          {r.matchedCount > 0 && (
+            <div className="mt-1.5 text-xs text-slate-400">
+              Matched: <span className="text-slate-600">{r.matchedCount} customer{r.matchedCount === 1 ? '' : 's'}</span>
+            </div>
+          )}
         </div>
       </div>
       {menuOpen && (
