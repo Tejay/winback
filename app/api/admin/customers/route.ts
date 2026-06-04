@@ -94,6 +94,26 @@ export async function GET(req: NextRequest) {
       sql`not exists (select 1 from wb_events e where e.customer_id = ${customers.id} and e.created_at > ${twentyFourHoursAgo})`,
     )!)
   }
+  // PR A (Insights drill-downs) — business cohorts.
+  if (filter === 'paying') {
+    filters.push(isNotNull(customers.stripeSubscriptionId))
+  }
+  if (filter === 'activated') {
+    filters.push(isNotNull(customers.activatedAt))
+  }
+  // Tier filters: only paying customers count toward a tier (a stale
+  // billed_tier on a canceled customer shouldn't appear). Mirrors the
+  // Insights tier-distribution predicate.
+  const TIER_KEYS = ['starter', 'growth', 'scale', 'enterprise', 'custom']
+  if (filter.startsWith('tier_')) {
+    const tier = filter.slice('tier_'.length)
+    if (TIER_KEYS.includes(tier)) {
+      filters.push(and(
+        isNotNull(customers.stripeSubscriptionId),
+        eq(customers.billedTier, tier),
+      )!)
+    }
+  }
 
   const rows = await getDbReadOnly()
     .select({
