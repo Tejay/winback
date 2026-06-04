@@ -106,12 +106,15 @@ interface ReclassifyDiff {
 
 const COST_CONFIRMATION = 'I understand this costs ~$0.003'
 
+type Tab = 'conversation' | 'classification' | 'cron' | 'outcome'
+
 export function InspectorClient({ subscriberId }: { subscriberId: string }) {
   const [data, setData] = useState<Payload | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [expandedEmails, setExpandedEmails] = useState<Set<string>>(new Set())
   const [signalsOpen, setSignalsOpen] = useState(false)
+  const [tab, setTab] = useState<Tab>('conversation')
   const [reclassify, setReclassify] = useState<ReclassifyDiff | null>(null)
   const [reclassifyBusy, setReclassifyBusy] = useState(false)
   const [reclassifyMsg, setReclassifyMsg] = useState<string | null>(null)
@@ -158,6 +161,7 @@ export function InspectorClient({ subscriberId }: { subscriberId: string }) {
       if (!res.ok) throw new Error(json.error ?? 'Re-classify failed')
       setReclassify(json)
       setReclassifyMsg('✓ Live re-run complete (no DB write)')
+      setTab('classification')  // surface the stored-vs-fresh diff
     } catch (e) {
       setReclassifyMsg(`✗ ${e instanceof Error ? e.message : String(e)}`)
     } finally {
@@ -188,14 +192,21 @@ export function InspectorClient({ subscriberId }: { subscriberId: string }) {
   const isDeadLettered = s.classifyAttempts >= 3 && !s.classifiedAt
   const isPendingClassify = !s.classifiedAt && s.classifyAttempts < 3
 
+  const TABS: Array<{ key: Tab; label: string; badge?: string }> = [
+    { key: 'conversation',   label: 'Conversation', badge: String(data.emails.length + data.replies.length) },
+    { key: 'classification', label: 'Classification' },
+    { key: 'cron',           label: 'Cron', badge: data.cronDecisions.length ? String(data.cronDecisions.length) : undefined },
+    { key: 'outcome',        label: 'Outcome' },
+  ]
+
   return (
-    <div className="space-y-6 max-w-4xl">
-      <Link
-        href="/admin/subscribers"
-        className="text-xs text-slate-500 hover:underline"
-      >
-        ← Back to cross-customer search
-      </Link>
+    <div className="space-y-4 max-w-4xl">
+      {/* Breadcrumb */}
+      <div className="text-xs text-slate-500">
+        <Link href="/admin/subscribers" className="hover:text-slate-700">Subscribers</Link>
+        <span className="text-slate-300"> / </span>
+        <span className="text-slate-700 font-medium">{s.name ?? s.email ?? 'Subscriber'}</span>
+      </div>
 
       {isDeadLettered && (
         <DeadLetterBanner
@@ -212,163 +223,168 @@ export function InspectorClient({ subscriberId }: { subscriberId: string }) {
         </div>
       )}
 
-      <header className="space-y-2">
-        <div className="text-xs font-semibold uppercase tracking-widest text-blue-600">
-          Subscriber inspector
-        </div>
-        <h1 className="text-3xl font-bold text-slate-900">
-          {s.name ?? '(no name)'}
-          <span className="text-slate-400 font-normal text-lg ml-2">· {s.email ?? '(no email)'}</span>
-        </h1>
-        <div className="text-sm text-slate-500">
-          on{' '}
-          <Link
-            href={`/admin/customers/${s.customerId}`}
-            className="text-blue-600 hover:underline"
-          >
-            {s.customerProductName ?? s.customerFounderName ?? s.customerEmail ?? s.customerId.slice(0, 8)}
-          </Link>
-          {' · '}
-          {s.planName ?? '?'} · ${(s.mrrCents / 100).toFixed(2)}/mo
-          {s.cancelledAt && <> · cancelled {new Date(s.cancelledAt).toLocaleDateString()}</>}
-        </div>
-        <div className="flex flex-wrap gap-1.5 pt-1">
-          <Badge color={statusColor(s.status ?? 'pending')}>{s.status ?? 'pending'}</Badge>
-          <Badge color={aiStateColor(aiState)}>AI: {aiState}</Badge>
-          {s.doNotContact && <Badge color="red">DNC</Badge>}
-          {s.recoveryLikelihood && (
-            <Badge color={likelihoodColor(s.recoveryLikelihood)}>
-              recovery: {s.recoveryLikelihood}
-            </Badge>
-          )}
-        </div>
-      </header>
-
-      {/* SIGNALS AT CHURN */}
-      <Section
-        title="Signals at churn"
-        toggle={() => setSignalsOpen((v) => !v)}
-        open={signalsOpen}
-      >
-        {signalsOpen && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-1 text-sm">
-            <KV k="stripe_enum"             v={s.stripeEnum ?? '—'} />
-            <KV k="tenure_days"             v={String(s.tenureDays ?? 0)} />
-            <KV k="ever_upgraded"           v={String(s.everUpgraded ?? false)} />
-            <KV k="near_renewal"            v={String(s.nearRenewal ?? false)} />
-            <KV k="payment_failures"        v={String(s.paymentFailures ?? 0)} />
-            <KV k="previous_subs"           v={String(s.previousSubs ?? 0)} />
-            <KV k="billing_portal_clicked"  v={s.billingPortalClickedAt ? 'yes' : 'no'} />
-            <KV k="cancelled_at"            v={s.cancelledAt ? new Date(s.cancelledAt).toISOString() : '—'} />
-            {s.stripeComment && (
-              <div className="md:col-span-2">
-                <div className="text-xs text-slate-500 mt-2 mb-1">stripe_comment</div>
-                <div className="text-sm italic bg-slate-50 rounded-lg p-2 border border-slate-100">
-                  &ldquo;{s.stripeComment}&rdquo;
-                </div>
-              </div>
-            )}
-            <p className="text-xs text-slate-400 italic md:col-span-2 mt-1">
-              Full conversation history (replies + bodies) is in the timeline below.
-            </p>
+      {/* Sticky header: identity + badges + actions */}
+      <header className="bg-white rounded-2xl border border-slate-200 p-5 sticky top-2 z-20">
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div className="min-w-0">
+            <h1 className="text-2xl font-bold text-slate-900 truncate">
+              {s.name ?? '(no name)'}
+              <span className="text-slate-400 font-normal text-base ml-2">· {s.email ?? '(no email)'}</span>
+            </h1>
+            <div className="text-sm text-slate-500">
+              on{' '}
+              <Link href={`/admin/customers/${s.customerId}`} className="text-blue-600 hover:underline">
+                {s.customerProductName ?? s.customerFounderName ?? s.customerEmail ?? s.customerId.slice(0, 8)}
+              </Link>
+              {' · '}{s.planName ?? '?'} · ${(s.mrrCents / 100).toFixed(2)}/mo
+              {s.cancelledAt && <> · cancelled {new Date(s.cancelledAt).toLocaleDateString()}</>}
+            </div>
+            <div className="flex flex-wrap gap-1.5 mt-2">
+              <Badge color={statusColor(s.status ?? 'pending')}>{s.status ?? 'pending'}</Badge>
+              <Badge color={aiStateColor(aiState)}>AI: {aiState}</Badge>
+              {s.doNotContact && <Badge color="red">DNC</Badge>}
+              {s.recoveryLikelihood && (
+                <Badge color={likelihoodColor(s.recoveryLikelihood)}>recovery: {s.recoveryLikelihood}</Badge>
+              )}
+            </div>
           </div>
-        )}
-      </Section>
 
-      {/* LATEST CLASSIFICATION */}
-      <Section title="Classification (latest)">
-        <div className="flex flex-wrap gap-2 mb-2 text-sm">
-          {s.tier !== null && <Badge color="blue">Tier {s.tier}</Badge>}
-          {s.confidence && <Badge color="slate">conf {Number(s.confidence).toFixed(2)}</Badge>}
-          {s.cancellationCategory && <Badge color="purple">{s.cancellationCategory}</Badge>}
-          {s.recoveryLikelihood && (
-            <Badge color={likelihoodColor(s.recoveryLikelihood)}>
-              recovery: {s.recoveryLikelihood}
-            </Badge>
-          )}
-        </div>
-        {s.cancellationReason && (
-          <KV k="Reason" v={s.cancellationReason} />
-        )}
-        {s.triggerNeed && (
-          <KV k="Trigger need" v={s.triggerNeed} mono />
-        )}
-        {s.handoffReasoning && (
-          <div className="mt-2 bg-slate-50 rounded-lg p-3 border border-slate-100">
-            <div className="text-xs text-slate-500 mb-1">AI reasoning (latest verdict)</div>
-            <div className="text-sm italic text-slate-700">&ldquo;{s.handoffReasoning}&rdquo;</div>
+          {/* Actions — live API calls, always reachable */}
+          <div className="flex flex-col items-end gap-1.5 shrink-0">
+            <div className="flex flex-wrap gap-1.5 justify-end">
+              <button
+                onClick={runReclassify}
+                disabled={reclassifyBusy}
+                className="border border-amber-200 bg-amber-50 text-amber-800 rounded-full px-3.5 py-1.5 text-xs font-medium hover:bg-amber-100 disabled:opacity-50"
+              >
+                {reclassifyBusy ? '…' : 'Re-run classifier (~$0.003)'}
+              </button>
+              <button
+                onClick={() => setSendNowOpen(true)}
+                className="border border-red-200 bg-red-50 text-red-800 rounded-full px-3.5 py-1.5 text-xs font-medium hover:bg-red-100"
+              >
+                Send re-engagement now (~$0.006)
+              </button>
+            </div>
+            <span className="text-[10px] text-slate-400 text-right max-w-[18rem]">
+              Re-classify is read-only. Send-now bypasses cooldown &amp; may send a real email.
+            </span>
           </div>
-        )}
-        <p className="text-xs text-slate-400 italic mt-2">
-          Only the most recent verdict is preserved on the row. Earlier-turn reasoning isn&apos;t recorded yet — see Phase 4.
-        </p>
-      </Section>
-
-      {/* CRON DECISIONS — Spec 70 #1 */}
-      <Section title="Cron decisions">
-        <CronDecisionsList decisions={data.cronDecisions} />
-      </Section>
-
-      {/* TIMELINE */}
-      <Section title="Conversation timeline">
-        {data.emails.length === 0 && data.replies.length === 0 ? (
-          <div className="text-sm text-slate-400 italic">No emails sent yet.</div>
-        ) : (
-          <Timeline
-            subscriberId={subscriberId}
-            emails={data.emails}
-            replies={data.replies}
-            outcomeEvents={data.outcomeEvents}
-            cancelledAt={s.cancelledAt}
-            expanded={expandedEmails}
-            onToggle={toggleEmail}
-          />
-        )}
-      </Section>
-
-      {/* OUTCOME */}
-      <Section title="Final outcome">
-        <FinalOutcome
-          subscriber={s}
-          outcomeEvents={data.outcomeEvents}
-          aiState={aiState}
-          onEditStatus={() => setStatusEditing(true)}
-        />
-      </Section>
-
-      {/* ACTIONS */}
-      <Section title="Actions">
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            onClick={runReclassify}
-            disabled={reclassifyBusy}
-            className="border border-amber-200 bg-amber-50 text-amber-800 rounded-full px-4 py-2 text-sm font-medium hover:bg-amber-100 disabled:opacity-50"
-          >
-            {reclassifyBusy ? '…' : 'Re-run classifier (~$0.003)'}
-          </button>
-          <button
-            onClick={() => setSendNowOpen(true)}
-            className="border border-red-200 bg-red-50 text-red-800 rounded-full px-4 py-2 text-sm font-medium hover:bg-red-100"
-          >
-            Send re-engagement now (~$0.006)
-          </button>
-          <span className="text-xs text-slate-400">
-            Live API calls. Re-classify is read-only. Send-now bypasses cooldown and may send a real email.
-          </span>
         </div>
         {reclassifyMsg && (
-          <div
-            className={`text-sm rounded-xl px-3 py-2 mt-3 ${
-              reclassifyMsg.startsWith('✓')
-                ? 'bg-green-50 text-green-800 border border-green-200'
-                : 'bg-red-50 text-red-800 border border-red-200'
+          <div className={`text-sm rounded-lg px-3 py-1.5 mt-3 ${
+            reclassifyMsg.startsWith('✓')
+              ? 'bg-green-50 text-green-800 border border-green-200'
+              : 'bg-red-50 text-red-800 border border-red-200'
+          }`}>{reclassifyMsg}</div>
+        )}
+      </header>
+
+      {/* Tabs */}
+      <div className="bg-white border border-slate-200 rounded-full p-0.5 inline-flex text-sm">
+        {TABS.map((t) => (
+          <button
+            key={t.key}
+            onClick={() => setTab(t.key)}
+            className={`px-4 py-1.5 rounded-full font-medium flex items-center gap-1.5 ${
+              tab === t.key ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-50'
             }`}
           >
-            {reclassifyMsg}
-          </div>
-        )}
-        {reclassify && <ReclassifyDiffPanel diff={reclassify} />}
-      </Section>
+            {t.label}
+            {t.badge && <span className={`text-[10px] rounded-full px-1.5 ${tab === t.key ? 'bg-white/20' : 'bg-slate-100 text-slate-500'}`}>{t.badge}</span>}
+          </button>
+        ))}
+      </div>
+
+      {/* ── Conversation ── */}
+      {tab === 'conversation' && (
+        <section className="bg-white rounded-2xl border border-slate-200 p-5">
+          {data.emails.length === 0 && data.replies.length === 0 && data.outcomeEvents.length === 0 ? (
+            <div className="text-sm text-slate-400 italic">No conversation yet — nothing sent or received.</div>
+          ) : (
+            <ConversationThread
+              subscriberId={subscriberId}
+              subscriber={s}
+              emails={data.emails}
+              replies={data.replies}
+              outcomeEvents={data.outcomeEvents}
+              expanded={expandedEmails}
+              onToggle={toggleEmail}
+            />
+          )}
+        </section>
+      )}
+
+      {/* ── Classification ── */}
+      {tab === 'classification' && (
+        <div className="space-y-4">
+          <Section title="Classification (latest)">
+            <div className="flex flex-wrap gap-2 mb-2 text-sm">
+              {s.tier !== null && <Badge color="blue">Tier {s.tier}</Badge>}
+              {s.confidence && <Badge color="slate">conf {Number(s.confidence).toFixed(2)}</Badge>}
+              {s.cancellationCategory && <Badge color="purple">{s.cancellationCategory}</Badge>}
+              {s.recoveryLikelihood && (
+                <Badge color={likelihoodColor(s.recoveryLikelihood)}>recovery: {s.recoveryLikelihood}</Badge>
+              )}
+            </div>
+            {s.cancellationReason && <KV k="Reason" v={s.cancellationReason} />}
+            {s.triggerNeed && <KV k="Trigger need" v={s.triggerNeed} mono />}
+            {s.handoffReasoning && (
+              <div className="mt-2 bg-slate-50 rounded-lg p-3 border border-slate-100">
+                <div className="text-xs text-slate-500 mb-1">AI reasoning (latest verdict)</div>
+                <div className="text-sm italic text-slate-700">&ldquo;{s.handoffReasoning}&rdquo;</div>
+              </div>
+            )}
+            <p className="text-xs text-slate-400 italic mt-2">
+              Only the most recent verdict is preserved on the row. Earlier-turn reasoning isn&apos;t recorded yet — see Phase 4.
+            </p>
+          </Section>
+
+          {reclassify && <ReclassifyDiffPanel diff={reclassify} />}
+
+          <Section title="Signals at churn" toggle={() => setSignalsOpen((v) => !v)} open={signalsOpen}>
+            {signalsOpen && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-1 text-sm">
+                <KV k="stripe_enum"             v={s.stripeEnum ?? '—'} />
+                <KV k="tenure_days"             v={String(s.tenureDays ?? 0)} />
+                <KV k="ever_upgraded"           v={String(s.everUpgraded ?? false)} />
+                <KV k="near_renewal"            v={String(s.nearRenewal ?? false)} />
+                <KV k="payment_failures"        v={String(s.paymentFailures ?? 0)} />
+                <KV k="previous_subs"           v={String(s.previousSubs ?? 0)} />
+                <KV k="billing_portal_clicked"  v={s.billingPortalClickedAt ? 'yes' : 'no'} />
+                <KV k="cancelled_at"            v={s.cancelledAt ? new Date(s.cancelledAt).toISOString() : '—'} />
+                {s.stripeComment && (
+                  <div className="md:col-span-2">
+                    <div className="text-xs text-slate-500 mt-2 mb-1">stripe_comment</div>
+                    <div className="text-sm italic bg-slate-50 rounded-lg p-2 border border-slate-100">
+                      &ldquo;{s.stripeComment}&rdquo;
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </Section>
+        </div>
+      )}
+
+      {/* ── Cron ── */}
+      {tab === 'cron' && (
+        <Section title="Cron decisions">
+          <CronDecisionsList decisions={data.cronDecisions} />
+        </Section>
+      )}
+
+      {/* ── Outcome ── */}
+      {tab === 'outcome' && (
+        <Section title="Final outcome">
+          <FinalOutcome
+            subscriber={s}
+            outcomeEvents={data.outcomeEvents}
+            aiState={aiState}
+            onEditStatus={() => setStatusEditing(true)}
+          />
+        </Section>
+      )}
 
       {sendNowOpen && (
         <SendNowModal
@@ -433,20 +449,85 @@ function KV({ k, v, mono = false }: { k: string; v: string; mono?: boolean }) {
   )
 }
 
-function Timeline({
+/** Friendly label for an outbound email's type. */
+function emailTypeLabel(type: string): string {
+  switch (type) {
+    case 'exit':          return 'Exit email'
+    case 'followup':      return 'Follow-up'
+    case 'dunning':       return 'Dunning'
+    case 'reengagement':  return 'Re-engagement'
+    case 'promo':         return 'Promotion'
+    default:              return type
+  }
+}
+
+/** Friendly label + tone for an outcome/system event. */
+function outcomeLabel(name: string): { label: string; tone: 'good' | 'bad' | 'neutral' } {
+  switch (name) {
+    case 'subscriber_recovered':       return { label: 'Recovered 🎉', tone: 'good' }
+    case 'subscriber_auto_lost':       return { label: 'Auto-lost', tone: 'bad' }
+    case 'subscriber_unsubscribed':    return { label: 'Unsubscribed (DNC)', tone: 'bad' }
+    case 'founder_handoff_triggered':  return { label: 'Founder handoff triggered', tone: 'neutral' }
+    case 'handoff_resolved_manually':  return { label: 'Handoff resolved', tone: 'good' }
+    case 'handoff_snoozed':            return { label: 'Handoff snoozed', tone: 'neutral' }
+    case 'ai_paused':                  return { label: 'AI paused', tone: 'neutral' }
+    case 'ai_resumed':                 return { label: 'AI resumed', tone: 'neutral' }
+    case 'proactive_nudge_sent':       return { label: 'Proactive nudge sent', tone: 'neutral' }
+    default:                           return { label: name, tone: 'neutral' }
+  }
+}
+
+/**
+ * Centered system marker between conversation bubbles — cancellation, the
+ * AI classification verdict, handoff/recovered/lost/paused events, etc.
+ */
+function SystemMarker({
+  label, day, tone = 'neutral', detail,
+}: {
+  label: string
+  day?: string
+  tone?: 'good' | 'bad' | 'neutral' | 'info'
+  detail?: string | null
+}) {
+  const pill = tone === 'good' ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+             : tone === 'bad'  ? 'bg-red-50 text-red-700 border-red-200'
+             : tone === 'info' ? 'bg-blue-50 text-blue-700 border-blue-200'
+             : 'bg-slate-100 text-slate-600 border-slate-200'
+  return (
+    <div className="my-1">
+      <div className="flex items-center gap-2">
+        <div className="flex-1 h-px bg-slate-100" />
+        <span className={`text-[11px] font-medium px-2.5 py-0.5 rounded-full border ${pill}`}>
+          {label}{day ? ` · ${day}` : ''}
+        </span>
+        <div className="flex-1 h-px bg-slate-100" />
+      </div>
+      {detail && <div className="text-[11px] text-slate-400 italic text-center mt-1 max-w-xl mx-auto">&ldquo;{detail}&rdquo;</div>}
+    </div>
+  )
+}
+
+/**
+ * PR C — Conversation thread. One continuous thread for the subscriber:
+ * outbound emails (right, blue), inbound replies (left, emerald), and
+ * system events (centered markers) merged chronologically. The AI's
+ * classification verdict is inlined as a marker near the top so the
+ * "why did the AI do this?" context sits in the flow.
+ */
+function ConversationThread({
   subscriberId,
+  subscriber,
   emails,
   replies,
   outcomeEvents,
-  cancelledAt,
   expanded,
   onToggle,
 }: {
   subscriberId: string
+  subscriber: Subscriber
   emails: Email[]
   replies: Reply[]
   outcomeEvents: OutcomeEvent[]
-  cancelledAt: string | null
   expanded: Set<string>
   onToggle: (id: string) => void
 }) {
@@ -455,7 +536,7 @@ function Timeline({
 
   async function flagEmail(emailId: string) {
     const note = window.prompt('Flag this email for prompt-tuning review. Add a note (optional):') ?? ''
-    if (note === null) return  // user hit Cancel — but prompt returns '' not null on empty
+    if (note === null) return
     setFlagging(emailId)
     try {
       const res = await fetch(`/api/admin/subscribers/${subscriberId}/flag-email`, {
@@ -473,105 +554,116 @@ function Timeline({
     }
   }
 
-  // Build merged + chronological event list: outgoing emails + inbound replies
-  // (Spec 71 — full bodies from wb_subscriber_replies) + outcome events.
+  const cancelledAt = subscriber.cancelledAt
+  function dayLabel(at: string): string {
+    if (!cancelledAt) return new Date(at).toLocaleDateString()
+    const d = Math.max(0, Math.floor((new Date(at).getTime() - new Date(cancelledAt).getTime()) / (24 * 60 * 60 * 1000)))
+    return `Day ${d}`
+  }
+
   type Item =
     | { kind: 'email';   at: string; email: Email }
     | { kind: 'reply';   at: string; reply: Reply }
     | { kind: 'outcome'; at: string; event: OutcomeEvent }
   const items: Item[] = []
-  for (const e of emails) {
-    if (e.sentAt) items.push({ kind: 'email', at: e.sentAt, email: e })
-  }
-  for (const r of replies) {
-    items.push({ kind: 'reply', at: r.receivedAt, reply: r })
-  }
-  for (const ev of outcomeEvents) {
-    items.push({ kind: 'outcome', at: ev.createdAt, event: ev })
-  }
+  for (const e of emails) if (e.sentAt) items.push({ kind: 'email', at: e.sentAt, email: e })
+  for (const r of replies) items.push({ kind: 'reply', at: r.receivedAt, reply: r })
+  for (const ev of outcomeEvents) items.push({ kind: 'outcome', at: ev.createdAt, event: ev })
   items.sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime())
 
+  // Inline AI verdict marker (shown right after cancellation).
+  const verdictBits: string[] = []
+  if (subscriber.cancellationCategory) verdictBits.push(subscriber.cancellationCategory)
+  if (subscriber.tier !== null) verdictBits.push(`tier ${subscriber.tier}`)
+  if (subscriber.confidence) verdictBits.push(`conf ${Number(subscriber.confidence).toFixed(2)}`)
+
   return (
-    <div className="space-y-3">
+    <div className="space-y-2.5">
+      {cancelledAt && (
+        <SystemMarker label="Subscriber cancelled" day={new Date(cancelledAt).toLocaleDateString()} tone="bad" />
+      )}
+      {subscriber.classifiedAt && verdictBits.length > 0 && (
+        <SystemMarker
+          label={`AI classified: ${verdictBits.join(' · ')}`}
+          tone="info"
+          detail={subscriber.cancellationReason ?? subscriber.handoffReasoning ?? null}
+        />
+      )}
+
       {items.map((it, idx) => {
-        const day = cancelledAt
-          ? Math.max(0, Math.floor((new Date(it.at).getTime() - new Date(cancelledAt).getTime()) / (24 * 60 * 60 * 1000)))
-          : null
-        const dayLabel = day !== null ? `Day ${day}` : new Date(it.at).toLocaleDateString()
+        const day = dayLabel(it.at)
 
         if (it.kind === 'email') {
           const isOpen = expanded.has(it.email.id)
           const isFlagged = flaggedEmailIds.has(it.email.id)
           const isFlagging = flagging === it.email.id
           return (
-            <div key={`${idx}-email-${it.email.id}`} className="border-l-2 border-blue-300 pl-4">
-              <div className="text-xs text-slate-400">{dayLabel} → outgoing ({it.email.type})</div>
-              <div className="flex items-baseline gap-2">
+            <div key={`${idx}-email-${it.email.id}`} className="flex justify-end">
+              <div className="max-w-[80%] bg-blue-50 border border-blue-100 rounded-2xl rounded-tr-sm p-3">
+                <div className="flex items-center justify-between gap-3 mb-1">
+                  <span className="text-[11px] font-medium text-blue-900">→ {emailTypeLabel(it.email.type)} · {day}</span>
+                  {isFlagged ? (
+                    <span className="text-[10px] text-red-600 shrink-0">🚩 flagged</span>
+                  ) : (
+                    <button
+                      onClick={() => flagEmail(it.email.id)}
+                      disabled={isFlagging}
+                      className="text-[10px] text-slate-400 hover:text-red-600 disabled:opacity-50 shrink-0"
+                    >
+                      {isFlagging ? '…' : '🚩 flag'}
+                    </button>
+                  )}
+                </div>
                 <button
                   onClick={() => onToggle(it.email.id)}
                   className="text-sm font-medium text-slate-900 hover:underline text-left"
                 >
                   {it.email.subject ?? '(no subject)'} {isOpen ? '▾' : '▸'}
                 </button>
-                {isFlagged ? (
-                  <span className="text-xs text-red-600">🚩 flagged</span>
-                ) : (
-                  <button
-                    onClick={() => flagEmail(it.email.id)}
-                    disabled={isFlagging}
-                    className="text-xs text-slate-400 hover:text-red-600 disabled:opacity-50"
-                  >
-                    {isFlagging ? '…' : '🚩 flag'}
-                  </button>
+                {isOpen && (
+                  <div className="mt-2 bg-white/70 border border-blue-100 rounded-lg p-2.5 text-xs whitespace-pre-wrap text-slate-700 max-h-96 overflow-y-auto">
+                    {it.email.bodyText
+                      ? it.email.bodyText
+                      : <span className="italic text-slate-400">(body not preserved — sent before instrumentation)</span>}
+                  </div>
                 )}
               </div>
-              {isOpen && (
-                <div className="mt-2 bg-slate-50 border border-slate-100 rounded-lg p-3 text-xs whitespace-pre-wrap font-mono text-slate-700 max-h-96 overflow-y-auto">
-                  {it.email.bodyText
-                    ? it.email.bodyText
-                    : <span className="italic text-slate-400">(body not preserved — sent before instrumentation)</span>}
-                </div>
-              )}
             </div>
           )
         }
+
         if (it.kind === 'reply') {
-          const isOpen = expanded.has(`reply-${it.reply.id}`)
           const threaded = !!it.reply.inReplyToEmailId
           return (
-            <div key={`${idx}-reply-${it.reply.id}`} className="border-l-2 border-amber-300 pl-4">
-              <div className="text-xs text-slate-400">
-                {dayLabel} ← subscriber replied
-                {!threaded && (
-                  <span className="ml-2 text-amber-700" title="In-Reply-To header missing or didn't match a known outbound">
-                    ⚠ thread unknown
-                  </span>
-                )}
-              </div>
-              <button
-                onClick={() => onToggle(`reply-${it.reply.id}`)}
-                className="text-sm font-medium text-slate-900 hover:underline text-left"
-              >
-                {it.reply.body.length > 80
-                  ? `${it.reply.body.slice(0, 80).replace(/\s+/g, ' ').trim()}…`
-                  : it.reply.body.replace(/\s+/g, ' ').trim()
-                } {isOpen ? '▾' : '▸'}
-              </button>
-              {isOpen && (
-                <div className="mt-2 bg-amber-50 border border-amber-100 rounded-lg p-3 text-xs whitespace-pre-wrap font-mono text-slate-700 max-h-96 overflow-y-auto">
+            <div key={`${idx}-reply-${it.reply.id}`} className="flex justify-start">
+              <div className="max-w-[80%] bg-emerald-50 border border-emerald-100 rounded-2xl rounded-tl-sm p-3">
+                <div className="text-[11px] font-medium text-emerald-900 mb-1">
+                  ← Reply from {it.reply.fromEmail ?? subscriber.email ?? 'subscriber'} · {day}
+                  {!threaded && (
+                    <span className="ml-2 text-amber-600" title="In-Reply-To header missing or didn't match a known outbound">⚠ thread unknown</span>
+                  )}
+                </div>
+                <div className="text-sm text-slate-700 whitespace-pre-wrap max-h-80 overflow-y-auto">
                   {it.reply.body}
                 </div>
-              )}
+              </div>
             </div>
           )
         }
-        // outcome
+
+        // outcome → centered system marker
+        const o = outcomeLabel(it.event.name)
+        const reasoning = it.event.name === 'founder_handoff_triggered'
+          ? (subscriber.handoffReasoning ?? null)
+          : (typeof it.event.properties.reason === 'string' ? it.event.properties.reason : null)
         return (
-          <div key={`${idx}-outcome-${it.event.id}`} className="border-l-2 border-purple-300 pl-4">
-            <div className="text-xs text-slate-400">{dayLabel} ◇ outcome</div>
-            <div className="text-sm font-mono text-purple-700">{it.event.name}</div>
-            <pre className="text-[11px] text-slate-500 whitespace-pre-wrap mt-1">{JSON.stringify(it.event.properties, null, 2)}</pre>
-          </div>
+          <SystemMarker
+            key={`${idx}-outcome-${it.event.id}`}
+            label={o.label}
+            day={day}
+            tone={o.tone}
+            detail={reasoning}
+          />
         )
       })}
     </div>
