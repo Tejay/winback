@@ -20,7 +20,7 @@ import { and, eq, gte, isNotNull, isNull, lt, or, sql } from 'drizzle-orm'
 import { getDbReadOnly } from '../db'
 import { churnedSubscribers, customers, recoveries, users, wbEvents } from '../schema'
 import { TIERS } from '@/src/winback/lib/billing-config'
-import { mrrRecoveredWeeklyTrend, detectStripeMode } from './billing-queries'
+import { detectStripeMode } from './billing-queries'
 
 export type InsightsWindow = '7d' | '30d' | '90d'
 
@@ -89,8 +89,12 @@ export interface InsightsData {
     engine: { ingested: number; contacted: number; recovered: number }
   }
 
-  /** 13-week MRR-recovered trend (rescued from the retired /admin/billing). */
-  mrrTrend: Array<{ week: string; attributionType: string; cents: number; n: number }>
+  /**
+   * 13-week recovered-MRR trend, split by product mode so the chart
+   * reinforces the two product lines. Zero-padded to a contiguous 13
+   * weeks (Monday-keyed, UTC) so gaps render as empty weeks, not skips.
+   */
+  mrrTrend: Array<{ week: string; winBackCents: number; paymentCents: number }>
 }
 
 // --- small count helpers (self-contained) --------------------------------
@@ -101,6 +105,53 @@ async function countEventsSince(name: string, since: Date): Promise<number> {
     .from(wbEvents)
     .where(and(eq(wbEvents.name, name), gte(wbEvents.createdAt, since)))
   return row?.n ?? 0
+}
+
+/** Last N Monday-start dates (UTC), oldest→newest, as 'YYYY-MM-DD'. Matches
+ *  Postgres date_trunc('week', …) which is ISO/Monday-based. */
+function lastNMondaysUtc(n: number): string[] {
+  const now = new Date()
+  const base = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
+  const dow = (base.getUTCDay() + 6) % 7 // 0 = Monday
+  base.setUTCDate(base.getUTCDate() - dow)
+  const out: string[] = []
+  for (let i = n - 1; i >= 0; i--) {
+    const d = new Date(base)
+    d.setUTCDate(base.getUTCDate() - i * 7)
+    out.push(d.toISOString().slice(0, 10))
+  }
+  return out
+}
+
+/** Weekly recovered MRR split by product mode (card_save → payment;
+ *  win_back/null/other → win-back). Zero-padded to a contiguous N weeks. */
+async function weeklyTrendByMode(weeks: number): Promise<InsightsData['mrrTrend']> {
+  const since = new Date(Date.now() - weeks * 7 * DAY_MS)
+  const rows = await getDbReadOnly()
+    .select({
+      week: sql<string>`to_char(date_trunc('week', ${recoveries.recoveredAt}), 'YYYY-MM-DD')`,
+      isPayment: sql<boolean>`case when ${recoveries.recoveryType} = 'card_save' then true else false end`,
+      cents: sql<number>`coalesce(sum(${recoveries.planMrrCents}), 0)::bigint`,
+    })
+    .from(recoveries)
+    .where(gte(recoveries.recoveredAt, since))
+    .groupBy(
+      sql`date_trunc('week', ${recoveries.recoveredAt})`,
+      sql`case when ${recoveries.recoveryType} = 'card_save' then true else false end`,
+    )
+
+  const byWeek = new Map<string, { winBackCents: number; paymentCents: number }>()
+  for (const r of rows) {
+    const slot = byWeek.get(r.week) ?? { winBackCents: 0, paymentCents: 0 }
+    if (r.isPayment) slot.paymentCents += Number(r.cents)
+    else slot.winBackCents += Number(r.cents)
+    byWeek.set(r.week, slot)
+  }
+  return lastNMondaysUtc(weeks).map((week) => ({
+    week,
+    winBackCents: byWeek.get(week)?.winBackCents ?? 0,
+    paymentCents: byWeek.get(week)?.paymentCents ?? 0,
+  }))
 }
 
 // --- main builder --------------------------------------------------------
@@ -204,7 +255,7 @@ export async function buildInsights(window: InsightsWindow = '30d'): Promise<Ins
       eq(churnedSubscribers.status, 'recovered'),
     )).then((r) => r[0]?.n ?? 0),
 
-    mrrRecoveredWeeklyTrend(13),
+    weeklyTrendByMode(13),
   ])
 
   // Reduce tier rows → counts + MRR

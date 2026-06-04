@@ -58,7 +58,7 @@ interface InsightsData {
     byMode: { winBack: { n: number; cents: number }; cardSave: { n: number; cents: number } }
     engine: { ingested: number; contacted: number; recovered: number }
   }
-  mrrTrend: Array<{ week: string; attributionType: string; cents: number; n: number }>
+  mrrTrend: Array<{ week: string; winBackCents: number; paymentCents: number }>
 }
 
 const WINDOW_OPTIONS: InsightsWindow[] = ['7d', '30d', '90d']
@@ -194,55 +194,72 @@ function InsightsInner() {
 
       {/* ===== §3 Value delivered ===== */}
       <section className="space-y-3">
-        <SectionHeader n="3" title="Value delivered" sub="Proves the product works — the reason merchants stay" />
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <KpiTile
-            label={`$ recovered (${window})`}
-            value={formatCents(v.recoveredCentsInWindow)}
-            caption={`${formatCents(v.recoveredAllTimeCents)} all-time`}
+        <SectionHeader
+          n="3"
+          title="Value delivered"
+          sub={`${formatCents(v.recoveredCentsInWindow)} recovered in the ${winLabel} — the reason merchants stay`}
+        />
+
+        {/* The two product lines, in plain language, lead the section. */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <ProductLineTile
+            label="Cancellation win-backs"
+            caption="voluntary cancels reactivated"
+            line={v.byMode.winBack}
+            accent="emerald"
             href="/admin/subscribers?cohort=recovered"
-            tone="pop"
           />
-          <KpiTile
-            label="Recovery rate"
-            value={v.recoveryRatePct !== null ? `${v.recoveryRatePct}%` : '—'}
-            caption={`${v.recoveredCount.toLocaleString()} recovered / ${v.lostCount.toLocaleString()} lost (lifetime)`}
+          <ProductLineTile
+            label="Payment recoveries"
+            caption="failed payments saved"
+            line={v.byMode.cardSave}
+            accent="blue"
             href="/admin/subscribers?cohort=recovered"
           />
-          <div className="bg-white rounded-2xl border border-slate-200 p-4">
-            <div className="text-[10px] font-semibold uppercase tracking-widest text-slate-500 mb-2">By product mode ({window})</div>
-            <ModeRow label="Win-back" caption="voluntary cancel → reactivation" mode={v.byMode.winBack} />
-            <div className="h-px bg-slate-100 my-2" />
-            <ModeRow label="Card-save" caption="failed payment recovered" mode={v.byMode.cardSave} />
-          </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {/* Attribution split */}
-          <div className="bg-white rounded-2xl border border-slate-200 p-4">
-            <div className="text-[10px] font-semibold uppercase tracking-widest text-slate-500 mb-2">Recoveries by attribution ({window})</div>
-            <div className="grid grid-cols-3 gap-2 text-center">
+        {/* Stacked weekly trend by the same two product lines. */}
+        <MrrTrendChart trend={data.mrrTrend} />
+
+        {/* Supporting: lifetime totals, recovery rate, attribution, engine. */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <MetricTile
+            label="$ recovered all-time"
+            value={formatCents(v.recoveredAllTimeCents)}
+            caption="cumulative revenue saved for merchants"
+            href="/admin/subscribers?cohort=recovered"
+            valueColor="text-emerald-600"
+          />
+          <MetricTile
+            label="Recovery rate (lifetime)"
+            value={v.recoveryRatePct !== null ? `${v.recoveryRatePct}%` : '—'}
+            caption={`${v.recoveredCount.toLocaleString()} recovered · ${v.lostCount.toLocaleString()} lost`}
+            href="/admin/subscribers?cohort=recovered"
+          />
+          <div
+            className="bg-white rounded-xl border border-slate-100 p-3"
+            title="How confident we are that WinbackFlow caused the recovery. Strong = clear causation (clicked our email/link); Weak = plausible; Organic = returned on their own."
+          >
+            <div className="text-[10px] font-semibold uppercase tracking-widest text-slate-500 mb-1">Attributable to us ({window})</div>
+            <div className="grid grid-cols-3 gap-1.5 text-center">
               <AttributionCell label="Strong" cell={v.recoveriesByAttribution.strong} tone="text-emerald-700" />
               <AttributionCell label="Weak" cell={v.recoveriesByAttribution.weak} tone="text-slate-700" />
               <AttributionCell label="Organic" cell={v.recoveriesByAttribution.organic} tone="text-slate-500" />
             </div>
           </div>
-
-          {/* Engine funnel */}
-          <div className="bg-white rounded-2xl border border-slate-200 p-4">
-            <div className="text-[10px] font-semibold uppercase tracking-widest text-slate-500 mb-2">Recovery engine ({window})</div>
-            <FunnelStages
-              stages={[
-                { label: 'Ingested',  value: v.engine.ingested,  href: '/admin/subscribers' },
-                { label: 'Contacted', value: v.engine.contacted },
-                { label: 'Recovered', value: v.engine.recovered, href: '/admin/subscribers?cohort=recovered' },
-              ]}
-            />
-          </div>
         </div>
 
-        {/* MRR-recovered weekly trend (rescued from /admin/billing) */}
-        <MrrTrendChart trend={data.mrrTrend} />
+        {/* Recovery engine funnel */}
+        <div className="bg-white rounded-2xl border border-slate-200 p-4">
+          <div className="text-[10px] font-semibold uppercase tracking-widest text-slate-500 mb-2">Recovery engine ({window})</div>
+          <FunnelStages
+            stages={[
+              { label: 'Ingested',  value: v.engine.ingested,  href: '/admin/subscribers' },
+              { label: 'Contacted', value: v.engine.contacted },
+              { label: 'Recovered', value: v.engine.recovered, href: '/admin/subscribers?cohort=recovered' },
+            ]}
+          />
+        </div>
       </section>
     </div>
   )
@@ -260,59 +277,116 @@ function SectionHeader({ n, title, sub }: { n: string; title: string; sub: strin
   )
 }
 
-function ModeRow({ label, caption, mode }: { label: string; caption: string; mode: { n: number; cents: number } }) {
+/**
+ * One of the two product lines — the hero framing of §3. Big $, recovery
+ * count, a sub-line, and a left accent bar in the line's color (matching
+ * the trend chart legend).
+ */
+function ProductLineTile({
+  label, caption, line, accent, href,
+}: {
+  label: string
+  caption: string
+  line: { n: number; cents: number }
+  accent: 'emerald' | 'blue'
+  href: string
+}) {
+  const bar = accent === 'emerald' ? 'bg-emerald-400' : 'bg-blue-400'
+  const val = accent === 'emerald' ? 'text-emerald-600' : 'text-blue-600'
   return (
-    <div className="flex items-baseline justify-between">
-      <div>
-        <div className="text-sm font-semibold text-slate-800">{label}</div>
-        <div className="text-[10px] text-slate-400">{caption}</div>
+    <Link href={href} className="block bg-white rounded-2xl border border-slate-200 p-5 hover:border-slate-300 hover:shadow-sm transition">
+      <div className="flex items-stretch gap-3">
+        <div className={`w-1 rounded-full ${bar}`} />
+        <div className="flex-1">
+          <div className="flex items-center justify-between">
+            <div className="text-[11px] font-semibold uppercase tracking-widest text-slate-600">{label}</div>
+            <span className="text-[10px] text-blue-600">view →</span>
+          </div>
+          <div className={`text-3xl font-bold mt-1 ${val}`}>{formatCents(line.cents)}</div>
+          <div className="text-[11px] text-slate-500 mt-0.5">
+            <span className="font-medium text-slate-700">{line.n.toLocaleString()}</span> recoveries · {caption}
+          </div>
+        </div>
       </div>
-      <div className="text-right">
-        <div className="text-lg font-bold text-slate-900">{formatCents(mode.cents)}</div>
-        <div className="text-[10px] text-slate-400">{mode.n.toLocaleString()} recoveries</div>
-      </div>
-    </div>
+    </Link>
   )
 }
 
 function AttributionCell({ label, cell, tone }: { label: string; cell: { n: number; cents: number }; tone: string }) {
   return (
-    <div className="rounded-lg border border-slate-100 p-2">
-      <div className="text-[10px] uppercase tracking-widest text-slate-500">{label}</div>
-      <div className={`text-lg font-bold ${tone}`}>{formatCents(cell.cents)}</div>
-      <div className="text-[10px] text-slate-400">{cell.n.toLocaleString()} rec.</div>
+    <div className="rounded-lg border border-slate-100 p-1.5">
+      <div className="text-[9px] uppercase tracking-widest text-slate-500">{label}</div>
+      <div className={`text-sm font-bold ${tone}`}>{formatCents(cell.cents)}</div>
+      <div className="text-[9px] text-slate-400">{cell.n.toLocaleString()} rec.</div>
     </div>
   )
 }
 
-/** Simple CSS bar chart — total recovered MRR per week, last 13 weeks. */
+/**
+ * Recovered-MRR weekly trend — stacked by product line (cancellation
+ * win-backs + payment recoveries), 13 weeks. Period total + weekly avg
+ * headline, legend, month x-axis, hover tooltip. Designed to read as a
+ * trend at a glance, not require hovering each bar.
+ */
 function MrrTrendChart({ trend }: { trend: InsightsData['mrrTrend'] }) {
-  // Sum attribution types per week.
-  const byWeek = new Map<string, number>()
-  for (const r of trend) byWeek.set(r.week, (byWeek.get(r.week) ?? 0) + r.cents)
-  const weeks = Array.from(byWeek.entries()).sort(([a], [b]) => a.localeCompare(b))
-  const max = Math.max(1, ...weeks.map(([, c]) => c))
+  const weeks = trend.map((w) => ({ ...w, total: w.winBackCents + w.paymentCents }))
+  const max = Math.max(1, ...weeks.map((w) => w.total))
+  const periodTotal = weeks.reduce((s, w) => s + w.total, 0)
+  const weeklyAvg = weeks.length > 0 ? Math.round(periodTotal / weeks.length) : 0
+  const hasData = periodTotal > 0
+
+  // Month label under the first week of each calendar month.
+  function monthLabel(week: string, idx: number): string {
+    const m = new Date(week + 'T00:00:00Z').toLocaleString('en-US', { month: 'short', timeZone: 'UTC' })
+    if (idx === 0) return m
+    const prev = new Date(weeks[idx - 1].week + 'T00:00:00Z').toLocaleString('en-US', { month: 'short', timeZone: 'UTC' })
+    return m !== prev ? m : ''
+  }
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200 p-4">
-      <div className="text-[10px] font-semibold uppercase tracking-widest text-slate-500 mb-3">MRR recovered · 13-week trend</div>
-      {weeks.length === 0 ? (
-        <div className="text-[12px] text-slate-400">No recoveries recorded yet.</div>
+      <div className="flex items-end justify-between mb-3 flex-wrap gap-2">
+        <div>
+          <div className="text-[10px] font-semibold uppercase tracking-widest text-slate-500">Recovered MRR · weekly, last 13 weeks</div>
+          <div className="text-sm text-slate-700 mt-0.5">
+            <span className="font-bold">{formatCents(periodTotal)}</span> recovered
+            <span className="text-slate-400"> · avg {formatCents(weeklyAvg)}/wk</span>
+          </div>
+        </div>
+        <div className="flex items-center gap-3 text-[10px] text-slate-500">
+          <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-emerald-400 inline-block" />Cancellation win-backs</span>
+          <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-blue-400 inline-block" />Payment recoveries</span>
+        </div>
+      </div>
+
+      {!hasData ? (
+        <div className="text-[12px] text-slate-400 py-8 text-center">No recoveries in the last 13 weeks.</div>
       ) : (
-        <div className="flex items-end gap-1.5 h-32">
-          {weeks.map(([week, cents]) => (
-            <div key={week} className="flex-1 flex flex-col items-center gap-1 group">
-              <div className="text-[9px] text-slate-400 opacity-0 group-hover:opacity-100 transition tabular-nums whitespace-nowrap">
-                {formatCents(cents)}
+        <div className="relative">
+          {/* y-axis max gridline */}
+          <div className="absolute inset-x-0 top-0 border-t border-dashed border-slate-200">
+            <span className="text-[9px] text-slate-400 tabular-nums absolute right-0 -top-3.5">{formatCents(max)}</span>
+          </div>
+          <div className="flex items-end gap-1.5 h-40">
+            {weeks.map((w) => (
+              <div key={w.week} className="flex-1 flex justify-center group min-w-0 h-full items-end">
+                <div
+                  className="w-full max-w-[42px] flex flex-col-reverse rounded-t overflow-hidden h-full"
+                  title={`Week of ${w.week}\nCancellation win-backs: ${formatCents(w.winBackCents)}\nPayment recoveries: ${formatCents(w.paymentCents)}\nTotal: ${formatCents(w.total)}`}
+                >
+                  {/* Stacked from the bottom; empty space above is the headroom to max. */}
+                  <div style={{ height: `${(w.paymentCents / max) * 100}%` }} className="w-full bg-blue-400 group-hover:bg-blue-500 transition" />
+                  <div style={{ height: `${(w.winBackCents / max) * 100}%` }} className="w-full bg-emerald-400 group-hover:bg-emerald-500 transition" />
+                </div>
               </div>
-              <div
-                className="w-full bg-blue-400 rounded-t hover:bg-blue-500 transition"
-                style={{ height: `${Math.max(2, (cents / max) * 100)}%` }}
-                title={`${week}: ${formatCents(cents)}`}
-              />
-              <div className="text-[8px] text-slate-400 tabular-nums">{week.slice(5)}</div>
-            </div>
-          ))}
+            ))}
+          </div>
+          {/* month x-axis */}
+          <div className="flex gap-1.5 mt-1">
+            {weeks.map((w, i) => (
+              <div key={w.week} className="flex-1 text-[9px] text-slate-400 text-center min-w-0">{monthLabel(w.week, i)}</div>
+            ))}
+          </div>
         </div>
       )}
     </div>
