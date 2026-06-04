@@ -234,8 +234,8 @@ export function PromotionsSection({
           desc={
             <>
               Sent automatically to price-driven cancellations from your tier-1
-              accounts — no action from you. Each promo passes four real-time
-              Stripe checks before it&rsquo;s sent.
+              accounts — no action from you. Stripe re-validates the code for
+              each subscriber before it sends.
             </>
           }
         />
