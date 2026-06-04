@@ -89,6 +89,13 @@ interface OverviewRollup {
     drainPausedQueue: number
     unclassifiedQueue: number
     backfillInFlight: number
+    webhookSilent: number
+  }
+  serviceSignals: {
+    stripe:   ServiceSignal
+    openai:   ServiceSignal
+    sendgrid: ServiceSignal
+    postgres: ServiceSignal
   }
   cronHealth: Array<{
     name: string
@@ -106,13 +113,44 @@ interface OverviewRollup {
   deadLetteredClassify: number
 }
 
+interface ServiceSignal {
+  status: 'healthy' | 'degraded' | 'down'
+  errorCount: number
+}
+
 const ERROR_SOURCE_LABELS: Record<ErrorSource, string> = {
   oauth_error:                'OAuth',
   billing_invoice_failed:     'Billing',
-  reactivate_failed:          'Reactivate',
+  reactivate_failed:          'Win-back',
   email_send_failed:          'Send',
   classifier_failed:          'AI',
-  webhook_signature_invalid:  'Webhook',
+  webhook_signature_invalid:  'Webhook auth',
+}
+
+/**
+ * Friendly labels for admin-action event names (recent admin activity).
+ * Falls back to a humanised form for anything not listed.
+ */
+const ADMIN_ACTION_LABELS: Record<string, string> = {
+  impersonation_start:     'Started impersonation',
+  impersonation_stop:      'Stopped impersonation',
+  flat_rate_assigned:      'Assigned flat rate',
+  reset_classify_attempts: 'Reset AI classifier',
+  pause_customer:          'Paused customer',
+  force_oauth_reset:       'Forced OAuth reset',
+  resolve_open_handoffs:   'Resolved hand-offs',
+  unsubscribe_subscriber:  'Marked DNC',
+  bulk_unsubscribe:        'Bulk DNC',
+  dsr_delete:              'GDPR delete',
+  billing_retry:           'Retried billing',
+  classifier_re_run:       'Re-ran classifier',
+}
+
+function humaniseAction(action: string): string {
+  if (ADMIN_ACTION_LABELS[action]) return ADMIN_ACTION_LABELS[action]
+  if (!action) return '(unknown)'
+  const spaced = action.replace(/_/g, ' ')
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1)
 }
 
 // ---------------------------------------------------------------------------
@@ -124,6 +162,12 @@ export function OverviewClient() {
   const [error, setError]   = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [deadLetterOpen, setDeadLetterOpen] = useState(false)
+  // Timestamp of the last successful fetch — drives the "updated Ns ago"
+  // pulse so a silently-stalled poll is visible.
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null)
+  // Re-render ticker so the relative "updated Ns ago" label stays live
+  // between 30s fetches.
+  const [, setTick] = useState(0)
 
   useEffect(() => {
     let cancelled = false
@@ -135,6 +179,7 @@ export function OverviewClient() {
         if (!res.ok) throw new Error(json.error ?? 'Failed to load overview')
         setData(json)
         setError(null)
+        setLastUpdatedAt(Date.now())
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : String(e))
       } finally {
@@ -143,7 +188,8 @@ export function OverviewClient() {
     }
     load()
     const t = setInterval(load, 30_000)
-    return () => { cancelled = true; clearInterval(t) }
+    const ticker = setInterval(() => setTick((n) => n + 1), 5_000)
+    return () => { cancelled = true; clearInterval(t); clearInterval(ticker) }
   }, [])
 
   if (loading && !data) return <p className="text-sm text-slate-500">Loading…</p>
@@ -158,7 +204,8 @@ export function OverviewClient() {
 
   return (
     <div className="space-y-6">
-      <Header />
+      <Header lastUpdatedAt={lastUpdatedAt} />
+      <ServiceSignalsStrip signals={data.serviceSignals} />
       <RedLights lights={data.redLights} errorsBySource={data.today.errors.bySource} />
       <StuckCohortsPanel
         cohorts={data.stuckCohorts}
@@ -178,7 +225,10 @@ export function OverviewClient() {
 // Header
 // ---------------------------------------------------------------------------
 
-function Header() {
+function Header({ lastUpdatedAt }: { lastUpdatedAt: number | null }) {
+  const ago = lastUpdatedAt ? relTime(new Date(lastUpdatedAt).toISOString()) : null
+  // Stale if no successful fetch in 90s (3 missed 30s polls).
+  const stale = lastUpdatedAt !== null && Date.now() - lastUpdatedAt > 90_000
   return (
     <header className="flex items-end justify-between flex-wrap gap-3">
       <div>
@@ -186,9 +236,21 @@ function Header() {
           Service health
         </div>
         <h1 className="text-3xl font-bold text-slate-900">Now.</h1>
-        <p className="text-sm text-slate-500">Counters refresh every 30 seconds.</p>
+        <p className="text-sm text-slate-500 flex items-center gap-1.5">
+          <span
+            className={`inline-block w-1.5 h-1.5 rounded-full ${
+              stale ? 'bg-amber-500' : 'bg-emerald-500 animate-pulse'
+            }`}
+          />
+          {stale
+            ? <span className="text-amber-700">Stale — last update {ago} ago</span>
+            : <>Live · refreshes every 30s{ago ? ` · updated ${ago} ago` : ''}</>}
+        </p>
       </div>
-      <div className="text-[11px] text-slate-500 text-right leading-tight">
+      <div
+        className="text-[11px] text-slate-500 text-right leading-tight"
+        title="When a red light trips, an email is sent here. 15-minute cooldown per rule so a persistent issue doesn't flood the inbox."
+      >
         <div>Email on red light: <span className="font-mono text-slate-700">errors@winbackflow.co</span></div>
         <div className="text-slate-400">cooldown 15 min · cron <span className="font-mono">red-light-check</span></div>
       </div>
@@ -223,6 +285,52 @@ function investigateHref(metric: string, errorsBySource: Record<ErrorSource, num
   return '/admin/events'
 }
 
+// ---------------------------------------------------------------------------
+// Service signals strip (derived from recent errors — not a live probe)
+// ---------------------------------------------------------------------------
+
+function ServiceSignalsStrip({ signals }: { signals: OverviewRollup['serviceSignals'] }) {
+  const items: Array<{ key: string; label: string; signal: ServiceSignal; href: string }> = [
+    { key: 'stripe',   label: 'Stripe',   signal: signals.stripe,   href: '/admin/events?name=oauth_error' },
+    { key: 'openai',   label: 'OpenAI',   signal: signals.openai,   href: '/admin/events?name=classifier_failed' },
+    { key: 'sendgrid', label: 'SendGrid', signal: signals.sendgrid, href: '/admin/events?name=email_send_failed' },
+    { key: 'postgres', label: 'Postgres', signal: signals.postgres, href: '/admin/events' },
+  ]
+  return (
+    <section className="bg-white rounded-2xl border border-slate-200 p-4">
+      <div className="flex items-center justify-between mb-2">
+        <div className="text-xs font-semibold uppercase tracking-widest text-slate-500">
+          Service signals
+        </div>
+        <div className="text-[10px] text-slate-400" title="Derived from error events in the last 15 minutes, not live uptime probes.">
+          derived from errors · last 15 min
+        </div>
+      </div>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+        {items.map((it) => {
+          const tone = it.signal.status === 'down'
+            ? { box: 'border-red-200 bg-red-50/60',     dot: 'bg-red-500',     text: 'text-red-800' }
+            : it.signal.status === 'degraded'
+              ? { box: 'border-amber-200 bg-amber-50/60', dot: 'bg-amber-500',   text: 'text-amber-800' }
+              : { box: 'border-emerald-200 bg-emerald-50/50', dot: 'bg-emerald-500', text: 'text-emerald-800' }
+          return (
+            <Link key={it.key} href={it.href} className={`rounded-lg border p-2.5 ${tone.box}`}>
+              <div className="flex items-center justify-between">
+                <span className={`font-semibold text-[12px] ${tone.text}`}>{it.label}</span>
+                <span className={`inline-block w-2 h-2 rounded-full ${tone.dot}`} />
+              </div>
+              <div className="text-[10px] text-slate-500 mt-0.5 capitalize">
+                {it.signal.status}
+                {it.signal.errorCount > 0 && ` · ${it.signal.errorCount} err`}
+              </div>
+            </Link>
+          )
+        })}
+      </div>
+    </section>
+  )
+}
+
 function RedLights({
   lights,
   errorsBySource,
@@ -245,12 +353,16 @@ function RedLights({
       </div>
       {lights.map((rl) => {
         const marker = rl.kind === 'floor' ? '↓' : '↑'
+        // Summary leads with a friendly label before " — "; bold that part
+        // for scannability, leave the detail clause regular weight.
+        const [lead, ...rest] = rl.summary.split(' — ')
+        const detail = rest.join(' — ')
         return (
           <div key={rl.metric} className="text-red-800 flex items-start gap-2">
             <span className="font-bold">{marker}</span>
             <div className="flex-1">
               <div>
-                <strong className="font-mono">{rl.metric}</strong> — {rl.summary}
+                <strong>{lead}</strong>{detail ? ` — ${detail}` : ''}
               </div>
               {rl.concentration && (
                 <div className="text-[11px] text-red-700/80 mt-0.5">
@@ -286,13 +398,16 @@ function StuckCohortsPanel({
   cohorts: OverviewRollup['stuckCohorts']
   onOpenDeadLetter: () => void
 }) {
+  // Large queues are healthy when churning, concerning when they pile up.
+  // Amber past 100 is a heuristic backstop until per-queue SLOs exist.
+  const QUEUE_AMBER_AT = 100
   return (
     <section className="bg-white rounded-2xl border border-slate-200 p-4">
       <div className="flex items-center justify-between mb-3">
         <div className="text-xs font-semibold uppercase tracking-widest text-slate-500">
-          Stuck cohorts · point-in-time worklist
+          Needs attention · right now
         </div>
-        <div className="text-[10px] text-slate-400">click any tile</div>
+        <div className="text-[10px] text-slate-400">click any tile to see who</div>
       </div>
       <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
         <CohortTile
@@ -301,6 +416,13 @@ function StuckCohortsPanel({
           sub="3+ errors in 24h"
           tone={cohorts.oauthIssues > 0 ? 'danger' : 'ok'}
           href="/admin/customers?filter=oauth_issues"
+        />
+        <CohortTile
+          label="Webhook silent"
+          value={cohorts.webhookSilent}
+          sub="no events in 24h"
+          tone={cohorts.webhookSilent > 0 ? 'warn' : 'ok'}
+          href="/admin/customers?filter=webhook_silent"
         />
         <CohortTile
           label="Stuck after 3 tries"
@@ -322,14 +444,14 @@ function StuckCohortsPanel({
           label="Activation backlog"
           value={cohorts.drainPausedQueue}
           sub="post-billing catch-up"
-          tone="ok"
+          tone={cohorts.drainPausedQueue > QUEUE_AMBER_AT ? 'warn' : 'ok'}
           href="/admin/subscribers?cohort=drain_paused"
         />
         <CohortTile
           label="Pending AI review"
           value={cohorts.unclassifiedQueue}
-          sub="classifier · attempts < 3"
-          tone="ok"
+          sub="awaiting classifier"
+          tone={cohorts.unclassifiedQueue > QUEUE_AMBER_AT ? 'warn' : 'ok'}
           href="/admin/subscribers?cohort=unclassified"
         />
         <CohortTile
@@ -415,7 +537,7 @@ function ErrorsPanel({
     <section className="bg-white rounded-2xl border border-slate-200 p-4">
       <div className="flex items-center justify-between mb-2">
         <div className="text-xs font-semibold uppercase tracking-widest text-slate-500">Errors · today</div>
-        <Link href="/admin/events" className="text-[11px] text-blue-600 hover:underline">all errors →</Link>
+        <Link href="/admin/events?since=24h" className="text-[11px] text-blue-600 hover:underline">all events (24h) →</Link>
       </div>
       <div className="flex items-baseline gap-4">
         <div className={`text-3xl font-bold ${today.total > 0 ? 'text-red-600' : 'text-slate-900'}`}>
@@ -442,11 +564,13 @@ function ErrorsPanel({
         })}
       </div>
 
-      {tail.length > 0 && (
-        <div className="mt-4 border-t border-slate-100 pt-3">
-          <div className="text-[10px] uppercase tracking-widest font-semibold text-slate-500 mb-1.5">
-            Latest failures
-          </div>
+      <div className="mt-4 border-t border-slate-100 pt-3">
+        <div className="text-[10px] uppercase tracking-widest font-semibold text-slate-500 mb-1.5">
+          Recent failures · last 7 days
+        </div>
+        {tail.length === 0 ? (
+          <div className="text-[12px] text-slate-400 px-1 py-1">No failures in the last 7 days. 🎉</div>
+        ) : (
           <div className="space-y-0.5 text-[12px]">
             {tail.map((e) => (
               <Link
@@ -470,8 +594,8 @@ function ErrorsPanel({
               </Link>
             ))}
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </section>
   )
 }
@@ -533,6 +657,12 @@ function CronHealthSection({ rows }: { rows: OverviewRollup['cronHealth'] }) {
                     <span className="font-medium">Slow:</span> this run took {r.durationMs}ms vs rolling avg of {r.avgDurationMs}ms (≥3×).
                   </div>
                 )}
+                <Link
+                  href={`/admin/events?name=cron_run&q=${encodeURIComponent(r.name)}`}
+                  className="inline-block text-[11px] text-blue-600 hover:underline"
+                >
+                  run history →
+                </Link>
               </div>
             </details>
           )
@@ -565,9 +695,14 @@ function RecentAdminActivity({ rows }: { rows: OverviewRollup['recentAdminActivi
       </div>
       <div className="space-y-0.5 text-[12px]">
         {rows.map((r) => (
-          <div key={r.id} className="grid grid-cols-[60px_140px_1fr] gap-2 items-center hover:bg-slate-50 rounded px-1 py-0.5">
+          <div key={r.id} className="grid grid-cols-[60px_160px_1fr] gap-2 items-center hover:bg-slate-50 rounded px-1 py-0.5">
             <span className="font-mono text-[11px] text-slate-400">{relTime(r.createdAt)}</span>
-            <span className="font-mono text-[11px] text-amber-700 truncate">{r.action || '(unknown)'}</span>
+            <Link
+              href={r.action ? `/admin/audit-log?action=${encodeURIComponent(r.action)}` : '/admin/audit-log'}
+              className="text-[12px] text-amber-700 hover:underline truncate"
+            >
+              {humaniseAction(r.action)}
+            </Link>
             <span className="text-slate-700 truncate">
               {r.adminEmail ?? '(unknown admin)'}
               {r.customerId && (
@@ -592,7 +727,9 @@ function RecentAdminActivity({ rows }: { rows: OverviewRollup['recentAdminActivi
 
 function BusinessDisclosure({ data }: { data: OverviewRollup }) {
   const t = data.today
-  const recs = `${t.recoveries.strong}S / ${t.recoveries.weak}W / ${t.recoveries.organic}O`
+  // Spell out the attribution split — "S/W/O" was opaque to anyone who
+  // didn't write the recovery-attribution code.
+  const recs = `${t.recoveries.strong} strong · ${t.recoveries.weak} weak · ${t.recoveries.organic} organic`
   const mrrDollars = `$${(t.mrrCents / 100).toFixed(2)}`
   return (
     <details className="bg-white rounded-2xl border border-slate-200 overflow-hidden group">
@@ -607,8 +744,9 @@ function BusinessDisclosure({ data }: { data: OverviewRollup }) {
         <span className="text-[10px] text-slate-400 group-open:hidden">expand</span>
       </summary>
       <div className="border-t border-slate-100 p-4 space-y-5">
-        <section className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
-          <Counter label="Classifications" value={t.classifications} spark={data.sparklines.emailsSent} />
+        {/* "Classifications" dropped — it was identical to "Emails sent"
+            (every send corresponds to one classification). */}
+        <section className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <Counter label="Emails sent"     value={t.emailsSent}      spark={data.sparklines.emailsSent} />
           <Counter label="Hand-offs"       value={t.handoffs}        spark={data.sparklines.handoffs} />
           <Counter label="Recoveries"      value={t.recoveries.total} sub={recs} spark={data.sparklines.recoveries} />
@@ -647,24 +785,21 @@ function BusinessDisclosure({ data }: { data: OverviewRollup }) {
             Paywall &amp; activation
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-            <GrowthTile
+            <MetricTile
               label="Stuck at paywall"
-              today={data.paywall.stuckAtPaywall}
-              sevenDay={data.paywall.stuckAtPaywall}
-              sevenDayLabel="awaiting card"
+              value={data.paywall.stuckAtPaywall}
+              caption="activated, no card on file"
               valueColor={data.paywall.stuckAtPaywall > 0 ? 'text-amber-600' : 'text-slate-900'}
             />
-            <GrowthTile
-              label="Gate skips (today)"
-              today={data.paywall.gateSkipsToday}
-              sevenDay={data.paywall.gateSkipsToday}
-              sevenDayLabel="classify + send"
+            <MetricTile
+              label="Skipped (paywall-blocked)"
+              value={data.paywall.gateSkipsToday}
+              caption="classify/send blocked by gate · today"
             />
-            <GrowthTile
-              label="Un-pause blocked (today)"
-              today={data.paywall.unpauseBlockedToday}
-              sevenDay={data.paywall.unpauseBlockedToday}
-              sevenDayLabel="no-sub attempts"
+            <MetricTile
+              label="Resume blocked"
+              value={data.paywall.unpauseBlockedToday}
+              caption="tried to resume without a sub · today"
               valueColor={data.paywall.unpauseBlockedToday > 0 ? 'text-amber-600' : 'text-slate-900'}
             />
           </div>
@@ -674,27 +809,30 @@ function BusinessDisclosure({ data }: { data: OverviewRollup }) {
           <div className="text-[10px] font-semibold uppercase tracking-widest text-slate-500 mb-2">
             Billing &amp; revenue
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2">
             <TierDistributionTile dist={data.billing.tierDistribution} />
-            <GrowthTile
+            <MetricTile
               label="Subs canceled (7d)"
-              today={data.billing.subsCanceled7d}
-              sevenDay={data.billing.reactivations7d}
-              sevenDayLabel="reactivations"
+              value={data.billing.subsCanceled7d}
+              caption="last 7 days"
               valueColor={data.billing.subsCanceled7d > 0 ? 'text-red-600' : 'text-slate-900'}
             />
-            <GrowthTile
-              label="Invoice failures (today)"
-              today={data.billing.invoiceFailedToday}
-              sevenDay={data.billing.invoiceFailedToday}
-              sevenDayLabel="dunning"
+            <MetricTile
+              label="Reactivations (7d)"
+              value={data.billing.reactivations7d}
+              caption="last 7 days"
+              valueColor={data.billing.reactivations7d > 0 ? 'text-green-600' : 'text-slate-900'}
+            />
+            <MetricTile
+              label="Invoice failures"
+              value={data.billing.invoiceFailedToday}
+              caption="dunning · today"
               valueColor={data.billing.invoiceFailedToday > 0 ? 'text-red-600' : 'text-slate-900'}
             />
-            <GrowthTile
+            <MetricTile
               label="Requires sales"
-              today={data.billing.requiresSales}
-              sevenDay={data.billing.requiresSales}
-              sevenDayLabel="Enterprise backlog"
+              value={data.billing.requiresSales}
+              caption="Enterprise backlog"
             />
           </div>
         </section>
@@ -725,6 +863,28 @@ function Counter({
       <div className={`text-xl font-bold ${toneClass}`}>{customValue ?? value.toLocaleString()}</div>
       {sub && <div className="text-[10px] text-slate-500 mt-0.5">{sub}</div>}
       <Sparkline values={spark} max={max} />
+    </div>
+  )
+}
+
+/**
+ * Single-value tile with a plain caption. Used for point-in-time /
+ * fixed-window metrics (paywall, billing) where the GrowthTile's
+ * "N today · M last 7d" framing would be misleading.
+ */
+function MetricTile({
+  label, value, caption, valueColor = 'text-slate-900',
+}: {
+  label: string
+  value: number
+  caption: string
+  valueColor?: string
+}) {
+  return (
+    <div className="bg-white rounded-xl border border-slate-100 p-3">
+      <div className="text-[10px] font-semibold uppercase tracking-widest text-slate-500 mb-1">{label}</div>
+      <div className={`text-xl font-bold ${valueColor}`}>{value.toLocaleString()}</div>
+      <div className="text-[10px] text-slate-400 mt-0.5">{caption}</div>
     </div>
   )
 }

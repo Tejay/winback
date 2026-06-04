@@ -36,6 +36,7 @@ export const CRON_SCHEDULES: ReadonlyArray<CronSchedule> = [
   },
   {
     name: 'onboarding-followup',
+    displayName: 'Onboarding follow-up',
     cron: '30 9 * * *',
     label: 'Daily 09:30 UTC',
     maxIntervalSecs: DAY * 1.5,
@@ -44,6 +45,7 @@ export const CRON_SCHEDULES: ReadonlyArray<CronSchedule> = [
   },
   {
     name: 'dunning-followup',
+    displayName: 'Dunning follow-up',
     cron: '0 8 * * *',
     label: 'Daily 08:00 UTC',
     maxIntervalSecs: DAY * 1.5,
@@ -52,6 +54,7 @@ export const CRON_SCHEDULES: ReadonlyArray<CronSchedule> = [
   },
   {
     name: 'cumulative-revenue',
+    displayName: 'Cumulative revenue',
     cron: '0 3 * * *',
     label: 'Daily 03:00 UTC',
     maxIntervalSecs: DAY * 1.5,
@@ -69,6 +72,7 @@ export const CRON_SCHEDULES: ReadonlyArray<CronSchedule> = [
   },
   {
     name: 'drain-paused-queue',
+    displayName: 'Activation backlog drain',
     cron: '*/5 * * * *',
     label: 'Every 5 minutes',
     maxIntervalSecs: 15 * 60,

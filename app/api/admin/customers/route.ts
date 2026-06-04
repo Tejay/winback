@@ -83,6 +83,17 @@ export async function GET(req: NextRequest) {
       .having(sql`count(*) >= 3`)
     filters.push(inArray(customers.id, oauthCustomerIdsSubquery))
   }
+  // PR 2 — Webhook-silent cohort: matches buildStuckCohorts.webhookSilent.
+  // Stripe-connected + activated, produced events before, none in 24h.
+  if (filter === 'webhook_silent') {
+    const twentyFourHoursAgo = new Date(Date.now() - DAY_MS)
+    filters.push(and(
+      isNotNull(customers.stripeAccessToken),
+      isNotNull(customers.activatedAt),
+      sql`exists (select 1 from wb_events e where e.customer_id = ${customers.id})`,
+      sql`not exists (select 1 from wb_events e where e.customer_id = ${customers.id} and e.created_at > ${twentyFourHoursAgo})`,
+    )!)
+  }
 
   const rows = await getDbReadOnly()
     .select({

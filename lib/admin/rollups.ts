@@ -188,6 +188,25 @@ export interface OverviewRollup {
     customerEmail: string | null
     createdAt: string
   }>
+  /**
+   * Upstream service signals — DERIVED from error events in the last 15
+   * minutes, not live uptime probes. Honest framing: if Stripe OAuth is
+   * throwing, Stripe shows degraded; if the classifier is failing, OpenAI
+   * shows degraded; etc. Postgres is implicitly healthy because these
+   * very queries succeeded.
+   */
+  serviceSignals: {
+    stripe:   ServiceSignal
+    openai:   ServiceSignal
+    sendgrid: ServiceSignal
+    postgres: ServiceSignal
+  }
+}
+
+export interface ServiceSignal {
+  status: 'healthy' | 'degraded' | 'down'
+  /** Error events attributed to this dependency in the last 15 min. */
+  errorCount: number
 }
 
 /**
@@ -344,11 +363,16 @@ function median(values: number[]): number {
 }
 
 /**
- * 5 most-recent error events (any of ERROR_EVENT_NAMES). Used as the
- * "latest failures" tail under the Errors panel — the single biggest
- * triage shortcut on the page. Customer email is best-effort via join.
+ * 5 most-recent error events from the last 7 days (any of
+ * ERROR_EVENT_NAMES). Used as the "recent failures" tail under the
+ * Errors panel — the single biggest triage shortcut on the page.
+ *
+ * The 7-day window matters: without it the tail can show month-old
+ * errors while the today-counter reads 0, which reads as a live
+ * incident when it isn't. Customer email is best-effort via join.
  */
 async function recentErrorEvents(): Promise<OverviewRollup['errorsTail']> {
+  const since = nDaysAgo(7)
   const rows = await getDbReadOnly()
     .select({
       id:            wbEvents.id,
@@ -361,7 +385,10 @@ async function recentErrorEvents(): Promise<OverviewRollup['errorsTail']> {
     .from(wbEvents)
     .leftJoin(customers, eq(wbEvents.customerId, customers.id))
     .leftJoin(users,     eq(customers.userId,    users.id))
-    .where(inArray(wbEvents.name, ERROR_EVENT_NAMES as unknown as string[]))
+    .where(and(
+      inArray(wbEvents.name, ERROR_EVENT_NAMES as unknown as string[]),
+      gte(wbEvents.createdAt, since),
+    ))
     .orderBy(sql`${wbEvents.createdAt} desc`)
     .limit(5)
 
@@ -373,6 +400,43 @@ async function recentErrorEvents(): Promise<OverviewRollup['errorsTail']> {
     snippet:       extractErrorSnippet(r.properties),
     createdAt:     r.createdAt instanceof Date ? r.createdAt.toISOString() : String(r.createdAt),
   }))
+}
+
+/**
+ * Upstream service signals derived from error events in the last 15
+ * minutes. NOT a live probe — see OverviewRollup.serviceSignals doc.
+ *
+ * Mapping (error event → dependency):
+ *   oauth_error, webhook_signature_invalid → Stripe
+ *   classifier_failed                      → OpenAI
+ *   email_send_failed                      → SendGrid
+ * Postgres is healthy by construction (this query ran).
+ */
+async function computeServiceSignals(): Promise<OverviewRollup['serviceSignals']> {
+  const since = new Date(Date.now() - 15 * 60 * 1000)
+  const rows = await getDbReadOnly()
+    .select({ name: wbEvents.name, n: sql<number>`count(*)::int` })
+    .from(wbEvents)
+    .where(and(
+      inArray(wbEvents.name, ERROR_EVENT_NAMES as unknown as string[]),
+      gte(wbEvents.createdAt, since),
+    ))
+    .groupBy(wbEvents.name)
+
+  const by = Object.fromEntries(rows.map((r) => [r.name, r.n])) as Record<string, number>
+  const stripeErrs = (by['oauth_error'] ?? 0) + (by['webhook_signature_invalid'] ?? 0)
+  const openaiErrs = by['classifier_failed'] ?? 0
+  const sendErrs   = by['email_send_failed'] ?? 0
+
+  const toStatus = (n: number): ServiceSignal['status'] =>
+    n === 0 ? 'healthy' : n < 5 ? 'degraded' : 'down'
+
+  return {
+    stripe:   { status: toStatus(stripeErrs), errorCount: stripeErrs },
+    openai:   { status: toStatus(openaiErrs), errorCount: openaiErrs },
+    sendgrid: { status: toStatus(sendErrs),   errorCount: sendErrs },
+    postgres: { status: 'healthy',            errorCount: 0 },
+  }
 }
 
 /** Pull a short human-readable error message from the event properties. */
@@ -682,6 +746,7 @@ export async function buildOverviewRollup(): Promise<OverviewRollup> {
     recentAdminActivity,
     topErrorCustomer,
     customersActive24hSpark,
+    serviceSignals,
   ] = await Promise.all([
     countEventsSince('email_sent', todayStart),
     // Spec 26 — replaces replies (which was a weak signal). Handoffs map
@@ -717,6 +782,7 @@ export async function buildOverviewRollup(): Promise<OverviewRollup> {
     recentAdminActions(),
     topCustomerByErrorsToday(),
     activeCustomersDailyBuckets(7),
+    computeServiceSignals(),
   ])
 
   // Red lights — two flavors:
@@ -734,24 +800,29 @@ export async function buildOverviewRollup(): Promise<OverviewRollup> {
 
   const redLights: OverviewRollup['redLights'] = []
 
-  type SpikeCheck = { metric: string; today: number; spark: number[]; label: string }
-  type FloorCheck = { metric: string; today: number; spark: number[]; label: string }
+  // `label` leads each summary in a friendly, scannable form — the Now
+  // page bolds everything before " — " and the email alert reuses the
+  // same text. `noun` names what's being counted in the detail clause.
+  type SpikeCheck = { metric: string; today: number; spark: number[]; label: string; noun: string }
+  type FloorCheck = { metric: string; today: number; spark: number[]; labelZero: string; labelDrop: string; noun: string }
 
   const spikeChecks: SpikeCheck[] = [
-    { metric: 'errors',         today: errorsToday.total, spark: errorsSpark,        label: 'errors' },
+    { metric: 'errors',         today: errorsToday.total, spark: errorsSpark,        label: 'Error spike',       noun: 'errors' },
     // Replies → handoffs swap also flows through to red-light detection.
     // A sudden handoff spike is the most useful early-warning of prompt regression.
-    { metric: 'handoffs',       today: handoffsToday,     spark: handoffsSpark,      label: 'handoffs' },
+    { metric: 'handoffs',       today: handoffsToday,     spark: handoffsSpark,      label: 'Hand-off spike',    noun: 'hand-offs' },
     // 2026-05-29 — billing early-warnings. A churn wave (sub cancels) or a
     // dunning wave (invoice failures) is exactly the kind of thing an admin
     // wants flagged the day it starts, not discovered at month-end.
     { metric: 'subs_canceled',  today: subsCanceledSpark[subsCanceledSpark.length - 1] ?? 0,
-      spark: subsCanceledSpark, label: 'platform sub cancellations' },
-    { metric: 'invoice_failed', today: invoiceFailedToday, spark: invoiceFailedSpark, label: 'invoice failures' },
+      spark: subsCanceledSpark, label: 'Cancellation wave', noun: 'cancellations' },
+    { metric: 'invoice_failed', today: invoiceFailedToday, spark: invoiceFailedSpark, label: 'Dunning wave',     noun: 'invoice failures' },
   ]
   const floorChecks: FloorCheck[] = [
-    { metric: 'floor_emails_sent',        today: emailsSentToday,    spark: emailsSpark,             label: 'emails sent' },
-    { metric: 'floor_customers_active',   today: customersActive24h, spark: customersActive24hSpark, label: 'active customers' },
+    { metric: 'floor_emails_sent',      today: emailsSentToday,    spark: emailsSpark,
+      labelZero: 'Sending stopped',          labelDrop: 'Sending dropped',          noun: 'emails sent' },
+    { metric: 'floor_customers_active', today: customersActive24h, spark: customersActive24hSpark,
+      labelZero: 'Customer activity stopped', labelDrop: 'Customer activity dropped', noun: 'active customers' },
   ]
 
   for (const c of spikeChecks) {
@@ -762,8 +833,8 @@ export async function buildOverviewRollup(): Promise<OverviewRollup> {
     else if (m === 0 && c.today > 5) fired = true   // bootstrap
     if (!fired) continue
     const summary = m > 0
-      ? `${c.label} today is ${c.today.toLocaleString()} (>3× 7-day median of ${m})`
-      : `${c.label} today is ${c.today.toLocaleString()} (no recent baseline)`
+      ? `${c.label} — ${c.today.toLocaleString()} ${c.noun} today (>3× the 7-day median of ${m})`
+      : `${c.label} — ${c.today.toLocaleString()} ${c.noun} today (no recent baseline)`
     const entry: OverviewRollup['redLights'][number] = {
       metric: c.metric,
       kind: 'spike',
@@ -793,8 +864,8 @@ export async function buildOverviewRollup(): Promise<OverviewRollup> {
       if (m === 0) continue
       if (c.today >= 0.3 * m) continue
       const summary = c.today === 0
-        ? `${c.label} is 0 today (median ${m}) — pipeline likely down`
-        : `${c.label} today is ${c.today.toLocaleString()} (<30% of 7d median ${m})`
+        ? `${c.labelZero} — 0 ${c.noun} today (7-day median ${m}), pipeline likely down`
+        : `${c.labelDrop} — ${c.today.toLocaleString()} ${c.noun} today (<30% of the 7-day median ${m})`
       redLights.push({
         metric: c.metric,
         kind: 'floor',
@@ -844,5 +915,6 @@ export async function buildOverviewRollup(): Promise<OverviewRollup> {
     redLights,
     errorsTail,
     recentAdminActivity,
+    serviceSignals,
   }
 }

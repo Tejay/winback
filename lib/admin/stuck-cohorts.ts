@@ -35,6 +35,10 @@ export interface StuckCohorts {
   unclassifiedQueue: number
   /** Customers whose backfill is in progress. */
   backfillInFlight: number
+  /** Stripe-connected, activated customers that have gone silent (had events
+   *  before, none in the last 24h). The most common silent-failure mode —
+   *  a webhook that quietly stopped delivering. */
+  webhookSilent: number
 }
 
 export async function buildStuckCohorts(): Promise<StuckCohorts> {
@@ -49,6 +53,7 @@ export async function buildStuckCohorts(): Promise<StuckCohorts> {
     drainPausedQueue,
     unclassifiedQueue,
     backfillInFlight,
+    webhookSilent,
   ] = await Promise.all([
     // OAuth issues: distinct customer_ids with 3+ oauth_error events in 24h.
     // We don't try to detect "revoked" directly (no signal beyond the error
@@ -138,6 +143,22 @@ export async function buildStuckCohorts(): Promise<StuckCohorts> {
         isNull(customers.backfillCompletedAt),
       ))
       .then((rows) => rows[0]?.n ?? 0),
+
+    // Webhook silent: Stripe-connected, activated customers that produced
+    // events before but none in the last 24h. The `exists` clause excludes
+    // brand-new merchants who simply haven't started yet (that's the
+    // "stuck on signup" / paywall cohorts' job, not this one). The
+    // `not exists` clause is the "went silent" signal.
+    db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(customers)
+      .where(and(
+        isNotNull(customers.stripeAccessToken),
+        isNotNull(customers.activatedAt),
+        sql`exists (select 1 from wb_events e where e.customer_id = ${customers.id})`,
+        sql`not exists (select 1 from wb_events e where e.customer_id = ${customers.id} and e.created_at > ${twentyFourHoursAgo})`,
+      ))
+      .then((rows) => rows[0]?.n ?? 0),
   ])
 
   return {
@@ -147,5 +168,6 @@ export async function buildStuckCohorts(): Promise<StuckCohorts> {
     drainPausedQueue,
     unclassifiedQueue,
     backfillInFlight,
+    webhookSilent,
   }
 }

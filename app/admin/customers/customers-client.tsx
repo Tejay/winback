@@ -26,12 +26,14 @@ type Filter =
   | 'paywall_stuck'
   | 'oauth_issues'
   | 'backfill_in_flight'
+  | 'webhook_silent'
 
 const FILTER_OPTIONS: Array<{ value: Filter; label: string }> = [
   { value: 'all',                label: 'All' },
   { value: 'stuck_on_signup',    label: 'Stuck on signup' },
   { value: 'paywall_stuck',      label: 'Paywall stuck' },
   { value: 'oauth_issues',       label: 'OAuth issues' },
+  { value: 'webhook_silent',     label: 'Webhook silent' },
   { value: 'backfill_in_flight', label: 'Backfill in flight' },
 ]
 
