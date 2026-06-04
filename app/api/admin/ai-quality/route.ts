@@ -1,34 +1,32 @@
 import { NextResponse } from 'next/server'
 import { requireAdmin } from '@/lib/auth'
 import {
-  // Spec 78 Phase A
   weekVsBaseline,
   cancellationCategoryMix,
   lowConfidenceClassifications,
-  // Spec 78 Phase B
   calibrationCohort,
   reengagementMatchRate,
-  // Spec 78 Phase C
-  rankedAutoLostAudit,
-  rankedHandoffAudit,
-  handoffAuditSummary,
+  rankedSuppressionAudit,
+  emailPerformance,
 } from '@/lib/admin/ai-quality-queries'
 
 /**
  * GET /api/admin/ai-quality
  *
- * Spec 78 redesign. Seven blocks served from a single parallel
- * Promise.all so the page loads in one round-trip:
+ * Rethought around what the classifier actually does today — classify +
+ * write the email copy + label for re-engagement. Handoff and auto-lost
+ * are gone (classifier.ts: "there is no automatic handoff anymore"), so
+ * those blocks were removed; tier-4 "suppress" is the AI's only don't-
+ * email decision now.
  *
- *   1. Calibration — predictions joined to outcomes on a 30-90d cohort
- *   2. Drift detection — last 7d vs prior 23d on 6 quality metrics
- *   3. Cancellation category mix — 30d distribution + 7d shift
- *   4. Smart-ranked auto-lost audit — top 15 by interest_score
- *   5. Smart-ranked handoff audit — top 15 + resolution column + 30d summary
- *   6. Low-confidence classifications — last 25 with confidence < 0.4
- *   7. Re-engagement match rate — 90d eligible / emailed / expired / pending
+ * Sections:
+ *   - Health  : drift (did something change?)
+ *   - Trust   : calibration (does likelihood predict recovery?) +
+ *               suppression reversal (did we silence recoverable subs?)
+ *   - Emails  : reply rate by type (the AI writes the copy) + flagged queue
+ *   - Reasons : category mix + low-confidence audit + re-engagement match
  *
- * All read-only against `DATABASE_URL_READONLY`. No schema changes.
+ * A rolled-up `verdict` answers "is the AI healthy?" in one glance.
  */
 export async function GET() {
   const auth = await requireAdmin()
@@ -41,27 +39,49 @@ export async function GET() {
     lowConfidence,
     calibration,
     matchRate,
-    rankedAutoLost,
-    rankedHandoffs,
-    handoffSummary,
+    suppressionAudit,
+    emails,
   ] = await Promise.all([
     weekVsBaseline(),
     cancellationCategoryMix(),
     lowConfidenceClassifications(25),
     calibrationCohort(90, 30),
     reengagementMatchRate(90),
-    rankedAutoLostAudit(15),
-    rankedHandoffAudit(15),
-    handoffAuditSummary(30),
+    rankedSuppressionAudit(15),
+    emailPerformance(30),
   ])
+
+  // Roll up a plain "is the AI healthy?" verdict.
+  const reasons: string[] = []
+  for (const m of drift.metrics.filter((m) => m.flagged)) reasons.push(`${m.label} drifted`)
+
+  const high = calibration.byLikelihood.find((r) => r.likelihood === 'high')
+  const low  = calibration.byLikelihood.find((r) => r.likelihood === 'low')
+  // Only judge calibration when there's enough settled data to be meaningful.
+  const calibrationMeaningful = (high?.n ?? 0) >= 10 && (low?.n ?? 0) >= 10
+  if (calibrationMeaningful && (high?.recoveryRatePct ?? 0) <= (low?.recoveryRatePct ?? 0)) {
+    reasons.push('high-likelihood subscribers are not recovering more than low')
+  }
+
+  const sup = calibration.suppressionReversal
+  const supReversalPct = sup.suppressed > 0 ? (sup.recovered / sup.suppressed) * 100 : 0
+  if (sup.suppressed >= 10 && supReversalPct > 10) {
+    reasons.push(`${sup.recovered}/${sup.suppressed} suppressed subscribers recovered anyway`)
+  }
+
+  const verdict = {
+    status: reasons.length === 0 ? 'healthy' : 'attention',
+    reasons,
+  }
+
   return NextResponse.json({
+    verdict,
     drift,
     categoryMix,
     lowConfidence,
     calibration,
     matchRate,
-    rankedAutoLost,
-    rankedHandoffs,
-    handoffSummary,
+    suppressionAudit,
+    emails,
   })
 }

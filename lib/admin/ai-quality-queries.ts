@@ -120,19 +120,6 @@ export async function weekVsBaseline(): Promise<{ metrics: DriftMetric[] }> {
   `)
   const subAgg = (subAggResult.rows[0] ?? {}) as Record<string, number | string | null>
 
-  // Auto-lost is an event, not a column on the subscriber.
-  const eventAggResult = await db.execute(sql`
-    SELECT
-      count(*) FILTER (WHERE created_at >= now() - interval '7 days')::int AS al_7d,
-      count(*) FILTER (
-        WHERE created_at >= now() - interval '30 days'
-          AND created_at <  now() - interval '7 days'
-      )::int AS al_23d
-    FROM wb_events
-    WHERE name = 'subscriber_auto_lost'
-  `)
-  const eventAgg = (eventAggResult.rows[0] ?? {}) as Record<string, number | string | null>
-
   const numOr = (v: unknown, fallback: number): number =>
     typeof v === 'number' ? v
       : typeof v === 'string' ? (Number.isFinite(parseFloat(v)) ? parseFloat(v) : fallback)
@@ -144,12 +131,12 @@ export async function weekVsBaseline(): Promise<{ metrics: DriftMetric[] }> {
   const tier423d  = numOr(subAgg.tier4_23d, 0)
   const low7d     = numOr(subAgg.low_7d, 0)
   const low23d    = numOr(subAgg.low_23d, 0)
-  const handoff7d = numOr(subAgg.handoff_7d, 0)
-  const handoff23d= numOr(subAgg.handoff_23d, 0)
   const conf7d    = numOr(subAgg.conf_med_7d, 0)
   const conf23d   = numOr(subAgg.conf_med_23d, 0)
-  const al7d      = numOr(eventAgg.al_7d, 0)
-  const al23d     = numOr(eventAgg.al_23d, 0)
+  // Handoff and auto-lost metrics were removed: the classifier no longer
+  // emits founder handoffs or subscriber_auto_lost events (classifier.ts:
+  // "there is no automatic handoff anymore"). Tier-4 is now the AI's only
+  // suppression decision — relabelled below.
 
   function pctDelta(now: number, prior: number): number | null {
     if (prior <= 0) return null
@@ -178,12 +165,8 @@ export async function weekVsBaseline(): Promise<{ metrics: DriftMetric[] }> {
   const classPerDay23d = class23d / 23
   const tier4Share7d = pctShare(tier47d, class7d)
   const tier4Share23d = pctShare(tier423d, class23d)
-  const handoffShare7d = pctShare(handoff7d, class7d)
-  const handoffShare23d = pctShare(handoff23d, class23d)
   const lowShare7d = pctShare(low7d, class7d)
   const lowShare23d = pctShare(low23d, class23d)
-  const alPerDay7d = al7d / 7
-  const alPerDay23d = al23d / 23
 
   const metrics: DriftMetric[] = [
     {
@@ -195,7 +178,10 @@ export async function weekVsBaseline(): Promise<{ metrics: DriftMetric[] }> {
       format: 'rate_per_day',
     },
     {
-      label: 'Tier-4 share',
+      // The AI's only suppression decision now: tier 4 = don't email.
+      // A rising share means the AI is silencing more subscribers —
+      // fewer recovery attempts.
+      label: 'Suppressed share (tier 4 — not emailed)',
       last7d: tier4Share7d,
       prior23d: tier4Share23d,
       deltaPct: pctDelta(tier4Share7d, tier4Share23d),
@@ -203,23 +189,7 @@ export async function weekVsBaseline(): Promise<{ metrics: DriftMetric[] }> {
       format: 'percent',
     },
     {
-      label: 'Handoff share',
-      last7d: handoffShare7d,
-      prior23d: handoffShare23d,
-      deltaPct: pctDelta(handoffShare7d, handoffShare23d),
-      flagged: flag(pctDelta(handoffShare7d, handoffShare23d), 'down'),
-      format: 'percent',
-    },
-    {
-      label: 'Auto-lost / day',
-      last7d: alPerDay7d,
-      prior23d: alPerDay23d,
-      deltaPct: pctDelta(alPerDay7d, alPerDay23d),
-      flagged: flag(pctDelta(alPerDay7d, alPerDay23d), 'up'),
-      format: 'rate_per_day',
-    },
-    {
-      label: 'recoveryLikelihood=low share',
+      label: 'Low recovery-likelihood share',
       last7d: lowShare7d,
       prior23d: lowShare23d,
       deltaPct: pctDelta(lowShare7d, lowShare23d),
@@ -360,23 +330,20 @@ export interface LikelihoodCalibrationRow {
   likelihood: 'high' | 'medium' | 'low'
   n: number
   recovered: number
-  autoLost: number
-  lostOther: number   // status='lost' but not auto-lost (e.g. expiry sweep)
-  stillOpen: number
+  /** recovered / n × 100 — the calibration figure. Should be monotonic: high > medium > low. */
+  recoveryRatePct: number
 }
 
-export interface HandoffConversionRow {
-  cohort: 'handoff' | 'non_handoff'
-  n: number
+/**
+ * Suppression reversal — the AI's modern false-negative measure. Of the
+ * subscribers the AI chose NOT to email (tier 4 / status='skipped') in the
+ * settled cohort, how many recovered anyway? A non-trivial rate means the
+ * AI is silencing recoverable subscribers (replaces the dead auto-lost
+ * reversal — there are no auto-lost events anymore).
+ */
+export interface SuppressionReversal {
+  suppressed: number
   recovered: number
-}
-
-export interface AutoLostReversalSummary {
-  /** Total auto-lost cases in cohort. */
-  n: number
-  /** Of those, how many ended up with status='recovered'. */
-  reversed: number
-  /** Sample of the reversed cases for the UI to link to. */
   reversedSample: Array<{
     subscriberId: string
     name: string | null
@@ -392,28 +359,25 @@ export interface CalibrationCohort {
   endDate: Date
   /** Total subscribers classified within the cohort window. */
   total: number
-  /** Per-likelihood-bucket outcome distribution. */
+  /** Recovery rate per predicted-likelihood bucket — the calibration test. */
   byLikelihood: LikelihoodCalibrationRow[]
-  /** Handoff vs. non-handoff recovery rate within the cohort. */
-  handoffConversion: HandoffConversionRow[]
-  /** Auto-lost reversal — measurable false-negative rate. */
-  autoLostReversal: AutoLostReversalSummary
+  /** Did the AI wrongly suppress recoverable subscribers? */
+  suppressionReversal: SuppressionReversal
 }
 
 /**
  * Block 1 — Outcome-grounded calibration.
  *
  * The "settled cohort" is subscribers classified ≥30 days ago and ≤90
- * days ago. ≥30 because handoffs that recovered average 14-21 days end
- * to end and we want the tail; ≤90 because older data is "old prompt
- * era" and dilutes the signal from recent prompt changes.
+ * days ago — long enough for outcomes to settle, recent enough to reflect
+ * the current prompt.
  *
- * Three derived tables:
+ * Two derived figures:
  *   - recovery rate by predicted likelihood (the calibration test —
- *     should be monotonic: high > medium > low)
- *   - handoff vs. non-handoff recovery (does escalation pay off?)
- *   - auto-lost reversal (any cases the AI gave up on but recovered
- *     anyway? = confirmed false negatives)
+ *     should be monotonic: high > medium > low; if not, the AI's
+ *     confidence is noise)
+ *   - suppression reversal (of subscribers the AI chose NOT to email,
+ *     tier 4, how many recovered anyway? = the modern false-negative)
  */
 export async function calibrationCohort(
   cohortStartDaysAgo = 90,
@@ -424,112 +388,55 @@ export async function calibrationCohort(
   const startDate = nDaysAgo(cohortStartDaysAgo)
   const endDate   = nDaysAgo(cohortEndDaysAgo)
 
-  // One big aggregate over the cohort joined with the auto-lost
-  // subscriber set. Single round-trip; the LEFT JOIN against the
-  // DISTINCT auto-lost subscriber CTE is the cleanest way to FILTER
-  // by event presence without correlated subqueries.
+  // Recovery rate per predicted likelihood bucket.
   const calibrationResult = await db.execute(sql`
-    WITH cohort AS (
-      SELECT
-        s.id,
-        s.recovery_likelihood,
-        s.status,
-        s.founder_handoff_at
-      FROM wb_churned_subscribers s
-      WHERE s.classified_at >= now() - (${cohortStartDaysAgo}::int * interval '1 day')
-        AND s.classified_at <  now() - (${cohortEndDaysAgo}::int * interval '1 day')
-    ),
-    auto_lost_subs AS (
-      SELECT DISTINCT (properties->>'subscriberId')::uuid AS subscriber_id
-      FROM wb_events
-      WHERE name = 'subscriber_auto_lost'
-        AND created_at >= now() - (${cohortStartDaysAgo + 30}::int * interval '1 day')
-    )
     SELECT
-      c.recovery_likelihood AS likelihood,
-      count(*)::int AS n,
-      count(*) FILTER (WHERE c.status = 'recovered')::int                  AS recovered,
-      count(*) FILTER (WHERE al.subscriber_id IS NOT NULL)::int            AS auto_lost,
-      count(*) FILTER (WHERE c.status = 'lost' AND al.subscriber_id IS NULL)::int AS lost_other,
-      count(*) FILTER (WHERE c.status IN ('pending', 'contacted'))::int    AS still_open
-    FROM cohort c
-    LEFT JOIN auto_lost_subs al ON al.subscriber_id = c.id
-    WHERE c.recovery_likelihood IS NOT NULL
-    GROUP BY c.recovery_likelihood
-  `)
-
-  const calRows = (calibrationResult.rows ?? []) as Array<Record<string, unknown>>
-  const byLikelihood: LikelihoodCalibrationRow[] = (['high', 'medium', 'low'] as const).map((lh) => {
-    const r = calRows.find((row) => row.likelihood === lh)
-    return {
-      likelihood: lh,
-      n:         Number(r?.n         ?? 0),
-      recovered: Number(r?.recovered ?? 0),
-      autoLost:  Number(r?.auto_lost ?? 0),
-      lostOther: Number(r?.lost_other?? 0),
-      stillOpen: Number(r?.still_open?? 0),
-    }
-  })
-
-  // Handoff vs. non-handoff conversion within the same cohort.
-  const handoffResult = await db.execute(sql`
-    SELECT
-      CASE WHEN s.founder_handoff_at IS NOT NULL THEN 'handoff' ELSE 'non_handoff' END AS cohort,
+      s.recovery_likelihood AS likelihood,
       count(*)::int AS n,
       count(*) FILTER (WHERE s.status = 'recovered')::int AS recovered
     FROM wb_churned_subscribers s
     WHERE s.classified_at >= now() - (${cohortStartDaysAgo}::int * interval '1 day')
       AND s.classified_at <  now() - (${cohortEndDaysAgo}::int * interval '1 day')
-    GROUP BY cohort
+      AND s.recovery_likelihood IS NOT NULL
+    GROUP BY s.recovery_likelihood
   `)
-
-  const hRows = (handoffResult.rows ?? []) as Array<Record<string, unknown>>
-  const handoffConversion: HandoffConversionRow[] = (['handoff', 'non_handoff'] as const).map((c) => {
-    const r = hRows.find((row) => row.cohort === c)
+  const calRows = (calibrationResult.rows ?? []) as Array<Record<string, unknown>>
+  const byLikelihood: LikelihoodCalibrationRow[] = (['high', 'medium', 'low'] as const).map((lh) => {
+    const r = calRows.find((row) => row.likelihood === lh)
+    const n = Number(r?.n ?? 0)
+    const recovered = Number(r?.recovered ?? 0)
     return {
-      cohort: c,
-      n:         Number(r?.n         ?? 0),
-      recovered: Number(r?.recovered ?? 0),
+      likelihood: lh,
+      n,
+      recovered,
+      recoveryRatePct: n > 0 ? Math.round((recovered / n) * 1000) / 10 : 0,
     }
   })
 
-  // Auto-lost reversal: subscribers who fired subscriber_auto_lost in
-  // the cohort window AND have status='recovered' now. These are the
-  // confirmed false negatives — read every one.
+  // Suppression reversal: tier-4 (status='skipped') subscribers in the
+  // cohort that recovered anyway — the AI's modern false negatives.
   const reversalResult = await db.execute(sql`
-    WITH cohort_auto_lost AS (
-      SELECT DISTINCT (e.properties->>'subscriberId')::uuid AS subscriber_id
-      FROM wb_events e
-      WHERE e.name = 'subscriber_auto_lost'
-        AND e.created_at >= now() - (${cohortStartDaysAgo}::int * interval '1 day')
-        AND e.created_at <  now() - (${cohortEndDaysAgo}::int * interval '1 day')
-    )
     SELECT
-      count(*)::int AS n,
-      count(*) FILTER (WHERE s.status = 'recovered')::int AS reversed
-    FROM cohort_auto_lost cal
-    JOIN wb_churned_subscribers s ON s.id = cal.subscriber_id
+      count(*)::int AS suppressed,
+      count(*) FILTER (WHERE s.status = 'recovered')::int AS recovered
+    FROM wb_churned_subscribers s
+    WHERE s.classified_at >= now() - (${cohortStartDaysAgo}::int * interval '1 day')
+      AND s.classified_at <  now() - (${cohortEndDaysAgo}::int * interval '1 day')
+      AND s.tier = 4
   `)
   const revRow = (reversalResult.rows?.[0] ?? {}) as Record<string, unknown>
-  const reversalN        = Number(revRow.n        ?? 0)
-  const reversalReversed = Number(revRow.reversed ?? 0)
+  const suppressed = Number(revRow.suppressed ?? 0)
+  const recovered  = Number(revRow.recovered ?? 0)
 
-  // Pull a short sample so the UI can link to the actual cases.
-  // Capped at 10 — these are the cards the supervisor should read.
-  let reversedSample: AutoLostReversalSummary['reversedSample'] = []
-  if (reversalReversed > 0) {
+  let reversedSample: SuppressionReversal['reversedSample'] = []
+  if (recovered > 0) {
     const sampleResult = await db.execute(sql`
-      WITH cohort_auto_lost AS (
-        SELECT DISTINCT (e.properties->>'subscriberId')::uuid AS subscriber_id
-        FROM wb_events e
-        WHERE e.name = 'subscriber_auto_lost'
-          AND e.created_at >= now() - (${cohortStartDaysAgo}::int * interval '1 day')
-          AND e.created_at <  now() - (${cohortEndDaysAgo}::int * interval '1 day')
-      )
       SELECT s.id AS subscriber_id, s.name, s.email, s.updated_at AS recovered_at
-      FROM cohort_auto_lost cal
-      JOIN wb_churned_subscribers s ON s.id = cal.subscriber_id
-      WHERE s.status = 'recovered'
+      FROM wb_churned_subscribers s
+      WHERE s.classified_at >= now() - (${cohortStartDaysAgo}::int * interval '1 day')
+        AND s.classified_at <  now() - (${cohortEndDaysAgo}::int * interval '1 day')
+        AND s.tier = 4
+        AND s.status = 'recovered'
       ORDER BY s.updated_at DESC
       LIMIT 10
     `)
@@ -541,7 +448,6 @@ export async function calibrationCohort(
     }))
   }
 
-  // Cohort total (for the header copy "n=287 classified between Mar 16 – Apr 15")
   const totalResult = await db.execute(sql`
     SELECT count(*)::int AS n
     FROM wb_churned_subscribers s
@@ -555,12 +461,7 @@ export async function calibrationCohort(
     endDate,
     total,
     byLikelihood,
-    handoffConversion,
-    autoLostReversal: {
-      n: reversalN,
-      reversed: reversalReversed,
-      reversedSample,
-    },
+    suppressionReversal: { suppressed, recovered, reversedSample },
   }
 }
 
@@ -658,29 +559,17 @@ export interface RankedAuditRow {
   occurredAt: Date | null
 }
 
-export interface RankedHandoffRow extends RankedAuditRow {
-  founderHandoffAt: Date | null
-  founderHandoffResolvedAt: Date | null
-  /** Derived state for the UI: open / stale / resolved + outcome. */
-  resolutionState: 'open_fresh' | 'open_stale' | 'resolved_recovered' | 'resolved_lost'
-  finalStatus: string | null
-}
-
 /**
- * Block 4 — Smart-ranked auto-lost audit.
+ * Block 4 — Smart-ranked SUPPRESSION audit.
  *
- * Ranks `subscriber_auto_lost` events by miss-likelihood
- * (`interest_score` = MRR + reply count + portal-click + addressable
- * category − dead-text patterns). Top N (default 15). Same dataset
- * as the legacy `autoLostAudit`, just sorted by worth-investigating-ness
- * instead of recency, with the ranking computed at the DB level so
- * LIMIT is honoured at the query layer.
- *
- * The dead-text regex is intentionally narrow — only matches
- * unambiguous "definitely not coming back" signals so we don't
- * accidentally demote recoverable cases.
+ * The AI's only "don't bother" decision now is tier 4 = suppress (no
+ * email, status='skipped'). This ranks the suppressed subscribers by
+ * miss-likelihood (`interest_score` = MRR + reply count + portal-click +
+ * addressable category − dead-text patterns) so a human can spot-check
+ * the highest-value cases the AI chose to silence. Replaces the dead
+ * auto-lost audit (no auto-lost events are emitted anymore).
  */
-export async function rankedAutoLostAudit(limit = 15): Promise<RankedAuditRow[]> {
+export async function rankedSuppressionAudit(limit = 15): Promise<RankedAuditRow[]> {
   const db = getDbReadOnly()
   const result = await db.execute(sql`
     SELECT
@@ -698,7 +587,7 @@ export async function rankedAutoLostAudit(limit = 15): Promise<RankedAuditRow[]>
       s.handoff_reasoning         AS handoff_reasoning,
       (s.billing_portal_clicked_at IS NOT NULL) AS billing_portal_clicked,
       coalesce(rc.reply_count, 0) AS reply_count,
-      e.created_at                AS occurred_at,
+      s.classified_at             AS occurred_at,
       (
         (CASE WHEN s.mrr_cents > 5000 THEN 3 ELSE 0 END) +
         (CASE WHEN coalesce(rc.reply_count, 0) >= 2 THEN 2 ELSE 0 END) +
@@ -710,8 +599,7 @@ export async function rankedAutoLostAudit(limit = 15): Promise<RankedAuditRow[]>
             ~ '(going out of business|deceased|switching jobs|company shut down|no longer in business|closing down)'
           THEN 2 ELSE 0 END)
       ) AS interest_score
-    FROM wb_events e
-    JOIN wb_churned_subscribers s ON s.id = (e.properties->>'subscriberId')::uuid
+    FROM wb_churned_subscribers s
     LEFT JOIN wb_customers c ON c.id = s.customer_id
     LEFT JOIN wb_users u     ON u.id = c.user_id
     LEFT JOIN (
@@ -719,129 +607,96 @@ export async function rankedAutoLostAudit(limit = 15): Promise<RankedAuditRow[]>
       FROM wb_subscriber_replies
       GROUP BY subscriber_id
     ) rc ON rc.subscriber_id = s.id
-    WHERE e.name = 'subscriber_auto_lost'
-    ORDER BY interest_score DESC, s.mrr_cents DESC, e.created_at DESC
+    WHERE s.tier = 4 AND s.classified_at IS NOT NULL
+    ORDER BY interest_score DESC, s.mrr_cents DESC, s.classified_at DESC
     LIMIT ${limit}
   `)
   return ((result.rows ?? []) as Array<Record<string, unknown>>).map(coerceRankedRow)
 }
 
 /**
- * Block 5 — Smart-ranked handoff audit (with founder-resolution column).
+ * Block 5 (new) — Email performance.
  *
- * Same ranking heuristic as Block 4. Adds a derived `resolutionState`:
- *   - open_fresh        — handed off < 7 days ago, not resolved
- *   - open_stale        — handed off >= 7 days ago, not resolved
- *   - resolved_recovered — resolved AND status='recovered'
- *   - resolved_lost     — resolved AND status not 'recovered' (lost / unsubscribed)
- *
- * Stale opens (>=7d) are the actionable signal: either founder
- * backlog or the AI escalated a case that didn't warrant it.
+ * The classifier writes the actual email copy now (firstMessage +
+ * winBackBody), so the emails ARE an AI output. Reply rate by type is the
+ * most direct quality signal — people replying means the copy landed.
+ * (Recovery $ lives on the Insights page.) Plus the flagged-for-review
+ * queue from the inspector's "🚩 flag" action.
  */
-export async function rankedHandoffAudit(limit = 15): Promise<RankedHandoffRow[]> {
+export interface EmailPerformanceRow {
+  type: string
+  sent: number
+  replied: number
+  replyRatePct: number
+}
+export interface FlaggedEmail {
+  emailId: string
+  subject: string | null
+  type: string | null
+  note: string | null
+  subscriberId: string | null
+  flaggedAt: Date
+}
+export interface EmailPerformance {
+  windowDays: number
+  byType: EmailPerformanceRow[]
+  flaggedCount: number
+  recentFlagged: FlaggedEmail[]
+}
+
+export async function emailPerformance(windowDays = 30): Promise<EmailPerformance> {
   const db = getDbReadOnly()
-  const result = await db.execute(sql`
+
+  const perfResult = await db.execute(sql`
     SELECT
-      s.id                          AS subscriber_id,
-      s.customer_id                 AS customer_id,
-      s.name                        AS name,
-      s.email                       AS email,
-      c.product_name                AS product_name,
-      u.email                       AS customer_email,
-      s.mrr_cents                   AS mrr_cents,
-      s.tenure_days                 AS tenure_days,
-      s.cancellation_reason         AS cancellation_reason,
-      s.cancellation_category       AS cancellation_category,
-      s.recovery_likelihood         AS recovery_likelihood,
-      s.handoff_reasoning           AS handoff_reasoning,
-      (s.billing_portal_clicked_at IS NOT NULL) AS billing_portal_clicked,
-      coalesce(rc.reply_count, 0)   AS reply_count,
-      s.founder_handoff_at          AS occurred_at,
-      s.founder_handoff_at          AS founder_handoff_at,
-      s.founder_handoff_resolved_at AS founder_handoff_resolved_at,
-      s.status                      AS final_status,
-      (
-        (CASE WHEN s.mrr_cents > 5000 THEN 3 ELSE 0 END) +
-        (CASE WHEN coalesce(rc.reply_count, 0) >= 2 THEN 2 ELSE 0 END) +
-        (CASE WHEN s.billing_portal_clicked_at IS NOT NULL THEN 2 ELSE 0 END) +
-        (CASE WHEN s.cancellation_category IN ('Feature', 'Quality') THEN 2 ELSE 0 END) +
-        (CASE WHEN s.tenure_days > 90 THEN 1 ELSE 0 END) -
-        (CASE WHEN
-          lower(coalesce(s.stripe_comment, '') || ' ' || coalesce(s.cancellation_reason, ''))
-            ~ '(going out of business|deceased|switching jobs|company shut down|no longer in business|closing down)'
-          THEN 2 ELSE 0 END)
-      ) AS interest_score
-    FROM wb_churned_subscribers s
-    LEFT JOIN wb_customers c ON c.id = s.customer_id
-    LEFT JOIN wb_users u     ON u.id = c.user_id
-    LEFT JOIN (
-      SELECT subscriber_id, count(*)::int AS reply_count
-      FROM wb_subscriber_replies
-      GROUP BY subscriber_id
-    ) rc ON rc.subscriber_id = s.id
-    WHERE s.founder_handoff_at IS NOT NULL
-    ORDER BY interest_score DESC, s.mrr_cents DESC, s.founder_handoff_at DESC
-    LIMIT ${limit}
+      type,
+      count(*)::int AS sent,
+      count(*) FILTER (WHERE replied_at IS NOT NULL)::int AS replied
+    FROM wb_emails_sent
+    WHERE sent_at >= now() - (${windowDays}::int * interval '1 day')
+    GROUP BY type
+    ORDER BY sent DESC
   `)
-  return ((result.rows ?? []) as Array<Record<string, unknown>>).map((r): RankedHandoffRow => {
-    const base = coerceRankedRow(r)
-    const handoffAt  = r.founder_handoff_at          ? new Date(String(r.founder_handoff_at))          : null
-    const resolvedAt = r.founder_handoff_resolved_at ? new Date(String(r.founder_handoff_resolved_at)) : null
-    const finalStatus = r.final_status === null ? null : String(r.final_status ?? '')
-    let resolutionState: RankedHandoffRow['resolutionState']
-    if (resolvedAt) {
-      resolutionState = finalStatus === 'recovered' ? 'resolved_recovered' : 'resolved_lost'
-    } else {
-      const ageMs = handoffAt ? Date.now() - handoffAt.getTime() : 0
-      const STALE_MS = 7 * 24 * 60 * 60 * 1000
-      resolutionState = ageMs >= STALE_MS ? 'open_stale' : 'open_fresh'
-    }
+  const byType: EmailPerformanceRow[] = ((perfResult.rows ?? []) as Array<Record<string, unknown>>).map((r) => {
+    const sent = Number(r.sent ?? 0)
+    const replied = Number(r.replied ?? 0)
     return {
-      ...base,
-      founderHandoffAt: handoffAt,
-      founderHandoffResolvedAt: resolvedAt,
-      resolutionState,
-      finalStatus,
+      type: String(r.type ?? 'unknown'),
+      sent,
+      replied,
+      replyRatePct: sent > 0 ? Math.round((replied / sent) * 1000) / 10 : 0,
     }
   })
-}
 
-export interface HandoffAuditSummary {
-  windowDays: number
-  total: number
-  resolved: number
-  recovered: number
-  open: number
-  stale: number
-  recoveryPct: number   // recovered / resolved (resolved=0 → 0)
-}
-
-/**
- * Aggregate footer for Block 5 — last `windowDays` handoff stats:
- * total, resolved, recovered, open, stale (>=7d unresolved).
- */
-export async function handoffAuditSummary(windowDays = 30): Promise<HandoffAuditSummary> {
-  const db = getDbReadOnly()
-  const result = await db.execute(sql`
+  // Flagged emails — wb_events name='email_flagged' (from the inspector).
+  const flaggedResult = await db.execute(sql`
     SELECT
-      count(*)::int                                                                   AS total,
-      count(*) FILTER (WHERE s.founder_handoff_resolved_at IS NOT NULL)::int          AS resolved,
-      count(*) FILTER (WHERE s.founder_handoff_resolved_at IS NOT NULL
-                        AND s.status = 'recovered')::int                              AS recovered,
-      count(*) FILTER (WHERE s.founder_handoff_resolved_at IS NULL)::int              AS open,
-      count(*) FILTER (WHERE s.founder_handoff_resolved_at IS NULL
-                        AND s.founder_handoff_at < now() - interval '7 days')::int    AS stale
-    FROM wb_churned_subscribers s
-    WHERE s.founder_handoff_at >= now() - (${windowDays}::int * interval '1 day')
+      properties->>'emailId'      AS email_id,
+      properties->>'subject'      AS subject,
+      properties->>'type'         AS type,
+      properties->>'note'         AS note,
+      properties->>'subscriberId' AS subscriber_id,
+      created_at                  AS flagged_at
+    FROM wb_events
+    WHERE name = 'email_flagged'
+    ORDER BY created_at DESC
+    LIMIT 15
   `)
-  const r = (result.rows?.[0] ?? {}) as Record<string, unknown>
-  const total     = Number(r.total     ?? 0)
-  const resolved  = Number(r.resolved  ?? 0)
-  const recovered = Number(r.recovered ?? 0)
-  const open      = Number(r.open      ?? 0)
-  const stale     = Number(r.stale     ?? 0)
-  const recoveryPct = resolved > 0 ? (recovered / resolved) * 100 : 0
-  return { windowDays, total, resolved, recovered, open, stale, recoveryPct }
+  const recentFlagged: FlaggedEmail[] = ((flaggedResult.rows ?? []) as Array<Record<string, unknown>>).map((r) => ({
+    emailId:      String(r.email_id ?? ''),
+    subject:      r.subject === null ? null : String(r.subject ?? ''),
+    type:         r.type === null ? null : String(r.type ?? ''),
+    note:         r.note === null ? null : String(r.note ?? ''),
+    subscriberId: r.subscriber_id === null ? null : String(r.subscriber_id ?? ''),
+    flaggedAt:    new Date(String(r.flagged_at)),
+  }))
+
+  const countResult = await db.execute(sql`
+    SELECT count(*)::int AS n FROM wb_events WHERE name = 'email_flagged'
+  `)
+  const flaggedCount = Number((countResult.rows?.[0] as Record<string, unknown> | undefined)?.n ?? 0)
+
+  return { windowDays, byType, flaggedCount, recentFlagged }
 }
 
 function coerceRankedRow(r: Record<string, unknown>): RankedAuditRow {
