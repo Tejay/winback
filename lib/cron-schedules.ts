@@ -111,6 +111,15 @@ export const CRON_SCHEDULES: ReadonlyArray<CronSchedule> = [
     purpose: 'Per connected account: compute MRR from Stripe, write a snapshot, recompute smoothed MRR, re-evaluate recommended_tier, fire upgrade/downgrade prompts when sustain windows elapse.',
     staleImpact: 'Tier recommendations and upgrade/downgrade prompts freeze at the last successful run. Customers continue paying their billed_tier — no economic impact, just stale advice.',
   },
+  {
+    name: 'red-light-check',
+    displayName: 'Red-light email alert',
+    cron: '*/5 * * * *',
+    label: 'Every 5 minutes',
+    maxIntervalSecs: 15 * 60,
+    purpose: 'Recomputes /admin red-lights and emails ADMIN_ALERT_EMAIL when a rule trips, with a 15-min per-rule cooldown.',
+    staleImpact: 'Red-light email alerts stop firing. The /admin Now page still surfaces lights on every 30s client poll, but no one gets paged unless they have the tab open.',
+  },
 ]
 
 // HOUR is exported for tests that want to construct stale-thresholds in a

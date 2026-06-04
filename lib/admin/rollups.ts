@@ -153,7 +153,41 @@ export interface OverviewRollup {
     customersActive24h: number
     customersActive7d: number
   }
-  redLights: Array<{ metric: string; today: number; median7d: number }>
+  /**
+   * Red-light signals. `kind` distinguishes:
+   *  - 'spike' = today > 3× 7d median (existing behaviour)
+   *  - 'floor' = today < 30% of 7d median after noon UTC (new — catches
+   *    silent-zero outages like a dead send pipeline)
+   * `concentration` is set on the 'errors' rule when one customer
+   * accounts for >50% of today's errors — distinguishes "1 noisy
+   * customer" from "systemic regression" in one glance.
+   */
+  redLights: Array<{
+    metric: string
+    kind: 'spike' | 'floor'
+    today: number
+    median7d: number
+    summary: string
+    concentration?: { customerId: string; customerEmail: string | null; n: number }
+  }>
+  /** Latest 5 error events with truncated message — recent-failures tail under the Errors panel. */
+  errorsTail: Array<{
+    id: string
+    name: string
+    customerId: string | null
+    customerEmail: string | null
+    snippet: string
+    createdAt: string
+  }>
+  /** Latest 5 admin actions — "recent admin activity" widget on Now. */
+  recentAdminActivity: Array<{
+    id: string
+    action: string
+    adminEmail: string | null
+    customerId: string | null
+    customerEmail: string | null
+    createdAt: string
+  }>
 }
 
 /**
@@ -310,6 +344,167 @@ function median(values: number[]): number {
 }
 
 /**
+ * 5 most-recent error events (any of ERROR_EVENT_NAMES). Used as the
+ * "latest failures" tail under the Errors panel — the single biggest
+ * triage shortcut on the page. Customer email is best-effort via join.
+ */
+async function recentErrorEvents(): Promise<OverviewRollup['errorsTail']> {
+  const rows = await getDbReadOnly()
+    .select({
+      id:            wbEvents.id,
+      name:          wbEvents.name,
+      customerId:    wbEvents.customerId,
+      customerEmail: users.email,
+      properties:    wbEvents.properties,
+      createdAt:     wbEvents.createdAt,
+    })
+    .from(wbEvents)
+    .leftJoin(customers, eq(wbEvents.customerId, customers.id))
+    .leftJoin(users,     eq(customers.userId,    users.id))
+    .where(inArray(wbEvents.name, ERROR_EVENT_NAMES as unknown as string[]))
+    .orderBy(sql`${wbEvents.createdAt} desc`)
+    .limit(5)
+
+  return rows.map((r) => ({
+    id:            r.id,
+    name:          r.name,
+    customerId:    r.customerId,
+    customerEmail: r.customerEmail,
+    snippet:       extractErrorSnippet(r.properties),
+    createdAt:     r.createdAt instanceof Date ? r.createdAt.toISOString() : String(r.createdAt),
+  }))
+}
+
+/** Pull a short human-readable error message from the event properties. */
+function extractErrorSnippet(props: Record<string, unknown> | null): string {
+  if (!props) return ''
+  // Common shapes: { error: string }, { errorMessage: string }, { message: string }
+  const candidates = [
+    props.error,
+    props.errorMessage,
+    props.message,
+    props.reason,
+  ]
+  for (const c of candidates) {
+    if (typeof c === 'string' && c.length > 0) {
+      return c.length > 120 ? c.slice(0, 117) + '…' : c
+    }
+  }
+  return ''
+}
+
+/**
+ * 5 most-recent admin actions (wb_events with name='admin_action').
+ * Powers the "recent admin activity" widget on Now — fast read of who
+ * just did what across the team.
+ */
+async function recentAdminActions(): Promise<OverviewRollup['recentAdminActivity']> {
+  // We need adminEmail (from the user that fired the action; stored on
+  // wb_events.userId) AND customerEmail (from wbEvents.customerId →
+  // customers → users). Two left-joins.
+  const rows = await getDbReadOnly()
+    .select({
+      id:        wbEvents.id,
+      props:     wbEvents.properties,
+      adminId:   wbEvents.userId,
+      customerId: wbEvents.customerId,
+      createdAt: wbEvents.createdAt,
+    })
+    .from(wbEvents)
+    .where(eq(wbEvents.name, 'admin_action'))
+    .orderBy(sql`${wbEvents.createdAt} desc`)
+    .limit(5)
+
+  if (rows.length === 0) return []
+
+  // Resolve admin emails + customer emails in one round-trip per kind.
+  const adminIds    = Array.from(new Set(rows.map((r) => r.adminId).filter((x): x is string => x !== null)))
+  const customerIds = Array.from(new Set(rows.map((r) => r.customerId).filter((x): x is string => x !== null)))
+
+  const [adminRows, customerRows] = await Promise.all([
+    adminIds.length === 0
+      ? Promise.resolve([] as Array<{ id: string; email: string }>)
+      : getDbReadOnly().select({ id: users.id, email: users.email }).from(users).where(inArray(users.id, adminIds)),
+    customerIds.length === 0
+      ? Promise.resolve([] as Array<{ id: string; email: string }>)
+      : getDbReadOnly()
+          .select({ id: customers.id, email: users.email })
+          .from(customers)
+          .innerJoin(users, eq(customers.userId, users.id))
+          .where(inArray(customers.id, customerIds)),
+  ])
+  const adminEmailById = new Map(adminRows.map((r) => [r.id, r.email]))
+  const custEmailById  = new Map(customerRows.map((r) => [r.id, r.email]))
+
+  return rows.map((r) => {
+    // The action name lives in properties.action — see audit-log-queries.
+    const action = (r.props && typeof r.props === 'object' && 'action' in r.props)
+      ? String((r.props as Record<string, unknown>).action ?? '')
+      : ''
+    return {
+      id: r.id,
+      action,
+      adminEmail:    r.adminId    ? adminEmailById.get(r.adminId)    ?? null : null,
+      customerId:    r.customerId,
+      customerEmail: r.customerId ? custEmailById.get(r.customerId) ?? null : null,
+      createdAt:     r.createdAt instanceof Date ? r.createdAt.toISOString() : String(r.createdAt),
+    }
+  })
+}
+
+/**
+ * When errors red-light fires, find the customer accounting for the
+ * largest share of today's errors. Used to distinguish "one noisy
+ * customer" from "systemic regression" in one glance.
+ *
+ * Returns null when there are no errors today, when no error is tied
+ * to a customer (all `customerId IS NULL`), or when the top customer
+ * has ≤50% share (in which case the concentration framing is misleading).
+ */
+async function topCustomerByErrorsToday(): Promise<{ customerId: string; customerEmail: string | null; n: number; total: number } | null> {
+  const since = startOfTodayUtc()
+  const rows = await getDbReadOnly()
+    .select({
+      customerId: wbEvents.customerId,
+      n: sql<number>`count(*)::int`,
+    })
+    .from(wbEvents)
+    .where(and(
+      inArray(wbEvents.name, ERROR_EVENT_NAMES as unknown as string[]),
+      gte(wbEvents.createdAt, since),
+      isNotNull(wbEvents.customerId),
+    ))
+    .groupBy(wbEvents.customerId)
+    .orderBy(sql`count(*) desc`)
+    .limit(1)
+  if (rows.length === 0) return null
+  const top = rows[0]
+  const totalRow = await getDbReadOnly()
+    .select({ n: sql<number>`count(*)::int` })
+    .from(wbEvents)
+    .where(and(
+      inArray(wbEvents.name, ERROR_EVENT_NAMES as unknown as string[]),
+      gte(wbEvents.createdAt, since),
+    ))
+  const total = totalRow[0]?.n ?? 0
+  if (total === 0 || top.n / total < 0.5) return null
+  // Best-effort customer email (top.customerId is guaranteed non-null by the filter above)
+  const customerId = top.customerId!
+  const emailRow = await getDbReadOnly()
+    .select({ email: users.email })
+    .from(customers)
+    .innerJoin(users, eq(customers.userId, users.id))
+    .where(eq(customers.id, customerId))
+    .limit(1)
+  return {
+    customerId,
+    customerEmail: emailRow[0]?.email ?? null,
+    n: top.n,
+    total,
+  }
+}
+
+/**
  * Spec 26.5 — Growth + health queries. Each returns one integer.
  * Cheap: signups hits wb_users.created_at (small table); conversions and
  * active hit (name, created_at) and (customer_id, created_at) indexes.
@@ -403,6 +598,38 @@ async function customersActiveSince(since: Date): Promise<number> {
 }
 
 /**
+ * Daily buckets of distinct active customers (events with non-null
+ * customer_id), oldest → newest, padded to `days` entries. Powers the
+ * customers_active_24h floor-light check.
+ *
+ * Note: buckets are calendar-day, not rolling 24h. A floor light at
+ * 14:00 UTC asks "did today's daily count fall below the floor?" — the
+ * calendar-day cut is the right shape.
+ */
+async function activeCustomersDailyBuckets(days: number): Promise<number[]> {
+  const since = nDaysAgo(days - 1)
+  since.setUTCHours(0, 0, 0, 0)
+  const rows = await getDbReadOnly()
+    .select({
+      day: sql<string>`to_char(date_trunc('day', ${wbEvents.createdAt}), 'YYYY-MM-DD')`,
+      n:   sql<number>`count(distinct ${wbEvents.customerId})::int`,
+    })
+    .from(wbEvents)
+    .where(and(
+      gte(wbEvents.createdAt, since),
+      sql`${wbEvents.customerId} is not null`,
+    ))
+    .groupBy(sql`date_trunc('day', ${wbEvents.createdAt})`)
+  const byDay = new Map(rows.map((r) => [r.day, r.n]))
+  const buckets: number[] = []
+  for (let i = 0; i < days; i++) {
+    const d = new Date(since.getTime() + i * DAY_MS)
+    buckets.push(byDay.get(d.toISOString().slice(0, 10)) ?? 0)
+  }
+  return buckets
+}
+
+/**
  * Build the full overview rollup in parallel. All queries hit indexes;
  * should respond in well under 300ms even at 100k events/day.
  */
@@ -443,6 +670,18 @@ export async function buildOverviewRollup(): Promise<OverviewRollup> {
     // Red-light sparklines for the two billing signals.
     subsCanceledSpark,
     invoiceFailedSpark,
+    // PR 2 additions:
+    //  - errorsTail/recentAdminActivity — Now-page widgets
+    //  - topErrorCustomer — concentration on the 'errors' red-light
+    //  - customersActive24hSpark — floor-light: silent-zero on activity
+    //
+    // The 'classifications' floor light reuses emailsSpark (every send
+    // corresponds to one classification in this codebase, see
+    // OverviewRollup.today.classifications).
+    errorsTail,
+    recentAdminActivity,
+    topErrorCustomer,
+    customersActive24hSpark,
   ] = await Promise.all([
     countEventsSince('email_sent', todayStart),
     // Spec 26 — replaces replies (which was a weak signal). Handoffs map
@@ -473,29 +712,96 @@ export async function buildOverviewRollup(): Promise<OverviewRollup> {
     countEventsSince('billing_invoice_failed', todayStart),
     dailyBucketsForEvent('platform_subscription_canceled', 7),
     dailyBucketsForEvent('billing_invoice_failed', 7),
+    // PR 2 additions
+    recentErrorEvents(),
+    recentAdminActions(),
+    topCustomerByErrorsToday(),
+    activeCustomersDailyBuckets(7),
   ])
 
-  // Red lights: any metric where today > 3 × median(last 7 days, excluding today).
+  // Red lights — two flavors:
+  //
+  //  - SPIKE: today > 3× 7d median (or > 5 when no baseline). Catches
+  //    sudden anomalies — error storms, churn waves, dunning floods.
+  //
+  //  - FLOOR: today < 30% of 7d median, but only past noon UTC. Catches
+  //    silent-zero outages (send pipeline dies, activity collapses) that
+  //    the spike check is blind to — a drop is lower, not higher, than
+  //    baseline. Morning hours naturally have low traffic so floor
+  //    checks are suppressed until the day is half-spent.
+  const nowUtcHour = new Date().getUTCHours()
+  const pastNoonUtc = nowUtcHour >= 12
+
   const redLights: OverviewRollup['redLights'] = []
-  const checks: Array<{ metric: string; today: number; spark: number[] }> = [
-    { metric: 'errors', today: errorsToday.total, spark: errorsSpark },
+
+  type SpikeCheck = { metric: string; today: number; spark: number[]; label: string }
+  type FloorCheck = { metric: string; today: number; spark: number[]; label: string }
+
+  const spikeChecks: SpikeCheck[] = [
+    { metric: 'errors',         today: errorsToday.total, spark: errorsSpark,        label: 'errors' },
     // Replies → handoffs swap also flows through to red-light detection.
     // A sudden handoff spike is the most useful early-warning of prompt regression.
-    { metric: 'handoffs', today: handoffsToday, spark: handoffsSpark },
+    { metric: 'handoffs',       today: handoffsToday,     spark: handoffsSpark,      label: 'handoffs' },
     // 2026-05-29 — billing early-warnings. A churn wave (sub cancels) or a
     // dunning wave (invoice failures) is exactly the kind of thing an admin
     // wants flagged the day it starts, not discovered at month-end.
-    { metric: 'subs_canceled', today: subsCanceledSpark[subsCanceledSpark.length - 1] ?? 0, spark: subsCanceledSpark },
-    { metric: 'invoice_failed', today: invoiceFailedToday, spark: invoiceFailedSpark },
+    { metric: 'subs_canceled',  today: subsCanceledSpark[subsCanceledSpark.length - 1] ?? 0,
+      spark: subsCanceledSpark, label: 'platform sub cancellations' },
+    { metric: 'invoice_failed', today: invoiceFailedToday, spark: invoiceFailedSpark, label: 'invoice failures' },
   ]
-  for (const c of checks) {
+  const floorChecks: FloorCheck[] = [
+    { metric: 'floor_emails_sent',        today: emailsSentToday,    spark: emailsSpark,             label: 'emails sent' },
+    { metric: 'floor_customers_active',   today: customersActive24h, spark: customersActive24hSpark, label: 'active customers' },
+  ]
+
+  for (const c of spikeChecks) {
     const past = c.spark.slice(0, -1)  // exclude today's bucket
     const m = median(past)
-    if (m > 0 && c.today > 3 * m) {
-      redLights.push({ metric: c.metric, today: c.today, median7d: m })
-    } else if (m === 0 && c.today > 5) {
-      // Bootstrap case — no history yet, but a sudden spike is still worth flagging.
-      redLights.push({ metric: c.metric, today: c.today, median7d: 0 })
+    let fired = false
+    if (m > 0 && c.today > 3 * m) fired = true
+    else if (m === 0 && c.today > 5) fired = true   // bootstrap
+    if (!fired) continue
+    const summary = m > 0
+      ? `${c.label} today is ${c.today.toLocaleString()} (>3× 7-day median of ${m})`
+      : `${c.label} today is ${c.today.toLocaleString()} (no recent baseline)`
+    const entry: OverviewRollup['redLights'][number] = {
+      metric: c.metric,
+      kind: 'spike',
+      today: c.today,
+      median7d: m,
+      summary,
+    }
+    // Concentration only meaningful for 'errors' — for other metrics the
+    // event isn't customer-scoped or the concentration query would be
+    // a different join.
+    if (c.metric === 'errors' && topErrorCustomer) {
+      entry.concentration = {
+        customerId:    topErrorCustomer.customerId,
+        customerEmail: topErrorCustomer.customerEmail,
+        n:             topErrorCustomer.n,
+      }
+    }
+    redLights.push(entry)
+  }
+
+  if (pastNoonUtc) {
+    for (const c of floorChecks) {
+      const past = c.spark.slice(0, -1)
+      const m = median(past)
+      // Need a baseline to compare — floor light is a "fell relative to
+      // history" signal, not a bootstrap one.
+      if (m === 0) continue
+      if (c.today >= 0.3 * m) continue
+      const summary = c.today === 0
+        ? `${c.label} is 0 today (median ${m}) — pipeline likely down`
+        : `${c.label} today is ${c.today.toLocaleString()} (<30% of 7d median ${m})`
+      redLights.push({
+        metric: c.metric,
+        kind: 'floor',
+        today: c.today,
+        median7d: m,
+        summary,
+      })
     }
   }
 
@@ -536,5 +842,7 @@ export async function buildOverviewRollup(): Promise<OverviewRollup> {
       invoiceFailedToday,
     },
     redLights,
+    errorsTail,
+    recentAdminActivity,
   }
 }
