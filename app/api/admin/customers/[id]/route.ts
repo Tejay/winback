@@ -48,6 +48,11 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ id: string 
       // Spec 77 — surface the custom flat-rate cents so the admin UI can
       // render the "Custom pricing" section accordingly.
       customMonthlyCents: customers.customMonthlyCents,
+      // PR B — tier + activation + subscription state for the detail header
+      // (support context: "Growth customer, activated, paying").
+      billedTier: customers.billedTier,
+      activatedAt: customers.activatedAt,
+      stripeSubscriptionId: customers.stripeSubscriptionId,
     })
     .from(customers)
     .innerJoin(users, eq(customers.userId, users.id))
