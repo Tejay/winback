@@ -114,11 +114,11 @@ export function ClassifierDeadLetterDrawer({ open, onClose }: Props) {
       <aside
         className="fixed top-0 right-0 z-50 h-full w-full sm:max-w-md bg-white shadow-xl border-l border-slate-200 flex flex-col"
         role="dialog"
-        aria-label="Classifier dead-letter"
+        aria-label="Stuck after 3 tries — AI classifier"
       >
         <header className="px-5 py-4 border-b border-slate-200 flex items-start justify-between gap-3">
           <div>
-            <h2 className="text-base font-semibold text-slate-900">Classifier dead-letter</h2>
+            <h2 className="text-base font-semibold text-slate-900">Stuck after 3 tries</h2>
             <p className="text-xs text-slate-500 mt-0.5">
               {rows === null
                 ? 'Loading…'

@@ -36,6 +36,7 @@ export const CRON_SCHEDULES: ReadonlyArray<CronSchedule> = [
   },
   {
     name: 'onboarding-followup',
+    displayName: 'Onboarding follow-up',
     cron: '30 9 * * *',
     label: 'Daily 09:30 UTC',
     maxIntervalSecs: DAY * 1.5,
@@ -44,6 +45,7 @@ export const CRON_SCHEDULES: ReadonlyArray<CronSchedule> = [
   },
   {
     name: 'dunning-followup',
+    displayName: 'Dunning follow-up',
     cron: '0 8 * * *',
     label: 'Daily 08:00 UTC',
     maxIntervalSecs: DAY * 1.5,
@@ -52,6 +54,7 @@ export const CRON_SCHEDULES: ReadonlyArray<CronSchedule> = [
   },
   {
     name: 'cumulative-revenue',
+    displayName: 'Cumulative revenue',
     cron: '0 3 * * *',
     label: 'Daily 03:00 UTC',
     maxIntervalSecs: DAY * 1.5,
@@ -69,6 +72,7 @@ export const CRON_SCHEDULES: ReadonlyArray<CronSchedule> = [
   },
   {
     name: 'drain-paused-queue',
+    displayName: 'Activation backlog drain',
     cron: '*/5 * * * *',
     label: 'Every 5 minutes',
     maxIntervalSecs: 15 * 60,
@@ -110,6 +114,15 @@ export const CRON_SCHEDULES: ReadonlyArray<CronSchedule> = [
     maxIntervalSecs: DAY * 8,
     purpose: 'Per connected account: compute MRR from Stripe, write a snapshot, recompute smoothed MRR, re-evaluate recommended_tier, fire upgrade/downgrade prompts when sustain windows elapse.',
     staleImpact: 'Tier recommendations and upgrade/downgrade prompts freeze at the last successful run. Customers continue paying their billed_tier — no economic impact, just stale advice.',
+  },
+  {
+    name: 'red-light-check',
+    displayName: 'Red-light email alert',
+    cron: '*/5 * * * *',
+    label: 'Every 5 minutes',
+    maxIntervalSecs: 15 * 60,
+    purpose: 'Recomputes /admin red-lights and emails ADMIN_ALERT_EMAIL when a rule trips, with a 15-min per-rule cooldown.',
+    staleImpact: 'Red-light email alerts stop firing. The /admin Now page still surfaces lights on every 30s client poll, but no one gets paged unless they have the tab open.',
   },
 ]
 

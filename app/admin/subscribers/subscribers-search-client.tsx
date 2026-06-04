@@ -24,10 +24,26 @@ interface Row {
   cancellationReason: string | null
 }
 
+type Cohort = 'drain_paused' | 'unclassified'
+
+const COHORT_LABELS: Record<Cohort, string> = {
+  drain_paused: 'Activation backlog',
+  unclassified: 'Pending AI review',
+}
+
+function isCohort(v: string | null): v is Cohort {
+  return v === 'drain_paused' || v === 'unclassified'
+}
+
 export function SubscribersSearchClient() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const customerIdFilter = searchParams.get('customerId')
+  // PR 2 — `?cohort=drain_paused|unclassified` arrives from the /admin
+  // Now stuck-cohort tiles. Same UX shape as the customerId filter:
+  // preloads results without requiring a typed email search.
+  const cohortRaw = searchParams.get('cohort')
+  const cohortFilter: Cohort | null = isCohort(cohortRaw) ? cohortRaw : null
 
   const [email, setEmail] = useState('')
   const [submitted, setSubmitted] = useState<string | null>(null)
@@ -65,15 +81,38 @@ export function SubscribersSearchClient() {
     }
   }, [])
 
+  const fetchCohortScoped = useCallback(async (cohort: Cohort) => {
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await fetch(`/api/admin/subscribers/search?cohort=${encodeURIComponent(cohort)}`)
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error ?? 'Search failed')
+      setRows(json.rows)
+      setSubmitted(null)
+      setCustomerLabel(null)
+      setSelected(new Set())
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
   useEffect(() => {
     if (customerIdFilter) {
       fetchCustomerScoped(customerIdFilter)
+    } else if (cohortFilter) {
+      fetchCohortScoped(cohortFilter)
     } else {
       setCustomerLabel(null)
     }
-  }, [customerIdFilter, fetchCustomerScoped])
+  }, [customerIdFilter, cohortFilter, fetchCustomerScoped, fetchCohortScoped])
 
   function clearCustomerFilter() {
+    router.push('/admin/subscribers')
+  }
+  function clearCohortFilter() {
     router.push('/admin/subscribers')
   }
 
@@ -179,12 +218,14 @@ export function SubscribersSearchClient() {
 
   /**
    * Spec 69 — re-pull the current view after a row action mutates state.
-   * Routes to the customer-scoped fetch if the URL filter is active, else
-   * re-runs the last email search.
+   * Routes to whichever filter is active: customer-scoped, cohort (PR 2),
+   * or the last email search.
    */
   async function refreshCurrentView() {
     if (customerIdFilter) {
       await fetchCustomerScoped(customerIdFilter)
+    } else if (cohortFilter) {
+      await fetchCohortScoped(cohortFilter)
     } else if (submitted) {
       await searchEmail(submitted)
     }
@@ -219,6 +260,25 @@ export function SubscribersSearchClient() {
           <button
             onClick={clearCustomerFilter}
             className="text-xs text-blue-700 hover:text-blue-900 font-medium"
+          >
+            × clear filter
+          </button>
+        </div>
+      )}
+
+      {cohortFilter && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5 text-sm flex items-center justify-between">
+          <span className="text-amber-900">
+            Cohort: <strong>{COHORT_LABELS[cohortFilter]}</strong>
+            <span className="ml-2 text-xs text-amber-700/70">
+              {cohortFilter === 'drain_paused'
+                ? '— subscribers piled up during billing pause, now awaiting catch-up'
+                : '— cancellations awaiting AI classification (attempts < 3)'}
+            </span>
+          </span>
+          <button
+            onClick={clearCohortFilter}
+            className="text-xs text-amber-700 hover:text-amber-900 font-medium"
           >
             × clear filter
           </button>

@@ -43,6 +43,10 @@
     {
       "path": "/api/cron/mrr-snapshot",
       "schedule": "0 3 * * 0"
+    },
+    {
+      "path": "/api/cron/red-light-check",
+      "schedule": "*/5 * * * *"
     }
   ]
 }
