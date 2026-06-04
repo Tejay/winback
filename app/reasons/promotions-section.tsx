@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useState, useTransition, type ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
 
 /**
@@ -95,28 +95,29 @@ export function PromotionsSection({
     }
   }
 
-  async function toggleEnabled(next: boolean) {
-    const prev = enabledLocal
-    setEnabledLocal(next)
-    try {
-      await patch({ enabled: next })
-      startTransition(() => router.refresh())
-    } catch (err) {
-      setEnabledLocal(prev)
-      setSaveError(err instanceof Error ? err.message : 'Save failed')
-    }
-  }
+  // 2026-06 — single three-way mode choice replaces the separate master
+  // switch + automatic toggle. The three options map onto the two backend
+  // flags (promotionsEnabled / promoAutoModeEnabled), set together in one
+  // PATCH:
+  //   off    → enabled=false               (no promos, automatic or manual)
+  //   manual → enabled=true,  auto=false    (merchant sends from dashboard)
+  //   auto   → enabled=true,  auto=true     (matcher auto-sends selectedPromo)
+  type PromoMode = 'off' | 'manual' | 'auto'
+  const mode: PromoMode = !enabledLocal ? 'off' : autoModeLocal ? 'auto' : 'manual'
 
-  // Spec 80 — flips the automatic-matcher path on/off. Manual sends
-  // (drawer + bulk on /dashboard) are unaffected by this toggle.
-  async function toggleAutoMode(next: boolean) {
-    const prev = autoModeLocal
-    setAutoModeLocal(next)
+  async function setMode(next: PromoMode) {
+    const prevEnabled = enabledLocal
+    const prevAuto = autoModeLocal
+    const nextEnabled = next !== 'off'
+    const nextAuto = next === 'auto'
+    setEnabledLocal(nextEnabled)
+    setAutoModeLocal(nextAuto)
     try {
-      await patch({ autoModeEnabled: next })
+      await patch({ enabled: nextEnabled, autoModeEnabled: nextAuto })
       startTransition(() => router.refresh())
     } catch (err) {
-      setAutoModeLocal(prev)
+      setEnabledLocal(prevEnabled)
+      setAutoModeLocal(prevAuto)
       setSaveError(err instanceof Error ? err.message : 'Save failed')
     }
   }
@@ -169,7 +170,7 @@ export function PromotionsSection({
             Promotions
           </div>
           <p className="text-xs text-slate-500 mt-1">
-            Pick one promotion to send to subscribers who cancel for price. Synced from Stripe ·{' '}
+            Choose how cancelled customers are offered a discount. Codes synced from Stripe ·{' '}
             <a
               href={stripeAccountId
                 ? `https://dashboard.stripe.com/${stripeAccountId}/promotion_codes`
@@ -193,69 +194,51 @@ export function PromotionsSection({
         </button>
       </div>
 
-      {/* Spec 80 — mode disclosure. Branches on autoModeLocal: manual
-          mode explains the new dashboard workflow; automatic mode
-          restates the spec-79 matcher rules. */}
-      <div className="mt-5 rounded-xl border border-blue-100 bg-blue-50/50 px-4 py-3 text-xs text-slate-700 leading-relaxed">
-        {autoModeLocal ? (
-          <>
-            <strong>Automatic mode.</strong> Offered to your{' '}
-            <strong>top-tier subscribers</strong> whose cancellation reason
-            was <strong>price-related</strong>. Each promo passes four
-            real-time Stripe checks before it&rsquo;s sent. Stripe makes the
-            final eligibility call at checkout. Dashboard send actions
-            remain available for VIP overrides.
-          </>
-        ) : (
-          <>
-            <strong>Manual mode.</strong> No promo emails go out
-            automatically. Open a churned subscriber from the{' '}
-            <a href="/dashboard" className="text-blue-700 underline">dashboard</a>{' '}
-            and click &ldquo;Send promo offer&rdquo; — or filter by
-            cancellation reason, multi-select, and send to a cohort.
-            Stripe gates still re-validate before every send.
-          </>
-        )}
-      </div>
-
-      {/* Spec 80 — automatic-mode toggle. When OFF, matcher's promo
-          path is skipped. Independent of the master toggle below;
-          both must be true for the matcher to fire. */}
-      <div className="mt-3 flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50 px-4 py-3">
-        <div>
-          <div className="text-sm font-medium text-slate-900">Automatic mode</div>
-          <div className="text-xs text-slate-500 mt-0.5">
-            When on, the matcher auto-sends to tier-1 + price-cancellation subscribers. When off, sends only happen from the dashboard.
-          </div>
+      {/* 2026-06 — one three-way choice replaces the old master switch +
+          automatic toggle + always-visible promo list. The three options
+          map onto the two backend flags; the promo picker (below) is shown
+          only in "automatic" mode, the one mode that consumes a selected
+          promo (manual chooses per-send; off attaches none). Removes the
+          prior bug where a promo picked in manual mode looked active but
+          did nothing. */}
+      <div className="mt-5">
+        <div className="text-sm font-medium text-slate-900 mb-3">
+          When a customer cancels, how should a discount be offered?
         </div>
-        <label className="relative inline-flex items-center cursor-pointer">
-          <input
-            type="checkbox"
-            className="sr-only peer"
-            checked={autoModeLocal}
-            onChange={(e) => toggleAutoMode(e.target.checked)}
-          />
-          <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-500 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600" />
-        </label>
-      </div>
 
-      {/* Toggle row */}
-      <div className="mt-3 flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50 px-4 py-3">
-        <div>
-          <div className="text-sm font-medium text-slate-900">Send promo emails to price-cancellers</div>
-          <div className="text-xs text-slate-500 mt-0.5">
-            Master switch. When off, no promo is ever attached — automatic or manual.
-          </div>
-        </div>
-        <label className="relative inline-flex items-center cursor-pointer">
-          <input
-            type="checkbox"
-            className="sr-only peer"
-            checked={enabledLocal}
-            onChange={(e) => toggleEnabled(e.target.checked)}
-          />
-          <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-500 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600" />
-        </label>
+        <ModeOption
+          selected={mode === 'off'}
+          onSelect={() => setMode('off')}
+          title="Don't offer a discount"
+          desc="Cancelled customers get the standard re-engagement email. No code is attached."
+        />
+
+        <ModeOption
+          selected={mode === 'manual'}
+          onSelect={() => setMode('manual')}
+          title="I'll send discounts manually"
+          desc={
+            <>
+              Choose a promo and who gets it from the{' '}
+              <a href="/dashboard" className="text-blue-700 underline">dashboard</a>{' '}
+              — open a subscriber and click &ldquo;Send promo offer&rdquo;, or
+              multi-select a cohort. Stripe re-validates the code before every send.
+            </>
+          }
+        />
+
+        <ModeOption
+          selected={mode === 'auto'}
+          onSelect={() => setMode('auto')}
+          title="Offer a discount automatically"
+          desc={
+            <>
+              Sent automatically to price-driven cancellations from your tier-1
+              accounts — no action from you. Each promo passes four real-time
+              Stripe checks before it&rsquo;s sent.
+            </>
+          }
+        />
       </div>
 
       {refreshError && (
@@ -270,31 +253,28 @@ export function PromotionsSection({
         </div>
       )}
 
-      {initial.length === 0 ? (
-        <div className="mt-6 text-sm text-slate-500">
-          No active promotion codes found in Stripe. Create one in your
-          Stripe Dashboard and click Refresh, or wait a moment for the
-          webhook to land.
-        </div>
-      ) : (
-        <div className="mt-5 space-y-2">
-          {/* "None" row so the merchant can clear without archiving in Stripe */}
-          <label className="flex items-start gap-3 rounded-xl border border-slate-100 p-4 cursor-pointer hover:bg-slate-50">
-            <input
-              type="radio"
-              name="selected-promo"
-              className="mt-1"
-              checked={selectedLocal === null}
-              onChange={() => requestSelect(null)}
-            />
-            <div>
-              <div className="text-sm font-medium text-slate-900">None</div>
-              <div className="text-xs text-slate-500 mt-0.5">
-                No promo attached. Price-cancellers get the standard re-engagement email.
-              </div>
+      {/* Promo picker — shown only in automatic mode (the one mode that
+          uses a selected promo). Nested under the "automatic" option above
+          via the indent + left rule. No "None" row: under automatic you
+          must pick a promo (None = pick "Don't offer" or "manual" above). */}
+      {mode === 'auto' && (
+        initial.length === 0 ? (
+          <div className="mt-4 ml-7 border-l-2 border-blue-100 pl-4 text-sm text-slate-500">
+            No active promotion codes found in Stripe. Create one in your
+            Stripe Dashboard and click Refresh, or wait a moment for the
+            webhook to land.
+          </div>
+        ) : (
+        <div className="mt-4 ml-7 border-l-2 border-blue-100 pl-4">
+          <div className="text-[11px] uppercase tracking-wider font-semibold text-slate-500 mb-2">
+            Which promo to auto-send
+          </div>
+          {selectedLocal === null && (
+            <div className="mb-2 text-xs text-amber-700">
+              Pick a promo below to start auto-sending — nothing goes out until you do.
             </div>
-          </label>
-
+          )}
+          <div className="space-y-2">
           {initial.map((p) => {
             const selected = selectedLocal === p.id
             const disabled = !p.active
@@ -363,8 +343,9 @@ export function PromotionsSection({
               </label>
             )
           })}
+          </div>
         </div>
-      )}
+      ))}
 
       {/* Confirm dialog for promos with uncovered restrictions */}
       {pendingConfirm && (
@@ -412,5 +393,43 @@ export function PromotionsSection({
         </div>
       )}
     </div>
+  )
+}
+
+/**
+ * One row of the three-way "how should a discount be offered" choice.
+ * A radio + title + description, mutually exclusive via the shared
+ * radio-group name. Used for the "off" and "manual" + "automatic" rows
+ * (the automatic row's nested promo picker renders separately below).
+ */
+function ModeOption({
+  selected,
+  onSelect,
+  title,
+  desc,
+}: {
+  selected: boolean
+  onSelect: () => void
+  title: string
+  desc: ReactNode
+}) {
+  return (
+    <label
+      className={`flex items-start gap-3 rounded-xl border p-4 mb-2.5 cursor-pointer ${
+        selected ? 'border-blue-500 bg-blue-50/40' : 'border-slate-100 hover:bg-slate-50'
+      }`}
+    >
+      <input
+        type="radio"
+        name="promo-mode"
+        className="mt-1"
+        checked={selected}
+        onChange={onSelect}
+      />
+      <div className="flex-1 min-w-0">
+        <div className="text-sm font-medium text-slate-900">{title}</div>
+        <div className="text-xs text-slate-500 mt-0.5">{desc}</div>
+      </div>
+    </label>
   )
 }
