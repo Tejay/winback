@@ -29,20 +29,33 @@ const SINCE_INTERVALS: Record<string, string> = {
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-/** An event name is "active" if it's been emitted within this window. Older
- *  = legacy. */
-const ACTIVE_WINDOW_MS = 30 * 24 * 60 * 60 * 1000
-
 /**
  * Event names the software removed and no longer emits anywhere in live
- * code (verified by grep). Always grouped under "Legacy" regardless of
- * recency — seed/historical rows can otherwise make a dead event look
- * active. Add to this when an event name is retired from the codebase.
+ * code — verified by checking for a live emit site per name. "Legacy" is
+ * this explicit list ONLY: a recency heuristic (e.g. "not seen in 30d")
+ * is unreliable because a genuinely-live but rarely-fired event like
+ * oauth_error would be mislabelled. The code is the source of truth for
+ * what's emitted, not data recency.
+ *
+ * Grouped by the feature that was removed. Add a name here when you
+ * retire an event from the codebase.
  */
 const KNOWN_LEGACY_NAMES = new Set([
-  'subscriber_auto_lost',        // no auto-lost decision anymore
-  'founder_handoff_triggered',   // "there is no automatic handoff anymore"
-  'proactive_nudge_sent',        // retired
+  // Founder-handoff era — "there is no automatic handoff anymore"
+  'founder_handoff_triggered',
+  'founder_handed_back',
+  'founder_took_over',
+  // Auto-lost decision — removed
+  'subscriber_auto_lost',
+  'proactive_nudge_sent',
+  // Performance-fee era — removed in the billing rewrite
+  'performance_fee_skipped_flat_rate',
+  'win_back_perf_fee_fired',
+  'win_back_refunded',
+  // Misc retired
+  'billing_cron_complete',
+  'pilot_account_deleted_manual',
+  'promotions_enabled_changed',
 ])
 
 /** Subscriber-journey events for the `lifecycle` quick-filter. */
@@ -85,20 +98,18 @@ export async function GET(req: NextRequest) {
   const q = searchParams.get('q')?.trim() || null
   const limit = Math.min(Number(searchParams.get('limit')) || 200, 500)
 
-  // Event-name registry with active/legacy tagging. group-by name + max
-  // created_at; names not seen in ACTIVE_WINDOW are legacy (still selectable,
-  // just grouped separately so dead event types don't clutter the list).
+  // Event-name registry. Every distinct name ever emitted, each tagged
+  // active vs. legacy (retired from the codebase) so dead event types
+  // group separately instead of cluttering the list. Nothing is deleted.
   const nameRows = await getDbReadOnly()
-    .select({ name: wbEvents.name, lastSeen: sql<string>`max(${wbEvents.createdAt})` })
+    .selectDistinct({ name: wbEvents.name })
     .from(wbEvents)
-    .groupBy(wbEvents.name)
     .orderBy(wbEvents.name)
-  const activeCutoff = Date.now() - ACTIVE_WINDOW_MS
   const eventNames = nameRows.map((r) => ({
     name: r.name,
-    // Legacy if explicitly retired OR not emitted within the active window.
-    active: !KNOWN_LEGACY_NAMES.has(r.name)
-      && !!r.lastSeen && new Date(r.lastSeen).getTime() >= activeCutoff,
+    // Legacy = explicitly retired (see KNOWN_LEGACY_NAMES). Everything else
+    // is active, including rarely-fired live events like oauth_error.
+    active: !KNOWN_LEGACY_NAMES.has(r.name),
   }))
 
   let customerId: string | null = null
