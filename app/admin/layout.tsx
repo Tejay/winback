@@ -1,14 +1,21 @@
 import { redirect } from 'next/navigation'
-import Link from 'next/link'
 import { requireAdmin } from '@/lib/auth'
-import { Logo } from '@/components/logo'
+import { getBuildInfo } from '@/lib/admin/build-info'
+import { AdminSidebar } from '@/components/admin/sidebar'
+import { CmdKProvider } from '@/components/admin/cmdk-palette'
+import { Breadcrumbs } from '@/components/admin/breadcrumbs'
 
 /**
- * Spec 25 — Admin shell.
+ * Admin shell — PR 1.
  *
- * Server-side gate via requireAdmin(). Unsigned-in users go to /login;
- * signed-in non-admins get bounced to /dashboard (their normal home) so
- * they don't see a 403 page that leaks the existence of /admin.
+ * Left sidebar (grouped nav + Cmd-K trigger + env/SHA footer) replaces
+ * the previous topbar pills. CmdKProvider wraps the layout so any
+ * descendant client component can open the palette via useCmdK(). A
+ * breadcrumb slot renders above page content.
+ *
+ * Auth gating unchanged: server-side requireAdmin(); 401 → /login,
+ * non-admin → /dashboard. We don't render a 403 so /admin's existence
+ * stays hidden from non-admins.
  */
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const result = await requireAdmin()
@@ -17,50 +24,21 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     redirect('/dashboard')
   }
 
-  return (
-    <div className="min-h-screen bg-[#f5f5f5]">
-      <nav className="sticky top-0 z-30 bg-white border-b border-slate-100">
-        <div className="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-6">
-            <Logo />
-            <span className="text-xs font-semibold uppercase tracking-widest text-blue-600">
-              Admin
-            </span>
-          </div>
-          <div className="flex items-center gap-1 text-sm">
-            <NavLink href="/admin">Overview</NavLink>
-            <NavLink href="/admin/customers">Customers</NavLink>
-            <NavLink href="/admin/subscribers">Subscribers</NavLink>
-            <NavLink href="/admin/ai-quality">AI quality</NavLink>
-            <NavLink href="/admin/billing">Billing</NavLink>
-            <NavLink href="/admin/pilots">Pilots</NavLink>
-            <NavLink href="/admin/events">Events</NavLink>
-            <NavLink href="/admin/audit-log">Audit log</NavLink>
-            {/* Founder/admin dual-role accounts (e.g. tejaasvi@gmail.com on
-                dev) need a visible path back to the regular merchant view.
-                The link was previously text-xs text-slate-400 which clipped
-                to "Exit adm…" at common widths and was easy to miss. */}
-            <Link
-              href="/dashboard"
-              className="ml-3 px-3 py-1.5 rounded-full text-sm font-medium text-slate-600 hover:bg-slate-100 whitespace-nowrap"
-            >
-              ↩ Exit admin
-            </Link>
-          </div>
-        </div>
-      </nav>
-      <main className="max-w-7xl mx-auto px-6 py-8">{children}</main>
-    </div>
-  )
-}
+  const buildInfo = getBuildInfo()
 
-function NavLink({ href, children }: { href: string; children: React.ReactNode }) {
   return (
-    <Link
-      href={href}
-      className="px-3 py-1.5 rounded-full text-sm font-medium text-slate-700 hover:bg-slate-100"
-    >
-      {children}
-    </Link>
+    <CmdKProvider>
+      <div className="min-h-screen bg-[#f5f5f5] flex">
+        <AdminSidebar buildInfo={buildInfo} />
+        <div className="flex-1 min-w-0 flex flex-col">
+          <div className="px-8 pt-5 pb-2">
+            <Breadcrumbs />
+          </div>
+          <main className="flex-1 px-8 pb-10">
+            <div className="max-w-7xl">{children}</div>
+          </main>
+        </div>
+      </div>
+    </CmdKProvider>
   )
 }
