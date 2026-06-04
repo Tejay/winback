@@ -119,7 +119,7 @@ export async function findSubscribersByEmail(
  * Predicates mirror buildStuckCohorts() exactly so the count on the tile
  * matches the row count returned here.
  */
-export type SubscriberCohort = 'drain_paused' | 'unclassified'
+export type SubscriberCohort = 'drain_paused' | 'unclassified' | 'recovered'
 
 export async function findSubscribersByCohort(
   cohort: SubscriberCohort,
@@ -132,10 +132,12 @@ export async function findSubscribersByCohort(
         isNull(churnedSubscribers.pauseDrainProcessedAt),
         isNotNull(customers.activatedAt),
       )!
-    : and(
-        isNull(churnedSubscribers.classifiedAt),
-        sql`${churnedSubscribers.classifyAttempts} < 3`,
-      )!
+    : cohort === 'recovered'
+      ? eq(churnedSubscribers.status, 'recovered')
+      : and(
+          isNull(churnedSubscribers.classifiedAt),
+          sql`${churnedSubscribers.classifyAttempts} < 3`,
+        )!
 
   const rows = await getDbReadOnly()
     .select(SUBSCRIBER_SELECT)

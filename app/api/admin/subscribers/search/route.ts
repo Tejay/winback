@@ -7,7 +7,7 @@ import {
   type SubscriberCohort,
 } from '@/lib/admin/subscriber-search'
 
-const VALID_COHORTS: readonly SubscriberCohort[] = ['drain_paused', 'unclassified']
+const VALID_COHORTS: readonly SubscriberCohort[] = ['drain_paused', 'unclassified', 'recovered']
 
 /**
  * GET /api/admin/subscribers/search?email=...&limit=100

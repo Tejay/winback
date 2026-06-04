@@ -24,15 +24,16 @@ interface Row {
   cancellationReason: string | null
 }
 
-type Cohort = 'drain_paused' | 'unclassified'
+type Cohort = 'drain_paused' | 'unclassified' | 'recovered'
 
 const COHORT_LABELS: Record<Cohort, string> = {
   drain_paused: 'Activation backlog',
   unclassified: 'Pending AI review',
+  recovered:    'Recovered subscribers',
 }
 
 function isCohort(v: string | null): v is Cohort {
-  return v === 'drain_paused' || v === 'unclassified'
+  return v === 'drain_paused' || v === 'unclassified' || v === 'recovered'
 }
 
 export function SubscribersSearchClient() {
@@ -273,7 +274,9 @@ export function SubscribersSearchClient() {
             <span className="ml-2 text-xs text-amber-700/70">
               {cohortFilter === 'drain_paused'
                 ? '— subscribers piled up during billing pause, now awaiting catch-up'
-                : '— cancellations awaiting AI classification (attempts < 3)'}
+                : cohortFilter === 'recovered'
+                  ? '— subscribers won back (status = recovered)'
+                  : '— cancellations awaiting AI classification (attempts < 3)'}
             </span>
           </span>
           <button

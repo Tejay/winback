@@ -51,7 +51,7 @@ const NAV: NavGroup[] = [
   {
     label: 'Growth & revenue',
     items: [
-      { label: 'Billing', href: '/admin/billing' },
+      { label: 'Insights', href: '/admin/insights' },
     ],
   },
   {

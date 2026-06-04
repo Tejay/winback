@@ -20,15 +20,8 @@ interface CustomerRow {
   createdAt: string
 }
 
-type Filter =
-  | 'all'
-  | 'stuck_on_signup'
-  | 'paywall_stuck'
-  | 'oauth_issues'
-  | 'backfill_in_flight'
-  | 'webhook_silent'
-
-const FILTER_OPTIONS: Array<{ value: Filter; label: string }> = [
+// Filters shown as pills on the page (the common triage cohorts).
+const FILTER_OPTIONS: Array<{ value: string; label: string }> = [
   { value: 'all',                label: 'All' },
   { value: 'stuck_on_signup',    label: 'Stuck on signup' },
   { value: 'paywall_stuck',      label: 'Paywall stuck' },
@@ -37,7 +30,20 @@ const FILTER_OPTIONS: Array<{ value: Filter; label: string }> = [
   { value: 'backfill_in_flight', label: 'Backfill in flight' },
 ]
 
-function isValidFilter(v: string): v is Filter {
+// Friendly labels for "drill-in" filters reached via deep-link from the
+// Insights page (not shown as pills, but rendered as an active chip so the
+// admin knows what they're looking at and can clear it).
+const DRILL_IN_LABELS: Record<string, string> = {
+  paying:          'Paying merchants',
+  activated:       'Activated merchants',
+  tier_starter:    'Tier: Starter',
+  tier_growth:     'Tier: Growth',
+  tier_scale:      'Tier: Scale',
+  tier_enterprise: 'Tier: Enterprise',
+  tier_custom:     'Tier: Custom',
+}
+
+function isPillFilter(v: string): boolean {
   return FILTER_OPTIONS.some((opt) => opt.value === v)
 }
 
@@ -58,13 +64,15 @@ function CustomersClientInner() {
   const router = useRouter()
   const pathname = usePathname()
 
-  // PR 2 — initial filter read from ?filter= so deep-links from the
-  // /admin Now stuck-cohort tiles arrive on the right cohort.
+  // PR 2 / PR A — initial filter read from ?filter= so deep-links from the
+  // Now stuck-cohort tiles AND the Insights KPIs land on the right rows.
+  // Any non-empty filter is accepted (the API validates); unknown values
+  // simply return no rows rather than silently showing everything.
   const urlFilter = searchParams.get('filter') ?? 'all'
-  const initialFilter: Filter = isValidFilter(urlFilter) ? urlFilter : 'all'
+  const initialFilter = urlFilter || 'all'
 
   const [q, setQ] = useState('')
-  const [filter, setFilter] = useState<Filter>(initialFilter)
+  const [filter, setFilter] = useState<string>(initialFilter)
   const [rows, setRows] = useState<CustomerRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -87,7 +95,7 @@ function CustomersClientInner() {
     return () => clearTimeout(t)
   }, [q, filter])
 
-  async function load(query: string, filter: Filter) {
+  async function load(query: string, filter: string) {
     setLoading(true)
     try {
       const params = new URLSearchParams()
@@ -141,6 +149,19 @@ function CustomersClientInner() {
           </button>
         ))}
       </div>
+
+      {/* PR A — a drill-in filter (from an Insights KPI) that isn't one of
+          the pill cohorts. Show it as an active chip with a clear action. */}
+      {!isPillFilter(filter) && (
+        <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-2 text-sm flex items-center justify-between">
+          <span className="text-blue-900">
+            Filtered to <strong>{DRILL_IN_LABELS[filter] ?? filter}</strong>
+          </span>
+          <button onClick={() => setFilter('all')} className="text-xs text-blue-700 hover:text-blue-900 font-medium">
+            × clear filter
+          </button>
+        </div>
+      )}
 
       <div className="bg-white rounded-2xl border border-slate-200 p-2">
         <input
