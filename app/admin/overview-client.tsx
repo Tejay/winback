@@ -303,9 +303,9 @@ function StuckCohortsPanel({
           href="/admin/customers?filter=oauth_issues"
         />
         <CohortTile
-          label="Classifier dead-letter"
+          label="Stuck after 3 tries"
           value={cohorts.classifierDeadLetter}
-          sub="3+ failures · view & reset"
+          sub="AI gave up · view & reset"
           tone={cohorts.classifierDeadLetter > 0 ? 'danger' : 'ok'}
           onClick={cohorts.classifierDeadLetter > 0 ? onOpenDeadLetter : undefined}
           // When count is 0, keep history link as the fallback action
@@ -319,16 +319,16 @@ function StuckCohortsPanel({
           href="/admin/customers?filter=paywall_stuck"
         />
         <CohortTile
-          label="Drain-paused queue"
+          label="Activation backlog"
           value={cohorts.drainPausedQueue}
-          sub="awaiting drain"
+          sub="post-billing catch-up"
           tone="ok"
           href="/admin/subscribers?cohort=drain_paused"
         />
         <CohortTile
-          label="Unclassified queue"
+          label="Pending AI review"
           value={cohorts.unclassifiedQueue}
-          sub={`attempts < 3`}
+          sub="classifier · attempts < 3"
           tone="ok"
           href="/admin/subscribers?cohort=unclassified"
         />

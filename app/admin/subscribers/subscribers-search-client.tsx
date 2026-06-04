@@ -27,8 +27,8 @@ interface Row {
 type Cohort = 'drain_paused' | 'unclassified'
 
 const COHORT_LABELS: Record<Cohort, string> = {
-  drain_paused: 'Drain-paused queue',
-  unclassified: 'Unclassified queue',
+  drain_paused: 'Activation backlog',
+  unclassified: 'Pending AI review',
 }
 
 function isCohort(v: string | null): v is Cohort {
@@ -272,8 +272,8 @@ export function SubscribersSearchClient() {
             Cohort: <strong>{COHORT_LABELS[cohortFilter]}</strong>
             <span className="ml-2 text-xs text-amber-700/70">
               {cohortFilter === 'drain_paused'
-                ? '— subscribers awaiting drain (activated customer, not yet processed)'
-                : '— subscribers awaiting classifier (attempts < 3)'}
+                ? '— subscribers piled up during billing pause, now awaiting catch-up'
+                : '— cancellations awaiting AI classification (attempts < 3)'}
             </span>
           </span>
           <button
