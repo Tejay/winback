@@ -13,7 +13,7 @@
 import { sql } from 'drizzle-orm'
 import { getDbReadOnly } from '../db'
 import { churnedSubscribers, customers, users } from '../schema'
-import { eq, desc } from 'drizzle-orm'
+import { and, eq, desc, isNotNull, isNull } from 'drizzle-orm'
 import { logEvent } from '@/src/winback/lib/events'
 
 export interface AdminSubscriberRow {
@@ -108,6 +108,53 @@ export async function findSubscribersByEmail(
  * Powers the "View N subscribers" deep-link from the customer detail page.
  * Audit-logged like the email-based lookup.
  */
+/**
+ * PR 2 — Cohort lookup. Returns every subscriber in a named cohort that
+ * matches one of the /admin Now stuck-cohort tiles, so the tile
+ * click-through lands on the actual rows.
+ *
+ *   - drain_paused: pause_drain_processed_at IS NULL AND customer.activated_at IS NOT NULL
+ *   - unclassified: classified_at IS NULL AND classify_attempts < 3
+ *
+ * Predicates mirror buildStuckCohorts() exactly so the count on the tile
+ * matches the row count returned here.
+ */
+export type SubscriberCohort = 'drain_paused' | 'unclassified'
+
+export async function findSubscribersByCohort(
+  cohort: SubscriberCohort,
+  opts: FindSubscribersByEmailOpts = {},
+): Promise<AdminSubscriberRow[]> {
+  const limit = opts.limit ?? 100
+
+  const predicate = cohort === 'drain_paused'
+    ? and(
+        isNull(churnedSubscribers.pauseDrainProcessedAt),
+        isNotNull(customers.activatedAt),
+      )!
+    : and(
+        isNull(churnedSubscribers.classifiedAt),
+        sql`${churnedSubscribers.classifyAttempts} < 3`,
+      )!
+
+  const rows = await getDbReadOnly()
+    .select(SUBSCRIBER_SELECT)
+    .from(churnedSubscribers)
+    .innerJoin(customers, eq(churnedSubscribers.customerId, customers.id))
+    .innerJoin(users, eq(customers.userId, users.id))
+    .where(predicate)
+    .orderBy(desc(churnedSubscribers.cancelledAt))
+    .limit(limit)
+
+  void logEvent({
+    name: 'admin_subscriber_lookup',
+    userId: opts.adminUserId,
+    properties: { cohort, resultCount: rows.length },
+  }).catch((err) => console.warn('admin_subscriber_lookup logEvent failed:', err))
+
+  return rows.map((r) => ({ ...r, status: r.status ?? 'pending' }))
+}
+
 export async function findSubscribersByCustomer(
   customerId: string,
   opts: FindSubscribersByEmailOpts = {},

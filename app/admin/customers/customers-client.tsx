@@ -1,7 +1,8 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import Link from 'next/link'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { RefreshAffordance } from '@/components/admin-refresh'
 
 interface CustomerRow {
@@ -19,21 +20,63 @@ interface CustomerRow {
   createdAt: string
 }
 
-type Filter = 'all' | 'stuck_on_signup'
+type Filter =
+  | 'all'
+  | 'stuck_on_signup'
+  | 'paywall_stuck'
+  | 'oauth_issues'
+  | 'backfill_in_flight'
+
+const FILTER_OPTIONS: Array<{ value: Filter; label: string }> = [
+  { value: 'all',                label: 'All' },
+  { value: 'stuck_on_signup',    label: 'Stuck on signup' },
+  { value: 'paywall_stuck',      label: 'Paywall stuck' },
+  { value: 'oauth_issues',       label: 'OAuth issues' },
+  { value: 'backfill_in_flight', label: 'Backfill in flight' },
+]
+
+function isValidFilter(v: string): v is Filter {
+  return FILTER_OPTIONS.some((opt) => opt.value === v)
+}
 
 // Hard cap mirrored from the API (`/api/admin/customers/route.ts`).
 // Used to decide whether to surface the "refine to see more" hint.
 const ROW_CAP = 50
 
 export function CustomersClient() {
+  return (
+    <Suspense fallback={<p className="text-sm text-slate-500">Loading…</p>}>
+      <CustomersClientInner />
+    </Suspense>
+  )
+}
+
+function CustomersClientInner() {
+  const searchParams = useSearchParams()
+  const router = useRouter()
+  const pathname = usePathname()
+
+  // PR 2 — initial filter read from ?filter= so deep-links from the
+  // /admin Now stuck-cohort tiles arrive on the right cohort.
+  const urlFilter = searchParams.get('filter') ?? 'all'
+  const initialFilter: Filter = isValidFilter(urlFilter) ? urlFilter : 'all'
+
   const [q, setQ] = useState('')
-  const [filter, setFilter] = useState<Filter>('all')
+  const [filter, setFilter] = useState<Filter>(initialFilter)
   const [rows, setRows] = useState<CustomerRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  // Spec 76 (admin polish) — track when the data was last fetched so the
-  // header can show "Last updated 2m ago · Refresh".
   const [lastLoadedAt, setLastLoadedAt] = useState<number | null>(null)
+
+  // Keep the URL in sync so filtered views are shareable / refreshable.
+  useEffect(() => {
+    const params = new URLSearchParams()
+    if (filter !== 'all') params.set('filter', filter)
+    if (q) params.set('q', q)
+    const qs = params.toString()
+    router.replace(qs ? `${pathname}?${qs}` : pathname)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filter, q])
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -81,28 +124,20 @@ export function CustomersClient() {
       </header>
 
       <div className="flex flex-wrap items-center gap-2">
-        <button
-          type="button"
-          onClick={() => setFilter('all')}
-          className={`text-xs font-medium px-3 py-1.5 rounded-full border ${
-            filter === 'all'
-              ? 'bg-[#0f172a] text-white border-[#0f172a]'
-              : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
-          }`}
-        >
-          All
-        </button>
-        <button
-          type="button"
-          onClick={() => setFilter('stuck_on_signup')}
-          className={`text-xs font-medium px-3 py-1.5 rounded-full border ${
-            filter === 'stuck_on_signup'
-              ? 'bg-[#0f172a] text-white border-[#0f172a]'
-              : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
-          }`}
-        >
-          Stuck on signup
-        </button>
+        {FILTER_OPTIONS.map((opt) => (
+          <button
+            key={opt.value}
+            type="button"
+            onClick={() => setFilter(opt.value)}
+            className={`text-xs font-medium px-3 py-1.5 rounded-full border ${
+              filter === opt.value
+                ? 'bg-[#0f172a] text-white border-[#0f172a]'
+                : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+            }`}
+          >
+            {opt.label}
+          </button>
+        ))}
       </div>
 
       <div className="bg-white rounded-2xl border border-slate-200 p-2">

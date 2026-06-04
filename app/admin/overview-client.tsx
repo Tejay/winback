@@ -300,7 +300,7 @@ function StuckCohortsPanel({
           value={cohorts.oauthIssues}
           sub="3+ errors in 24h"
           tone={cohorts.oauthIssues > 0 ? 'danger' : 'ok'}
-          href="/admin/events?name=oauth_error"
+          href="/admin/customers?filter=oauth_issues"
         />
         <CohortTile
           label="Classifier dead-letter"
@@ -316,28 +316,28 @@ function StuckCohortsPanel({
           value={cohorts.paywallStuck}
           sub="activated, no card"
           tone={cohorts.paywallStuck > 0 ? 'warn' : 'ok'}
-          href="/admin/customers"
+          href="/admin/customers?filter=paywall_stuck"
         />
         <CohortTile
           label="Drain-paused queue"
           value={cohorts.drainPausedQueue}
           sub="awaiting drain"
           tone="ok"
-          href="/admin/events?name=drain_paused_processed"
+          href="/admin/subscribers?cohort=drain_paused"
         />
         <CohortTile
           label="Unclassified queue"
           value={cohorts.unclassifiedQueue}
           sub={`attempts < 3`}
           tone="ok"
-          href="/admin/events?name=classify_attempted"
+          href="/admin/subscribers?cohort=unclassified"
         />
         <CohortTile
           label="Backfill in flight"
           value={cohorts.backfillInFlight}
           sub="customers importing"
           tone="ok"
-          href="/admin/customers"
+          href="/admin/customers?filter=backfill_in_flight"
         />
       </div>
     </section>
