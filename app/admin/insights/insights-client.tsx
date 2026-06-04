@@ -328,6 +328,8 @@ function AttributionCell({ label, cell, tone }: { label: string; cell: { n: numb
  * headline, legend, month x-axis, hover tooltip. Designed to read as a
  * trend at a glance, not require hovering each bar.
  */
+const TRACK_PX = 160 // usable plot height for the trend bars
+
 function MrrTrendChart({ trend }: { trend: InsightsData['mrrTrend'] }) {
   const weeks = trend.map((w) => ({ ...w, total: w.winBackCents + w.paymentCents }))
   const max = Math.max(1, ...weeks.map((w) => w.total))
@@ -362,24 +364,41 @@ function MrrTrendChart({ trend }: { trend: InsightsData['mrrTrend'] }) {
       {!hasData ? (
         <div className="text-[12px] text-slate-400 py-8 text-center">No recoveries in the last 13 weeks.</div>
       ) : (
-        <div className="relative">
+        <div>
           {/* y-axis max gridline */}
-          <div className="absolute inset-x-0 top-0 border-t border-dashed border-slate-200">
+          <div className="relative border-t border-dashed border-slate-200">
             <span className="text-[9px] text-slate-400 tabular-nums absolute right-0 -top-3.5">{formatCents(max)}</span>
           </div>
-          <div className="flex items-end gap-1.5 h-40">
-            {weeks.map((w) => (
-              <div key={w.week} className="flex-1 flex justify-center group min-w-0 h-full items-end">
-                <div
-                  className="w-full max-w-[42px] flex flex-col-reverse rounded-t overflow-hidden h-full"
-                  title={`Week of ${w.week}\nCancellation win-backs: ${formatCents(w.winBackCents)}\nPayment recoveries: ${formatCents(w.paymentCents)}\nTotal: ${formatCents(w.total)}`}
-                >
-                  {/* Stacked from the bottom; empty space above is the headroom to max. */}
-                  <div style={{ height: `${(w.paymentCents / max) * 100}%` }} className="w-full bg-blue-400 group-hover:bg-blue-500 transition" />
-                  <div style={{ height: `${(w.winBackCents / max) * 100}%` }} className="w-full bg-emerald-400 group-hover:bg-emerald-500 transition" />
+          {/* Bars: pixel heights + absolute positioning from the bottom — robust
+              across browsers (Safari mis-renders percentage heights on flex
+              children). TRACK_PX is the usable plot height. */}
+          <div className="flex items-end gap-1.5" style={{ height: TRACK_PX }}>
+            {weeks.map((w) => {
+              const payPx = Math.round((w.paymentCents / max) * TRACK_PX)
+              const winPx = Math.round((w.winBackCents / max) * TRACK_PX)
+              return (
+                <div key={w.week} className="flex-1 flex justify-center min-w-0" style={{ height: TRACK_PX }}>
+                  <div
+                    className="group relative w-full max-w-[42px]"
+                    style={{ height: TRACK_PX }}
+                    title={`Week of ${w.week}\nCancellation win-backs: ${formatCents(w.winBackCents)}\nPayment recoveries: ${formatCents(w.paymentCents)}\nTotal: ${formatCents(w.total)}`}
+                  >
+                    {payPx > 0 && (
+                      <div
+                        className="absolute bottom-0 w-full bg-blue-400 group-hover:bg-blue-500 transition"
+                        style={{ height: payPx, borderTopLeftRadius: winPx > 0 ? 0 : 3, borderTopRightRadius: winPx > 0 ? 0 : 3 }}
+                      />
+                    )}
+                    {winPx > 0 && (
+                      <div
+                        className="absolute w-full bg-emerald-400 group-hover:bg-emerald-500 transition rounded-t"
+                        style={{ height: winPx, bottom: payPx }}
+                      />
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
           {/* month x-axis */}
           <div className="flex gap-1.5 mt-1">
