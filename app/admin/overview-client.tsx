@@ -15,6 +15,8 @@ import { Sparkline } from '@/components/admin/metric-tiles'
 
 type ErrorSource =
   | 'oauth_error'
+  | 'backfill_failed'
+  | 'billing_activate_failed'
   | 'billing_invoice_failed'
   | 'reactivate_failed'
   | 'dunning_payment_update_failed'
@@ -99,6 +101,10 @@ interface OverviewRollup {
     sendgrid: ServiceSignal
     postgres: ServiceSignal
   }
+  deliverability: {
+    bouncedToday: number
+    complainedToday: number
+  }
   cronHealth: Array<{
     name: string
     displayName: string
@@ -123,6 +129,8 @@ interface ServiceSignal {
 
 const ERROR_SOURCE_LABELS: Record<ErrorSource, string> = {
   oauth_error:                'OAuth',
+  backfill_failed:            'Ingest',
+  billing_activate_failed:    'Activate',
   billing_invoice_failed:     'Billing',
   reactivate_failed:          'Win-back',
   dunning_payment_update_failed: 'Pay recovery',
@@ -219,7 +227,7 @@ export function OverviewClient() {
         cohorts={data.stuckCohorts}
         onOpenDeadLetter={() => setDeadLetterOpen(true)}
       />
-      <ErrorsPanel today={data.today.errors} spark={data.sparklines.errors} tail={data.errorsTail} />
+      <ErrorsPanel today={data.today.errors} spark={data.sparklines.errors} tail={data.errorsTail} deliverability={data.deliverability ?? { bouncedToday: 0, complainedToday: 0 }} />
       <CronHealthSection rows={data.cronHealth ?? []} />
       <RecentAdminActivity rows={data.recentAdminActivity} />
       {/* Business metrics moved to /admin/insights (PR A). Now is pure ops:
@@ -508,6 +516,7 @@ function investigateHref(metric: string, errorsBySource: Record<ErrorSource, num
   if (metric === 'floor_emails_sent') return '/admin/events?name=email_sent'
   if (metric === 'floor_customers_active') return '/admin/events'
   if (metric === 'webhook_signature_invalid') return '/admin/events?name=webhook_signature_invalid'
+  if (metric === 'email_complained') return '/admin/events?name=email_complained'
   return '/admin/events'
 }
 
@@ -753,10 +762,12 @@ function ErrorsPanel({
   today,
   spark,
   tail,
+  deliverability,
 }: {
   today: { total: number; bySource: Record<ErrorSource, number> }
   spark: number[]
   tail: OverviewRollup['errorsTail']
+  deliverability: OverviewRollup['deliverability']
 }) {
   const max = Math.max(1, ...spark)
   return (
@@ -771,7 +782,7 @@ function ErrorsPanel({
         </div>
         <Sparkline values={spark} max={max} />
       </div>
-      <div className="grid grid-cols-3 sm:grid-cols-7 gap-1 mt-3">
+      <div className="grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-9 gap-1 mt-3">
         {(Object.keys(ERROR_SOURCE_LABELS) as ErrorSource[]).map((src) => {
           const n = today.bySource[src] ?? 0
           return (
@@ -788,6 +799,25 @@ function ErrorsPanel({
             </Link>
           )
         })}
+      </div>
+
+      <div className="mt-3 flex items-center flex-wrap gap-x-3 gap-y-1 text-[11px]">
+        <span className="uppercase tracking-widest font-semibold text-slate-500">Deliverability</span>
+        <Link
+          href="/admin/events?name=email_complained"
+          className={deliverability.complainedToday > 0 ? 'text-red-700 font-semibold bg-red-50 px-1.5 py-0.5 rounded' : 'text-slate-500 hover:underline'}
+          title="Spam complaints today — reputation risk; even a few can get the domain blocked"
+        >
+          {deliverability.complainedToday} complaint{deliverability.complainedToday === 1 ? '' : 's'}
+        </Link>
+        <Link
+          href="/admin/events?name=email_bounced"
+          className={deliverability.bouncedToday > 0 ? 'text-amber-700' : 'text-slate-500 hover:underline'}
+          title="Bounced emails today"
+        >
+          {deliverability.bouncedToday} bounced
+        </Link>
+        <span className="text-slate-400">· today</span>
       </div>
 
       <div className="mt-4 border-t border-slate-100 pt-3">
