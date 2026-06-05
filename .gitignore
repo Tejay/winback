@@ -51,6 +51,13 @@ dev.log
 /scripts/print-localhost-chooser-link.ts
 /scripts/reset-checkout-for-retry.ts
 /scripts/seed-pagination-test.ts
+# admin ops helpers — kept locally for re-use, never shipped (no secrets)
+/scripts/grant-admin-only.ts
+/scripts/list-users-once.ts
+# one-shot DB exports written before destructive ops — contain real customer
+# data + Stripe tokens; MUST never be committed
+/scripts/backups/
 
 # WIP mockups that haven't been committed as a spec reference yet
 /marketing/win-back-storyline-mockup.html
+/mockups/
