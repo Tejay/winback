@@ -206,6 +206,27 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
   }
 
+  // Resend delivers every subscribed event type to this one endpoint. Inbound
+  // replies are 'email.received'; the deliverability events (email.bounced /
+  // email.complained) are recorded here and acked — they carry no reply to
+  // process, and they power the admin Now "Deliverability" line + the
+  // spam-complaint red-light. Same webhook, same RESEND_WEBHOOK_SECRET, so no
+  // separate endpoint or secret is needed.
+  const eventType = (body as { type?: string } | null)?.type
+  if (eventType === 'email.bounced' || eventType === 'email.complained') {
+    const data = (body as { data?: Record<string, unknown> })?.data ?? {}
+    await logEvent({
+      name: eventType === 'email.bounced' ? 'email_bounced' : 'email_complained',
+      properties: {
+        emailId: (data.email_id as string) ?? null,
+        to: Array.isArray(data.to) ? (data.to as string[]).join(', ') : ((data.to as string) ?? null),
+        subject: (data.subject as string) ?? null,
+        resendType: eventType,
+      },
+    })
+    return NextResponse.json({ received: true })
+  }
+
   const { emailId, to, from, text: envelopeText } = extractEnvelope(body)
 
   // Spec 64 — idempotency gate. If Resend retries the same webhook (network
