@@ -71,10 +71,19 @@ export async function processDunningPaymentUpdate(event: Stripe.Event): Promise<
     return
   }
 
-  // Attach as default for future invoices on this customer.
+  // Set the new card as the default on BOTH the customer and the subscription.
+  // Stripe pays an invoice using the SUBSCRIPTION's default PM first (it takes
+  // priority over the customer default), so updating only the customer left the
+  // retry below charging the OLD failing card — recovery silently failed. This
+  // also points future renewals at the new card.
   await stripe.customers.update(subscriber.stripeCustomerId, {
     invoice_settings: { default_payment_method: paymentMethodId },
   })
+  if (subscriber.stripeSubscriptionId) {
+    await stripe.subscriptions.update(subscriber.stripeSubscriptionId, {
+      default_payment_method: paymentMethodId,
+    })
+  }
 
   // Find any open failed invoices for this subscription and retry them
   // server-side. Stripe will fire invoice.payment_succeeded on success
@@ -98,7 +107,9 @@ export async function processDunningPaymentUpdate(event: Stripe.Event): Promise<
     for (const inv of ordered) {
       if (!inv.id) continue
       try {
-        await stripe.invoices.pay(inv.id)
+        // Pay with the new card explicitly — belt-and-suspenders alongside the
+        // subscription-default update above.
+        await stripe.invoices.pay(inv.id, { payment_method: paymentMethodId })
         retried++
       } catch (err) {
         retryFailures++
