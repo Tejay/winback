@@ -139,17 +139,23 @@ export async function buildStuckCohorts(): Promise<StuckCohorts> {
       ))
       .then((rows) => rows[0]?.n ?? 0),
 
-    // Webhook silent: Stripe-connected, activated customers that produced
-    // events before but none in the last 24h. The `exists` clause excludes
-    // brand-new merchants who simply haven't started yet (that's the
-    // "stuck on signup" / paywall cohorts' job, not this one). The
-    // `not exists` clause is the "went silent" signal.
+    // Webhook silent: a connected, activated merchant WITH active Stripe
+    // subscriptions (positive latest MRR snapshot — so events are genuinely
+    // EXPECTED) that produced events before but none in the last 24h.
+    //
+    // The MRR gate is what makes this delivery-aware. Without it the tile only
+    // measured "no activity," which can't tell a broken webhook from a quiet
+    // account — so idle/seed accounts with zero active subs tripped it forever
+    // (the false "Webhook silent: 2"). Now it only fires for an account that
+    // SHOULD be receiving webhooks but isn't. MRR is computed from Stripe
+    // directly, so it stays valid even when webhooks are the thing that broke.
     db
       .select({ n: sql<number>`count(*)::int` })
       .from(customers)
       .where(and(
         isNotNull(customers.stripeAccessToken),
         isNotNull(customers.activatedAt),
+        sql`coalesce((select m.mrr_usd_minor from wb_mrr_snapshots m where m.customer_id = ${customers.id} order by m.taken_at desc limit 1), 0) > 0`,
         sql`exists (select 1 from wb_events e where e.customer_id = ${customers.id})`,
         sql`not exists (select 1 from wb_events e where e.customer_id = ${customers.id} and e.created_at > ${twentyFourHoursAgo})`,
       ))

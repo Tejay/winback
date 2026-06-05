@@ -876,6 +876,22 @@ export async function buildOverviewRollup(): Promise<OverviewRollup> {
     }
   }
 
+  // Webhook signature failures — absolute threshold, NOT a spike. Even one
+  // rejected event means a Stripe destination's signing secret is wrong or
+  // rotated and webhooks are being dropped (silent-pipeline risk). The generic
+  // 'errors' spike check needs a 3× jump to fire; this pages on any single
+  // failure, which is the right sensitivity for a secret mismatch.
+  const webhookSigFails = errorsToday.bySource['webhook_signature_invalid'] ?? 0
+  if (webhookSigFails > 0) {
+    redLights.push({
+      metric: 'webhook_signature_invalid',
+      kind: 'spike',
+      today: webhookSigFails,
+      median7d: 0,
+      summary: `Webhook signatures rejected — ${webhookSigFails} event(s) failed verification today. A Stripe destination's signing secret is likely wrong or rotated; events are being dropped.`,
+    })
+  }
+
   return {
     today: {
       classifications: emailsSentToday,  // proxy — every send corresponds to one classification

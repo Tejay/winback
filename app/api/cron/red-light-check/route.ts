@@ -6,6 +6,7 @@ import { withCron } from '@/src/winback/lib/cron-wrap'
 import { logEvent } from '@/src/winback/lib/events'
 import { buildOverviewRollup, type OverviewRollup } from '@/lib/admin/rollups'
 import { sendAdminAlert } from '@/lib/admin/admin-alert'
+import { getPlatformStripe } from '@/src/winback/lib/platform-stripe'
 
 /**
  * PR 2 — Red-light email alert cron.
@@ -40,7 +41,9 @@ export const GET = (req: NextRequest) =>
     const dryRun = new URL(req.url).searchParams.get('dryRun') === '1'
 
     const rollup = await buildOverviewRollup()
-    const lights = rollup.redLights
+    // Mode-B webhook check is cron-only (a Stripe call), merged into the
+    // DB-derived lights from the rollup.
+    const lights = [...rollup.redLights, ...(await checkWebhookEndpoints())]
     if (lights.length === 0) {
       return { activeLights: 0, sent: false }
     }
@@ -132,6 +135,37 @@ export const GET = (req: NextRequest) =>
       sendError: result.error ?? null,
     }
   })
+
+/**
+ * Mode-B webhook delivery check: poll Stripe for the platform's webhook
+ * endpoints and raise a red-light if any is not 'enabled'. Stripe disables an
+ * endpoint after sustained delivery failures, so a non-enabled endpoint means
+ * delivery has stopped and the pipeline will go silent — the one webhook
+ * failure mode our endpoint can't observe itself (events never reach us).
+ *
+ * Cron-only by design: it's a Stripe round-trip, so it lives here (every 5
+ * min) rather than in buildOverviewRollup (the 30s admin poll). That makes it
+ * an email-alert signal, not a Now-page tile. A Stripe error returns no lights
+ * so a transient blip never breaks the rest of the red-light cron.
+ */
+async function checkWebhookEndpoints(): Promise<OverviewRollup['redLights']> {
+  try {
+    const eps = await getPlatformStripe().webhookEndpoints.list({ limit: 100 })
+    const broken = eps.data.filter((e) => e.status !== 'enabled')
+    if (broken.length === 0) return []
+    const detail = broken.map((e) => `${e.url} (${e.status})`).join(', ')
+    return [{
+      metric: 'webhook_endpoint_disabled',
+      kind: 'floor',
+      today: broken.length,
+      median7d: 0,
+      summary: `Stripe webhook delivery down — ${broken.length} endpoint(s) not enabled: ${detail}. Stripe has stopped delivering; the pipeline will go silent. Re-enable in the Stripe dashboard.`,
+    }]
+  } catch (err) {
+    console.error('[red-light] webhook endpoint status check failed', err)
+    return []
+  }
+}
 
 function composeAlertBody(lights: OverviewRollup['redLights'], envLabel: string): string {
   const lines: string[] = []
