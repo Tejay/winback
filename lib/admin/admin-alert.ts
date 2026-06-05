@@ -9,7 +9,9 @@
  * Env vars:
  *   RESEND_API_KEY    — required (already used elsewhere in the app)
  *   ADMIN_ALERT_EMAIL — recipient; defaults to errors@winbackflow.co
- *   ADMIN_ALERT_FROM  — From: address; defaults to alerts@winbackflow.co
+ *   ADMIN_ALERT_FROM  — From: address; defaults to noreply@winbackflow.co
+ *                       (the exact address billing-notifications already
+ *                       sends from — a known-good, domain-verified sender)
  *
  * Returns { ok: true, messageId } on success or { ok: false, error } if
  * configuration or the API call fails. Never throws — callers (the cron)
@@ -24,7 +26,10 @@ export interface AdminAlertResult {
 }
 
 const DEFAULT_TO   = 'errors@winbackflow.co'
-const DEFAULT_FROM = 'Winback Alerts <alerts@winbackflow.co>'
+// noreply@winbackflow.co is the address billing-notifications.ts already
+// sends from in prod — a proven, domain-verified Resend sender. Using it
+// (rather than alerts@) means the alert path reuses a known-good sender.
+const DEFAULT_FROM = 'Winback Alerts <noreply@winbackflow.co>'
 
 export async function sendAdminAlert(params: {
   subject: string
