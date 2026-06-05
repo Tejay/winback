@@ -24,8 +24,10 @@ import { sendAdminAlert } from '@/lib/admin/admin-alert'
  * (fewer inbox interruptions) while still letting each rule cool down
  * independently.
  *
- * `?dryRun=1` — compute red lights but do not send or persist. Useful
- * for first-prod verification.
+ * PRODUCTION ONLY: a real send happens only when VERCEL_ENV='production'.
+ * Dev/preview compute the lights (so the cron is testable) but never email
+ * or write cooldown events. `?dryRun=1` never sends in any environment and
+ * stays usable everywhere for inspection.
  *
  * Auth: Bearer ${CRON_SECRET} via withCron (Spec 69).
  */
@@ -41,6 +43,19 @@ export const GET = (req: NextRequest) =>
     const lights = rollup.redLights
     if (lights.length === 0) {
       return { activeLights: 0, sent: false }
+    }
+
+    // Alerts only email from PRODUCTION. Dev/preview (and local runs with the
+    // cron secret) still compute the red lights so the cron is exercisable,
+    // but never send a real email or write cooldown events. dryRun is exempt
+    // — it never sends anyway, so it stays usable everywhere for inspection.
+    const isProd = process.env.VERCEL_ENV === 'production'
+    if (!isProd && !dryRun) {
+      return {
+        activeLights: lights.length,
+        sent: false,
+        skippedReason: `non-production (VERCEL_ENV=${process.env.VERCEL_ENV ?? 'unset'})`,
+      }
     }
 
     // Look up the last-fire timestamp for each active rule
