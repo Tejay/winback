@@ -112,6 +112,8 @@ interface OverviewRollup {
   }>
   /** Back-compat: same value as stuckCohorts.classifierDeadLetter */
   deadLetteredClassify: number
+  /** Global subscriber-email sending control. */
+  sending: { mode: 'live' | 'allowlist' | 'paused'; suppressedToday: number }
 }
 
 interface ServiceSignal {
@@ -163,6 +165,7 @@ export function OverviewClient() {
   const [error, setError]   = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [deadLetterOpen, setDeadLetterOpen] = useState(false)
+  const [sendingModalOpen, setSendingModalOpen] = useState(false)
   // Timestamp of the last successful fetch — drives the "updated Ns ago"
   // pulse so a silently-stalled poll is visible.
   const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null)
@@ -170,27 +173,29 @@ export function OverviewClient() {
   // between 30s fetches.
   const [, setTick] = useState(0)
 
+  async function reload() {
+    try {
+      const res = await fetch('/api/admin/overview', { cache: 'no-store' })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error ?? 'Failed to load overview')
+      setData(json)
+      setError(null)
+      setLastUpdatedAt(Date.now())
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setLoading(false)
+    }
+  }
+
   useEffect(() => {
     let cancelled = false
-    async function load() {
-      try {
-        const res = await fetch('/api/admin/overview', { cache: 'no-store' })
-        const json = await res.json()
-        if (cancelled) return
-        if (!res.ok) throw new Error(json.error ?? 'Failed to load overview')
-        setData(json)
-        setError(null)
-        setLastUpdatedAt(Date.now())
-      } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : String(e))
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
-    }
+    const load = () => { if (!cancelled) void reload() }
     load()
     const t = setInterval(load, 30_000)
     const ticker = setInterval(() => setTick((n) => n + 1), 5_000)
     return () => { cancelled = true; clearInterval(t); clearInterval(ticker) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   if (loading && !data) return <p className="text-sm text-slate-500">Loading…</p>
@@ -206,6 +211,7 @@ export function OverviewClient() {
   return (
     <div className="space-y-6">
       <Header lastUpdatedAt={lastUpdatedAt} />
+      <SendingBanner sending={data.sending} onManage={() => setSendingModalOpen(true)} />
       <ServiceSignalsStrip signals={data.serviceSignals} />
       <RedLights lights={data.redLights} errorsBySource={data.today.errors.bySource} />
       <StuckCohortsPanel
@@ -220,6 +226,221 @@ export function OverviewClient() {
           /dunning waves); business *levels* live on Insights. */}
 
       <ClassifierDeadLetterDrawer open={deadLetterOpen} onClose={() => setDeadLetterOpen(false)} />
+      {sendingModalOpen && (
+        <SendingControlModal
+          current={data.sending.mode}
+          onClose={() => setSendingModalOpen(false)}
+          onChanged={() => { setSendingModalOpen(false); void reload() }}
+        />
+      )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Global sending control — the go-live safety switch
+// ---------------------------------------------------------------------------
+
+type SendingMode = 'live' | 'allowlist' | 'paused'
+
+function SendingBanner({
+  sending,
+  onManage,
+}: {
+  sending: { mode: SendingMode; suppressedToday: number }
+  onManage: () => void
+}) {
+  if (sending.mode === 'live') {
+    return (
+      <div className="flex items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50/60 px-4 py-2 text-sm">
+        <span className="text-emerald-800">
+          <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1.5 align-middle" />
+          Subscriber email sending: <strong>Live</strong>
+        </span>
+        <button onClick={onManage} className="text-xs text-emerald-700 hover:text-emerald-900 underline">Manage</button>
+      </div>
+    )
+  }
+  const isPaused = sending.mode === 'paused'
+  return (
+    <div className={`flex items-center justify-between gap-3 rounded-xl border px-4 py-2.5 text-sm ${
+      isPaused ? 'border-amber-300 bg-amber-50' : 'border-blue-300 bg-blue-50'
+    }`}>
+      <span className={isPaused ? 'text-amber-900' : 'text-blue-900'}>
+        {isPaused
+          ? <>⏸ <strong>SENDING PAUSED (shadow mode)</strong> — no subscriber emails are going out.</>
+          : <>🔒 <strong>Allow-list only</strong> — subscriber emails go only to <span className="font-mono">EMAIL_ALLOWLIST</span>.</>}
+        {sending.suppressedToday > 0 && (
+          <Link href="/admin/events?name=email_suppressed&since=24h" className="ml-2 underline">
+            {sending.suppressedToday} suppressed today →
+          </Link>
+        )}
+      </span>
+      <button
+        onClick={onManage}
+        className={`text-xs font-medium rounded-full px-3 py-1 border ${
+          isPaused ? 'border-amber-300 bg-white text-amber-800 hover:bg-amber-100' : 'border-blue-300 bg-white text-blue-800 hover:bg-blue-100'
+        }`}
+      >
+        Manage
+      </button>
+    </div>
+  )
+}
+
+function SendingControlModal({
+  current,
+  onClose,
+  onChanged,
+}: {
+  current: SendingMode
+  onClose: () => void
+  onChanged: () => void
+}) {
+  const [confirm, setConfirm] = useState('')
+  const [busy, setBusy] = useState<SendingMode | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  async function setMode(mode: SendingMode, confirmPhrase?: string) {
+    setBusy(mode)
+    setError(null)
+    try {
+      const res = await fetch('/api/admin/actions/set-sending-mode', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode, confirm: confirmPhrase ?? '' }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error ?? 'Failed to set mode')
+      onChanged()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30 p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-lg w-full p-6" onClick={(e) => e.stopPropagation()}>
+        <div className="text-lg font-semibold text-slate-900">Global sending control</div>
+        <p className="text-sm text-slate-500 mt-1">
+          Gates all automated subscriber emails (exit, dunning, re-engagement, win-back). Auth emails,
+          founder notices, and ops alerts are never affected. Currently: <strong className="text-slate-700">{current}</strong>.
+        </p>
+
+        {error && <div className="mt-3 bg-red-50 border border-red-200 text-red-800 rounded-lg p-2.5 text-sm">{error}</div>}
+
+        <div className="mt-4 space-y-3">
+          {/* PAUSE — the safe direction: one click, no phrase. */}
+          <div className="rounded-xl border border-amber-200 bg-amber-50/50 p-3">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="text-sm font-semibold text-amber-900">⏸ Pause all sending (shadow)</div>
+                <div className="text-[11px] text-amber-700/80">Send nothing. The pipeline still runs so you can review what would go out.</div>
+              </div>
+              <button
+                onClick={() => setMode('paused')}
+                disabled={current === 'paused' || busy !== null}
+                className="shrink-0 text-xs font-semibold rounded-full px-4 py-1.5 bg-amber-600 text-white hover:bg-amber-700 disabled:opacity-40"
+              >
+                {busy === 'paused' ? '…' : current === 'paused' ? 'Current' : 'Pause now'}
+              </button>
+            </div>
+          </div>
+
+          {/* ALLOWLIST — type ALLOWLIST. */}
+          <ConfirmRow
+            title="🔒 Allow-list only"
+            desc="Send only to addresses in the EMAIL_ALLOWLIST env var. For testing in prod."
+            phrase="ALLOWLIST"
+            isCurrent={current === 'allowlist'}
+            busy={busy === 'allowlist'}
+            anyBusy={busy !== null}
+            confirm={confirm}
+            setConfirm={setConfirm}
+            onConfirm={() => setMode('allowlist', confirm)}
+            tone="blue"
+          />
+
+          {/* LIVE — type the full phrase (the dangerous direction). */}
+          <ConfirmRow
+            title="● Enable live sending"
+            desc="Real subscriber emails resume immediately, platform-wide."
+            phrase="ENABLE LIVE SENDING"
+            isCurrent={current === 'live'}
+            busy={busy === 'live'}
+            anyBusy={busy !== null}
+            confirm={confirm}
+            setConfirm={setConfirm}
+            onConfirm={() => setMode('live', confirm)}
+            tone="emerald"
+          />
+        </div>
+
+        <div className="mt-5 flex justify-end">
+          <button onClick={onClose} className="text-sm text-slate-500 hover:text-slate-700 px-4 py-2">Close</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ConfirmRow({
+  title, desc, phrase, isCurrent, busy, anyBusy, confirm, setConfirm, onConfirm, tone,
+}: {
+  title: string
+  desc: string
+  phrase: string
+  isCurrent: boolean
+  busy: boolean
+  anyBusy: boolean
+  confirm: string
+  setConfirm: (v: string) => void
+  onConfirm: () => void
+  tone: 'blue' | 'emerald'
+}) {
+  const [open, setOpen] = useState(false)
+  const ready = confirm === phrase
+  const btn = tone === 'emerald' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-blue-600 hover:bg-blue-700'
+  return (
+    <div className="rounded-xl border border-slate-200 p-3">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <div className="text-sm font-semibold text-slate-800">{title}</div>
+          <div className="text-[11px] text-slate-500">{desc}</div>
+        </div>
+        {isCurrent ? (
+          <span className="shrink-0 text-xs text-slate-400 px-3">Current</span>
+        ) : (
+          <button
+            onClick={() => { setOpen((v) => !v); setConfirm('') }}
+            disabled={anyBusy}
+            className="shrink-0 text-xs font-medium rounded-full px-4 py-1.5 border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+          >
+            {open ? 'Cancel' : 'Switch…'}
+          </button>
+        )}
+      </div>
+      {open && !isCurrent && (
+        <div className="mt-2.5 flex items-center gap-2">
+          <input
+            value={confirm}
+            onChange={(e) => setConfirm(e.target.value)}
+            placeholder={`type "${phrase}" to confirm`}
+            autoFocus
+            autoComplete="off"
+            className="flex-1 border border-slate-200 rounded-full px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-slate-300"
+          />
+          <button
+            onClick={onConfirm}
+            disabled={!ready || busy}
+            className={`shrink-0 text-xs font-semibold rounded-full px-4 py-1.5 text-white disabled:opacity-40 ${btn}`}
+          >
+            {busy ? '…' : 'Confirm'}
+          </button>
+        </div>
+      )}
     </div>
   )
 }

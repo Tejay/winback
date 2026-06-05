@@ -5,6 +5,7 @@ import { eq, and } from 'drizzle-orm'
 import { ClassificationResult } from './types'
 import { generateUnsubscribeToken } from './unsubscribe-token'
 import { logEvent } from './events'
+import { checkSendingAllowed } from './sending-mode'
 import { callWithRetry } from './retry'
 import {
   renderDunningEmailHtml,
@@ -345,6 +346,24 @@ export async function isAiPaused(subscriberId: string): Promise<boolean> {
   return row.aiPausedUntil.getTime() > Date.now()
 }
 
+/**
+ * Global sending-control gate for subscriber-facing sends. Returns true if
+ * the email may go out. If blocked (paused/allowlist), logs an
+ * `email_suppressed` event so shadow mode is observable on /admin, and
+ * returns false (caller should return without sending). Used by sendEmail,
+ * sendDunningEmail, sendDunningFollowupEmail.
+ */
+async function emitSuppressedIfBlocked(to: string, subscriberId: string, kind: string): Promise<boolean> {
+  const gate = await checkSendingAllowed(to)
+  if (gate.allowed) return true
+  console.log(`Skipping email — ${gate.reason}:`, subscriberId)
+  await logEvent({
+    name: 'email_suppressed',
+    properties: { subscriberId, to, kind, mode: gate.mode, reason: gate.reason },
+  }).catch(() => { /* telemetry must not break the flow */ })
+  return false
+}
+
 export async function sendEmail(params: {
   to: string
   subject: string
@@ -380,6 +399,11 @@ export async function sendEmail(params: {
   // Spec 22a — respect per-subscriber AI pause
   if (await isAiPaused(subscriberId)) {
     console.log('Skipping email — AI paused for subscriber:', subscriberId)
+    return { messageId: '' }
+  }
+
+  // Global sending control (go-live safety switch).
+  if (!(await emitSuppressedIfBlocked(to, subscriberId, 'subscriber_email'))) {
     return { messageId: '' }
   }
 
@@ -559,6 +583,9 @@ export async function sendDunningEmail(params: {
     console.log('Skipping dunning email — subscriber unsubscribed:', subscriberId)
     return
   }
+
+  // Global sending control (go-live safety switch).
+  if (!(await emitSuppressedIfBlocked(email, subscriberId, 'dunning'))) return
 
   // Spec 55 — payment-recovery cohort pause. Was missing entirely
   // before spec 55 (only the followup variant was gated). Closed
@@ -756,6 +783,8 @@ export async function sendDunningFollowupEmail(params: {
     console.log('Skipping dunning followup — DNC:', subscriberId)
     return
   }
+  // Global sending control (go-live safety switch).
+  if (!(await emitSuppressedIfBlocked(email, subscriberId, 'dunning_followup'))) return
   // Spec 55 — payment-recovery cohort pause
   if (await isCustomerPausedForDunning(subscriberId)) {
     console.log('Skipping dunning followup — customer has paused dunning:', subscriberId)
