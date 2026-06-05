@@ -17,6 +17,7 @@ type ErrorSource =
   | 'oauth_error'
   | 'billing_invoice_failed'
   | 'reactivate_failed'
+  | 'dunning_payment_update_failed'
   | 'email_send_failed'
   | 'classifier_failed'
   | 'webhook_signature_invalid'
@@ -124,6 +125,7 @@ const ERROR_SOURCE_LABELS: Record<ErrorSource, string> = {
   oauth_error:                'OAuth',
   billing_invoice_failed:     'Billing',
   reactivate_failed:          'Win-back',
+  dunning_payment_update_failed: 'Pay recovery',
   email_send_failed:          'Send',
   classifier_failed:          'AI',
   webhook_signature_invalid:  'Webhook auth',
@@ -769,7 +771,7 @@ function ErrorsPanel({
         </div>
         <Sparkline values={spark} max={max} />
       </div>
-      <div className="grid grid-cols-3 sm:grid-cols-6 gap-1 mt-3">
+      <div className="grid grid-cols-3 sm:grid-cols-7 gap-1 mt-3">
         {(Object.keys(ERROR_SOURCE_LABELS) as ErrorSource[]).map((src) => {
           const n = today.bySource[src] ?? 0
           return (

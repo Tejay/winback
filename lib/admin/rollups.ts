@@ -21,6 +21,7 @@ export const ERROR_EVENT_NAMES = [
   'oauth_error',
   'billing_invoice_failed',
   'reactivate_failed',
+  'dunning_payment_update_failed',
   'email_send_failed',
   'classifier_failed',
   'webhook_signature_invalid',
