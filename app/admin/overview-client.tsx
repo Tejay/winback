@@ -505,6 +505,7 @@ function investigateHref(metric: string, errorsBySource: Record<ErrorSource, num
   if (metric === 'invoice_failed')    return '/admin/events?name=billing_invoice_failed'
   if (metric === 'floor_emails_sent') return '/admin/events?name=email_sent'
   if (metric === 'floor_customers_active') return '/admin/events'
+  if (metric === 'webhook_signature_invalid') return '/admin/events?name=webhook_signature_invalid'
   return '/admin/events'
 }
 
@@ -643,7 +644,7 @@ function StuckCohortsPanel({
         <CohortTile
           label="Webhook silent"
           value={cohorts.webhookSilent}
-          sub="no events in 24h"
+          sub="active subs · none in 24h"
           tone={cohorts.webhookSilent > 0 ? 'warn' : 'ok'}
           href="/admin/customers?filter=webhook_silent"
         />
