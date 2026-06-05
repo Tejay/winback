@@ -51,6 +51,8 @@ export const ACTION_CATEGORIES: Record<string, ActionCategory> = {
   classifier_re_run:       'operational',
   reset_classify_attempts: 'operational',
   reengagement_force_sent: 'operational',
+  // Global sending control — flips real subscriber emails on/off platform-wide.
+  set_sending_mode:        'sensitive',
 }
 
 export function categoryFor(action: string): ActionCategory {
