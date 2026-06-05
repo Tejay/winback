@@ -37,8 +37,11 @@ export default async function DashboardPage() {
     .where(eq(customers.userId, session.user.id))
     .limit(1)
 
-  // Route protection: redirect to onboarding if Stripe not connected
-  if (!customer?.stripeAccessToken) redirect('/onboarding/stripe')
+  // Route protection: redirect to onboarding if Stripe not connected.
+  // Admin accounts (e.g. support@) are pure-ops and never connect Stripe —
+  // send them to the admin console instead of the merchant onboarding wall,
+  // which is a dead-end without a Stripe connection.
+  if (!customer?.stripeAccessToken) redirect(isAdmin ? '/admin' : '/onboarding/stripe')
 
   // 2026-05-30 — the red "billing paused" banner is driven PURELY by the
   // live Stripe subscription status — the single source of truth. We read
