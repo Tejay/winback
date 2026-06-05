@@ -121,8 +121,8 @@ export const CRON_SCHEDULES: ReadonlyArray<CronSchedule> = [
     cron: '*/5 * * * *',
     label: 'Every 5 minutes',
     maxIntervalSecs: 15 * 60,
-    purpose: 'Recomputes /admin red-lights and emails ADMIN_ALERT_EMAIL when a rule trips, with a 15-min per-rule cooldown.',
-    staleImpact: 'Red-light email alerts stop firing. The /admin Now page still surfaces lights on every 30s client poll, but no one gets paged unless they have the tab open.',
+    purpose: 'Recomputes /admin red-lights and emails ADMIN_ALERT_EMAIL when a rule trips (production only), with a 15-min per-rule cooldown.',
+    staleImpact: 'Red-light email alerts stop firing. The /admin Now page still surfaces lights on every 30s client poll, but no one gets paged unless they have the tab open. (Dev/preview never send by design.)',
   },
 ]
 
