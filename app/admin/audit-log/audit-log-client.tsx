@@ -5,10 +5,13 @@ import { useSearchParams, useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
 import { RefreshAffordance } from '@/components/admin-refresh'
 
+type Category = 'destructive' | 'sensitive' | 'state-change' | 'operational'
+
 interface Row {
   id: string
   createdAt: string
   action: string
+  category: Category
   adminUserId: string | null
   adminEmail: string | null
   customerId: string | null
@@ -19,10 +22,11 @@ interface Row {
 }
 
 interface Admin { id: string; email: string }
+interface ActionInfo { action: string; active: boolean; category: Category }
 
 interface Payload {
   rows: Row[]
-  knownActions: readonly string[]
+  actions: ActionInfo[]
   admins: Admin[]
   customerNotFound?: boolean
 }
@@ -34,15 +38,11 @@ const SINCE_OPTIONS = [
   { value: '90d', label: 'Last 90 days' },
 ]
 
-const CATEGORY_BY_ACTION: Record<string, 'destructive' | 'state-change' | 'operational'> = {
-  dsr_delete: 'destructive',
-  force_oauth_reset: 'destructive',
-  pause_customer: 'state-change',
-  resolve_open_handoffs: 'state-change',
-  unsubscribe_subscriber: 'state-change',
-  bulk_unsubscribe: 'state-change',
-  billing_retry: 'operational',
-  classifier_re_run: 'operational',
+const CATEGORY_LABEL: Record<Category, string> = {
+  destructive:    'destructive',
+  sensitive:      'sensitive (acts as customer)',
+  'state-change': 'state-change',
+  operational:    'operational',
 }
 
 export function AuditLogClient() {
@@ -67,6 +67,7 @@ function AuditLogInner() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  const [showRaw, setShowRaw] = useState<Set<string>>(new Set())
   // Spec 76 (admin polish) — track when data was last fetched.
   const [lastLoadedAt, setLastLoadedAt] = useState<number | null>(null)
 
@@ -111,6 +112,13 @@ function AuditLogInner() {
       return next
     })
   }
+  function toggleRaw(id: string) {
+    setShowRaw((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id); else next.add(id)
+      return next
+    })
+  }
 
   return (
     <div className="space-y-6">
@@ -138,9 +146,25 @@ function AuditLogInner() {
             className="w-full border border-slate-200 rounded-full px-3 py-2 text-sm bg-white"
           >
             <option value="">All actions</option>
-            {(data?.knownActions ?? []).map((a) => (
-              <option key={a} value={a}>{a}</option>
-            ))}
+            {(() => {
+              const all = data?.actions ?? []
+              const active = all.filter((a) => a.active)
+              const legacy = all.filter((a) => !a.active)
+              return (
+                <>
+                  {active.length > 0 && (
+                    <optgroup label="Active">
+                      {active.map((a) => <option key={a.action} value={a.action}>{a.action}</option>)}
+                    </optgroup>
+                  )}
+                  {legacy.length > 0 && (
+                    <optgroup label="Legacy — no longer performed">
+                      {legacy.map((a) => <option key={a.action} value={a.action}>{a.action}</option>)}
+                    </optgroup>
+                  )}
+                </>
+              )
+            })()}
           </select>
         </Field>
         <Field label="Admin">
@@ -206,27 +230,25 @@ function AuditLogInner() {
             {!loading && (data?.rows.length ?? 0) === 0 ? (
               <tr><td colSpan={6} className="px-4 py-6 text-slate-400">No audit events match these filters.</td></tr>
             ) : (data?.rows ?? []).map((r) => {
-              const cat = CATEGORY_BY_ACTION[r.action] ?? 'operational'
+              const cat = r.category
               const isOpen = expanded.has(r.id)
               return (
-                // Each row yields a Fragment (header tr + optional details tr).
-                // The Fragment is the list child, so it carries the key — not
-                // the inner <tr> (which React doesn't see as the list item).
                 <Fragment key={r.id}>
                   <tr
                     onClick={() => toggle(r.id)}
                     className={`cursor-pointer hover:bg-slate-50 ${categoryStripe(cat)}`}
                   >
-                    {/* Spec 76 — chevron makes row expandability discoverable
-                        without hover. Rotates on expand. */}
                     <td className="px-2 py-2 w-6 align-middle text-slate-400">
                       <span className={`inline-block transition-transform ${isOpen ? 'rotate-90' : ''}`} aria-hidden>▸</span>
                       <span className="sr-only">{isOpen ? 'Collapse' : 'Expand'} properties</span>
                     </td>
-                    <td className="px-4 py-2 text-xs text-slate-500 whitespace-nowrap">{relTime(r.createdAt)}</td>
-                    <td className={`px-4 py-2 text-xs font-mono font-medium ${categoryText(cat)}`}>{r.action}</td>
-                    <td className="px-4 py-2 text-xs text-slate-600">{r.adminEmail ?? '—'}</td>
-                    <td className="px-4 py-2 text-xs">
+                    <td className="px-4 py-2 text-xs text-slate-500 whitespace-nowrap align-middle">{relTime(r.createdAt)}</td>
+                    <td className="px-4 py-2 align-middle">
+                      <span className={`text-xs font-mono font-medium ${categoryText(cat)}`}>{r.action}</span>
+                      {cat === 'sensitive' && <span className="ml-1.5 text-[9px] font-semibold uppercase tracking-wide text-violet-700 bg-violet-50 border border-violet-200 rounded px-1">acts as customer</span>}
+                    </td>
+                    <td className="px-4 py-2 text-xs text-slate-600 align-middle">{r.adminEmail ?? '—'}</td>
+                    <td className="px-4 py-2 text-xs align-middle">
                       {r.customerId ? (
                         <Link
                           href={`/admin/customers/${r.customerId}`}
@@ -237,16 +259,22 @@ function AuditLogInner() {
                         </Link>
                       ) : '—'}
                     </td>
-                    <td className="px-4 py-2 text-xs font-mono text-slate-500 truncate max-w-md">
+                    <td className="px-4 py-2 text-xs font-mono text-slate-500 truncate max-w-md align-middle">
                       {r.subject ?? '—'}
                     </td>
                   </tr>
-                  {expanded.has(r.id) && (
+                  {isOpen && (
                     <tr>
                       <td colSpan={6} className="px-4 py-3 bg-slate-50">
-                        <pre className="text-[11px] font-mono text-slate-700 whitespace-pre-wrap">
-                          {JSON.stringify(r.properties, null, 2)}
-                        </pre>
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-[10px] uppercase tracking-widest font-semibold text-slate-500">Details</span>
+                          <button onClick={(e) => { e.stopPropagation(); toggleRaw(r.id) }} className="text-[10px] text-blue-600 hover:underline">
+                            {showRaw.has(r.id) ? 'structured' : 'raw JSON'}
+                          </button>
+                        </div>
+                        {showRaw.has(r.id)
+                          ? <pre className="text-[11px] font-mono text-slate-700 whitespace-pre-wrap">{JSON.stringify(r.properties, null, 2)}</pre>
+                          : <KvGrid props={r.properties} />}
                       </td>
                     </tr>
                   )}
@@ -255,6 +283,16 @@ function AuditLogInner() {
             })}
           </tbody>
         </table>
+      </div>
+
+      {/* Category legend */}
+      <div className="flex flex-wrap items-center gap-3 text-[11px] text-slate-500">
+        {(['destructive', 'sensitive', 'state-change', 'operational'] as Category[]).map((c) => (
+          <span key={c} className="flex items-center gap-1.5">
+            <span className={`inline-block w-3 h-2 rounded-sm ${legendSwatch(c)}`} />
+            {CATEGORY_LABEL[c]}
+          </span>
+        ))}
       </div>
     </div>
   )
@@ -269,15 +307,43 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   )
 }
 
-function categoryStripe(cat: 'destructive' | 'state-change' | 'operational'): string {
-  return cat === 'destructive' ? 'border-l-4 border-red-300'
+/** Structured key-value view of an event's properties (parity with Events). */
+function KvGrid({ props }: { props: Record<string, unknown> }) {
+  const entries = Object.entries(props ?? {})
+  if (entries.length === 0) return <div className="text-xs text-slate-400 italic">No properties.</div>
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-1">
+      {entries.map(([k, v]) => (
+        <div key={k} className="grid grid-cols-[140px_1fr] gap-2 text-xs">
+          <div className="font-mono text-slate-500 truncate">{k}</div>
+          <div className="font-mono text-slate-800 break-all">
+            {v === null ? <span className="text-slate-400">null</span>
+              : typeof v === 'object' ? JSON.stringify(v)
+              : String(v)}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function categoryStripe(cat: Category): string {
+  return cat === 'destructive' ? 'border-l-4 border-red-400'
+    : cat === 'sensitive' ? 'border-l-4 border-violet-400'
     : cat === 'state-change' ? 'border-l-4 border-amber-300'
     : 'border-l-4 border-blue-300'
 }
-function categoryText(cat: 'destructive' | 'state-change' | 'operational'): string {
+function categoryText(cat: Category): string {
   return cat === 'destructive' ? 'text-red-700'
+    : cat === 'sensitive' ? 'text-violet-700'
     : cat === 'state-change' ? 'text-amber-700'
     : 'text-blue-700'
+}
+function legendSwatch(cat: Category): string {
+  return cat === 'destructive' ? 'bg-red-400'
+    : cat === 'sensitive' ? 'bg-violet-400'
+    : cat === 'state-change' ? 'bg-amber-300'
+    : 'bg-blue-300'
 }
 
 function relTime(iso: string): string {

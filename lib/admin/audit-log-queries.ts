@@ -10,10 +10,13 @@ import { sql, and, eq, gte, desc } from 'drizzle-orm'
 import { getDbReadOnly } from '../db'
 import { wbEvents, customers, users } from '../schema'
 
+export type ActionCategory = 'destructive' | 'sensitive' | 'state-change' | 'operational'
+
 export interface AuditLogRow {
   id: string
   createdAt: Date
   action: string                        // properties.action
+  category: ActionCategory              // derived from action
   adminUserId: string | null
   adminEmail: string | null
   customerId: string | null
@@ -24,30 +27,68 @@ export interface AuditLogRow {
   properties: Record<string, unknown>
 }
 
-/** All known action types — keep in sync with the admin mutation routes. */
-export const KNOWN_ACTIONS = [
-  'pause_customer',
-  'force_oauth_reset',
-  'resolve_open_handoffs',
-  'unsubscribe_subscriber',
-  'bulk_unsubscribe',
-  'dsr_delete',
-  'billing_retry',
-  'classifier_re_run',
-] as const
+/**
+ * Visual category per admin action — drives the row colour stripe.
+ *  - destructive : irreversible data loss (GDPR delete, OAuth reset)
+ *  - sensitive   : acting AS a customer (impersonation) — highest-risk
+ *  - state-change: mutates customer/subscriber state
+ *  - operational : re-runs / forced sends, no lasting state change
+ * Unlisted actions fall through to 'operational'.
+ */
+export const ACTION_CATEGORIES: Record<string, ActionCategory> = {
+  dsr_delete:              'destructive',
+  force_oauth_reset:       'destructive',
+  impersonation_start:     'sensitive',
+  impersonation_stop:      'sensitive',
+  pause_customer:          'state-change',
+  resolve_open_handoffs:   'state-change',
+  unsubscribe_subscriber:  'state-change',
+  bulk_unsubscribe:        'state-change',
+  issue_pilot:             'state-change',
+  flat_rate_assigned:      'state-change',
+  flat_rate_cleared:       'state-change',
+  subscriber_force_status: 'state-change',
+  classifier_re_run:       'operational',
+  reset_classify_attempts: 'operational',
+  reengagement_force_sent: 'operational',
+}
 
-export type KnownAction = typeof KNOWN_ACTIONS[number]
+export function categoryFor(action: string): ActionCategory {
+  return ACTION_CATEGORIES[action] ?? 'operational'
+}
 
-/** Visual category — drives row colour in the audit-log UI. */
-export const ACTION_CATEGORIES: Record<string, 'destructive' | 'state-change' | 'operational'> = {
-  dsr_delete: 'destructive',
-  force_oauth_reset: 'destructive',
-  pause_customer: 'state-change',
-  resolve_open_handoffs: 'state-change',
-  unsubscribe_subscriber: 'state-change',
-  bulk_unsubscribe: 'state-change',
-  billing_retry: 'operational',
-  classifier_re_run: 'operational',
+/**
+ * Admin actions retired from the codebase — no emit site (verified by
+ * grep). Grouped under "Legacy" in the filter dropdown so they don't look
+ * like things you can still do. Add a name here when an action is removed.
+ */
+export const LEGACY_ACTIONS = new Set([
+  'perf_fee_refunded',  // performance-fee era — removed in the billing rewrite
+  'billing_retry',      // never wired to a route
+])
+
+export interface AuditActionInfo {
+  action: string
+  active: boolean
+  category: ActionCategory
+}
+
+/**
+ * Distinct admin actions that actually occur (from the data), each tagged
+ * active vs. legacy + its category. Replaces the old hardcoded
+ * KNOWN_ACTIONS list that drifted from the real action set.
+ */
+export async function listAuditActions(): Promise<AuditActionInfo[]> {
+  const rows = await getDbReadOnly()
+    .select({ action: sql<string>`${wbEvents.properties}->>'action'` })
+    .from(wbEvents)
+    .where(eq(wbEvents.name, 'admin_action'))
+    .groupBy(sql`${wbEvents.properties}->>'action'`)
+  return rows
+    .map((r) => r.action)
+    .filter((a): a is string => !!a)
+    .sort()
+    .map((action) => ({ action, active: !LEGACY_ACTIONS.has(action), category: categoryFor(action) }))
 }
 
 const SINCE_INTERVALS: Record<string, string> = {
@@ -136,8 +177,8 @@ export async function queryAuditLog(filters: AuditLogFilters = {}): Promise<Audi
     .orderBy(desc(wbEvents.createdAt))
     .limit(limit)
 
-  return rows.map((r) => ({
-    ...r,
-    action: r.action ?? '(unknown)',
-  }))
+  return rows.map((r) => {
+    const action = r.action ?? '(unknown)'
+    return { ...r, action, category: categoryFor(action) }
+  })
 }

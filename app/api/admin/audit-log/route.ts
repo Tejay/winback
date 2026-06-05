@@ -6,7 +6,7 @@ import { sql, eq } from 'drizzle-orm'
 import {
   queryAuditLog,
   listAuditAdmins,
-  KNOWN_ACTIONS,
+  listAuditActions,
 } from '@/lib/admin/audit-log-queries'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -49,25 +49,18 @@ export async function GET(req: NextRequest) {
         .where(sql`lower(${users.email}) = ${customerInput.toLowerCase()}`)
         .limit(1)
       if (!row) {
-        return NextResponse.json({
-          rows: [],
-          knownActions: KNOWN_ACTIONS,
-          admins: [],
-          customerNotFound: true,
-        })
+        const actions = await listAuditActions()
+        return NextResponse.json({ rows: [], actions, admins: [], customerNotFound: true })
       }
       customerId = row.id
     }
   }
 
-  const [rows, admins] = await Promise.all([
+  const [rows, admins, actions] = await Promise.all([
     queryAuditLog({ action, adminUserId, customerId, since, limit }),
     listAuditAdmins('90d'),
+    listAuditActions(),
   ])
 
-  return NextResponse.json({
-    rows,
-    knownActions: KNOWN_ACTIONS,
-    admins,
-  })
+  return NextResponse.json({ rows, actions, admins })
 }
