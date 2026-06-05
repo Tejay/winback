@@ -17,6 +17,7 @@ import {
   customers,
   wbEvents,
 } from '../schema'
+import { getDrainQueueDepth } from '@/src/winback/lib/pause-drain'
 
 const HOUR_MS = 60 * 60 * 1000
 const DAY_MS  = 24 * HOUR_MS
@@ -107,18 +108,12 @@ export async function buildStuckCohorts(): Promise<StuckCohorts> {
       ))
       .then((rows) => rows[0]?.n ?? 0),
 
-    // Drain-paused queue: subscribers that haven't been drain-processed yet
-    // for customers that ARE activated (i.e. drain should be running for
-    // them). Matches the predicate in /api/cron/drain-paused-queue.
-    db
-      .select({ n: sql<number>`count(*)::int` })
-      .from(churnedSubscribers)
-      .innerJoin(customers, eq(churnedSubscribers.customerId, customers.id))
-      .where(and(
-        isNull(churnedSubscribers.pauseDrainProcessedAt),
-        isNotNull(customers.activatedAt),
-      ))
-      .then((rows) => rows[0]?.n ?? 0),
+    // Drain-paused queue: the REAL depth the drain cron can act on, via the
+    // shared getPausedQueueCounts predicate (cancellations status='pending',
+    // dunning awaiting_retry, replies). Previously this counted every
+    // NULL-flagged row of an activated customer — including already-processed
+    // subscribers the cron never selects — so it never drained to zero.
+    getDrainQueueDepth(),
 
     // Unclassified queue: subscribers awaiting first classification (attempts
     // below the dead-letter threshold). This is the regular queue depth —

@@ -69,17 +69,24 @@ export interface TickSummary {
 // ─── public ────────────────────────────────────────────────────────────────
 
 /**
- * Counts of subscribers in the drain queue for one customer. Used by
- * /billing/success to render the "we're processing N events…" line.
+ * Counts of subscribers in the drain queue. Pass a customerId for a single
+ * customer (e.g. /billing/success "we're processing N events…"), or omit it
+ * for the platform-wide depth (the admin "Activation backlog" tile).
+ *
+ * This predicate IS the drain queue — the same set runDrainTick processes —
+ * kept in one place so a UI counter can't drift from the cron. (It used to:
+ * the admin tile counted every NULL-flagged row, including already-processed
+ * subscribers the cron would never touch, so it never drained.)
+ *
  * Cheap — backed by the partial index on pause_drain_processed_at.
  */
-export async function getPausedQueueCounts(customerId: string): Promise<QueueCounts> {
+export async function getPausedQueueCounts(customerId?: string | null): Promise<QueueCounts> {
   const [cancRow] = await db
     .select({ n: sql<number>`COUNT(*)::int` })
     .from(churnedSubscribers)
     .innerJoin(customers, eq(churnedSubscribers.customerId, customers.id))
     .where(and(
-      eq(churnedSubscribers.customerId, customerId),
+      customerId ? eq(churnedSubscribers.customerId, customerId) : undefined,
       isNotNull(customers.activatedAt),
       isNotNull(customers.stripeSubscriptionId),
       isNull(churnedSubscribers.pauseDrainProcessedAt),
@@ -95,7 +102,7 @@ export async function getPausedQueueCounts(customerId: string): Promise<QueueCou
     .from(churnedSubscribers)
     .innerJoin(customers, eq(churnedSubscribers.customerId, customers.id))
     .where(and(
-      eq(churnedSubscribers.customerId, customerId),
+      customerId ? eq(churnedSubscribers.customerId, customerId) : undefined,
       isNotNull(customers.activatedAt),
       isNotNull(customers.stripeSubscriptionId),
       isNull(churnedSubscribers.pauseDrainProcessedAt),
@@ -113,7 +120,7 @@ export async function getPausedQueueCounts(customerId: string): Promise<QueueCou
     .from(churnedSubscribers)
     .innerJoin(customers, eq(churnedSubscribers.customerId, customers.id))
     .where(and(
-      eq(churnedSubscribers.customerId, customerId),
+      customerId ? eq(churnedSubscribers.customerId, customerId) : undefined,
       isNotNull(customers.activatedAt),
       isNotNull(customers.stripeSubscriptionId),
       isNull(churnedSubscribers.pauseDrainProcessedAt),
@@ -136,6 +143,15 @@ export async function getPausedQueueCounts(customerId: string): Promise<QueueCou
     replies,
     total: cancellations + paymentRecoveries + replies,
   }
+}
+
+/**
+ * Platform-wide drain-queue depth — the total the drain cron can actually act
+ * on across all activated, subscribed customers. Powers the admin "Activation
+ * backlog" tile so it reflects real pending work, not already-processed rows.
+ */
+export async function getDrainQueueDepth(): Promise<number> {
+  return (await getPausedQueueCounts()).total
 }
 
 /**
