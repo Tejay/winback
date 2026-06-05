@@ -19,8 +19,11 @@ import { wbEvents, recoveries, users, customers } from '../schema'
  */
 export const ERROR_EVENT_NAMES = [
   'oauth_error',
+  'backfill_failed',
+  'billing_activate_failed',
   'billing_invoice_failed',
   'reactivate_failed',
+  'dunning_payment_update_failed',
   'email_send_failed',
   'classifier_failed',
   'webhook_signature_invalid',
@@ -200,6 +203,12 @@ export interface OverviewRollup {
     openai:   ServiceSignal
     sendgrid: ServiceSignal
     postgres: ServiceSignal
+  }
+  /** Email deliverability today, from the Resend events webhook. Kept out of
+   *  the error columns/total — routine bounces would otherwise inflate it. */
+  deliverability: {
+    bouncedToday: number
+    complainedToday: number
   }
 }
 
@@ -892,6 +901,23 @@ export async function buildOverviewRollup(): Promise<OverviewRollup> {
     })
   }
 
+  // Deliverability (Resend events webhook). Counted separately from app errors.
+  const [bouncedToday, complainedToday] = await Promise.all([
+    countEventsSince('email_bounced', todayStart),
+    countEventsSince('email_complained', todayStart),
+  ])
+  // Spam complaints are reputation-critical — even a few will get the sending
+  // domain throttled/blocked, which silently kills ALL delivery. Page on any.
+  if (complainedToday > 0) {
+    redLights.push({
+      metric: 'email_complained',
+      kind: 'spike',
+      today: complainedToday,
+      median7d: 0,
+      summary: `Spam complaints — ${complainedToday} today. Complaints damage sender reputation and can get the domain blocked, silently killing all email delivery. Investigate recipients/content now.`,
+    })
+  }
+
   return {
     today: {
       classifications: emailsSentToday,  // proxy — every send corresponds to one classification
@@ -932,5 +958,6 @@ export async function buildOverviewRollup(): Promise<OverviewRollup> {
     errorsTail,
     recentAdminActivity,
     serviceSignals,
+    deliverability: { bouncedToday, complainedToday },
   }
 }

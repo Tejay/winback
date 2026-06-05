@@ -120,6 +120,18 @@ export async function processDunningPaymentUpdate(event: Stripe.Event): Promise<
     },
   })
 
+  // Symmetric to reactivate_failed (the win-back side): the subscriber engaged
+  // and updated their card, but NO invoice could be recovered — the new card
+  // still declined. Surface it as an error so payment-recovery failures are as
+  // visible on /admin as win-back failures ("Pay recovery" in errors-today).
+  if (retried === 0 && retryFailures > 0) {
+    await logEvent({
+      name: 'dunning_payment_update_failed',
+      customerId,
+      properties: { subscriberId, paymentMethodId, retryFailures },
+    })
+  }
+
   console.log(
     '[dunning-update-payment] subscriber=', subscriberId,
     'pm=',                                  paymentMethodId,
