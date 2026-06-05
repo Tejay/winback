@@ -39,6 +39,10 @@ export default function PricingPage() {
               No per-recovery charges. No surprise invoices. Free until we
               deliver your first recovered customer.
             </p>
+            <p className="mt-3 text-xs text-slate-500">
+              <strong className="font-semibold text-slate-600">MRR</strong> ={' '}
+              Monthly Recurring Revenue.
+            </p>
           </div>
 
           {/* Four tier cards */}
