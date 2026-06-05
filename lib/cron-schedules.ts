@@ -116,6 +116,15 @@ export const CRON_SCHEDULES: ReadonlyArray<CronSchedule> = [
     staleImpact: 'Tier recommendations and upgrade/downgrade prompts freeze at the last successful run. Customers continue paying their billed_tier — no economic impact, just stale advice.',
   },
   {
+    name: 'cluster-cancellations',
+    displayName: 'Cancellation clustering',
+    cron: '0 2 * * 0',
+    label: 'Weekly Sunday 02:00 UTC',
+    maxIntervalSecs: DAY * 8,
+    purpose: 'Per merchant with 10+ recent high-confidence cancellations, LLM-clusters them into themes ("what to ship next") and flags post-ship insights — written to wb_cancellation_themes for the merchant /reasons page.',
+    staleImpact: 'The merchant /reasons "what to ship next" themes freeze at the last successful run. No data loss and no emails affected — purely stale product-feedback synthesis.',
+  },
+  {
     name: 'red-light-check',
     displayName: 'Red-light email alert',
     cron: '*/5 * * * *',
