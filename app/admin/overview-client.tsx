@@ -21,7 +21,7 @@ type ErrorSource =
   | 'classifier_failed'
   | 'webhook_signature_invalid'
 
-type CronStatus = 'ok' | 'failed' | 'stale' | 'slow' | 'never-run'
+type CronStatus = 'ok' | 'failed' | 'stale' | 'never-run'
 
 interface OverviewRollup {
   today: {
@@ -107,7 +107,6 @@ interface OverviewRollup {
     status: CronStatus
     lastRunAt: string | null
     durationMs: number | null
-    avgDurationMs: number | null
     errorMessage: string | null
   }>
   /** Back-compat: same value as stuckCohorts.classifierDeadLetter */
@@ -825,7 +824,7 @@ function ErrorsPanel({
 }
 
 // ---------------------------------------------------------------------------
-// Cron health (extended for slow status)
+// Cron health — pure staleness: ok / stale / failed / never-run
 // ---------------------------------------------------------------------------
 
 function CronHealthSection({ rows }: { rows: OverviewRollup['cronHealth'] }) {
@@ -834,7 +833,6 @@ function CronHealthSection({ rows }: { rows: OverviewRollup['cronHealth'] }) {
       case 'ok':        return { cls: 'bg-green-50 text-green-700 border-green-200', label: '✓ ok' }
       case 'failed':    return { cls: 'bg-red-50  text-red-700  border-red-200',     label: '⚠ FAILED' }
       case 'stale':     return { cls: 'bg-amber-50 text-amber-700 border-amber-200', label: 'ⓘ stale' }
-      case 'slow':      return { cls: 'bg-amber-50 text-amber-700 border-amber-200', label: '⚡ slow' }
       default:          return { cls: 'bg-slate-100 text-slate-500 border-slate-200', label: 'never run' }
     }
   }
@@ -846,7 +844,7 @@ function CronHealthSection({ rows }: { rows: OverviewRollup['cronHealth'] }) {
       <div className="divide-y divide-slate-100">
         {rows.map((r) => {
           const b = badge(r.status)
-          const isBad = r.status === 'failed' || r.status === 'stale' || r.status === 'slow'
+          const isBad = r.status === 'failed' || r.status === 'stale'
           return (
             <details key={r.name} className="group py-2.5 first:pt-0 last:pb-0">
               <summary className="cursor-pointer list-none flex items-center gap-3 flex-wrap hover:bg-slate-50 -mx-2 px-2 py-1 rounded-lg">
@@ -861,9 +859,6 @@ function CronHealthSection({ rows }: { rows: OverviewRollup['cronHealth'] }) {
                   {r.durationMs !== null && (
                     <span className="text-slate-400 tabular-nums"> · {r.durationMs}ms</span>
                   )}
-                  {r.avgDurationMs !== null && r.avgDurationMs > 0 && (
-                    <span className="text-slate-300 tabular-nums"> (avg {r.avgDurationMs}ms)</span>
-                  )}
                 </span>
               </summary>
               <div className="pl-8 pr-2 pt-2 pb-1 space-y-1.5">
@@ -874,11 +869,6 @@ function CronHealthSection({ rows }: { rows: OverviewRollup['cronHealth'] }) {
                 {r.status === 'failed' && r.errorMessage && (
                   <div className="text-xs text-red-700 max-w-3xl">
                     <span className="font-medium">Error:</span> {r.errorMessage}
-                  </div>
-                )}
-                {r.status === 'slow' && r.avgDurationMs && (
-                  <div className="text-xs text-amber-700 max-w-3xl">
-                    <span className="font-medium">Slow:</span> this run took {r.durationMs}ms vs rolling avg of {r.avgDurationMs}ms (≥3×).
                   </div>
                 )}
                 <Link

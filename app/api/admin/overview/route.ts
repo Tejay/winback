@@ -26,7 +26,7 @@ async function countSuppressedToday(): Promise<number> {
  * Composed in parallel:
  *  - rollup        (counters, sparklines, growth, paywall, billing,
  *                   red-lights, errorsTail, recentAdminActivity)
- *  - cronHealth    (per-cron status incl. slow-detection)
+ *  - cronHealth    (per-cron staleness: ok/stale/failed/never-run)
  *  - stuckCohorts  (6 point-in-time worklist tiles)
  *  - deadLetteredClassify (kept for back-compat; same value also
  *                          appears in stuckCohorts.classifierDeadLetter)
