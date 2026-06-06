@@ -46,20 +46,23 @@ function isValidTab(v: string | null): v is TabKey {
 
 function TabButton({
   active,
+  color = 'blue',
   onClick,
   children,
 }: {
   active: boolean
+  color?: 'blue' | 'emerald'
   onClick: () => void
   children: React.ReactNode
 }) {
+  const activeBg = color === 'emerald' ? 'bg-emerald-600' : 'bg-blue-600'
   return (
     <button
       type="button"
       onClick={onClick}
       className={
         active
-          ? 'flex items-center gap-2 px-5 py-2.5 rounded-2xl text-sm font-semibold bg-blue-600 text-white shadow-sm border border-transparent transition-colors'
+          ? `flex items-center gap-2 px-5 py-2.5 rounded-2xl text-sm font-semibold ${activeBg} text-white shadow-sm border border-transparent transition-colors`
           : 'flex items-center gap-2 px-5 py-2.5 rounded-2xl text-sm font-medium bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300 transition-colors'
       }
     >
@@ -111,20 +114,38 @@ export function ReasonsTabs({ suggestedProps, activeProps, promotionsProps, coun
 
   return (
     <>
-      {/* Tab strip — pill buttons matching the dashboard cohort tabs */}
-      <div className="flex items-center gap-3 mb-6">
-        <TabButton active={tab === 'suggested'} onClick={() => setTab('suggested')}>
-          Suggested
-          {suggestedBadge}
-        </TabButton>
-        <TabButton active={tab === 'active'} onClick={() => setTab('active')}>
-          Active
-          {activeBadge}
-        </TabButton>
-        <TabButton active={tab === 'promotions'} onClick={() => setTab('promotions')}>
-          Promotions
-          {promoBadge}
-        </TabButton>
+      {/* Tab strip — two labeled groups so the structure reads at a glance:
+          FEATURES (Suggested + Active, blue) bound together; DISCOUNT
+          (Promotions, green) set apart. Same three tabs + behaviour as
+          before — only the grouping/colour is new. */}
+      <div className="flex items-start gap-6 mb-6">
+        {/* Features group — blue */}
+        <div className="w-fit">
+          <div className="text-[10px] font-semibold uppercase tracking-widest text-slate-400 mb-1.5 pl-1">Features</div>
+          <div className="flex items-center gap-2">
+            <TabButton active={tab === 'suggested'} color="blue" onClick={() => setTab('suggested')}>
+              Suggested
+              {suggestedBadge}
+            </TabButton>
+            <TabButton active={tab === 'active'} color="blue" onClick={() => setTab('active')}>
+              Active
+              {activeBadge}
+            </TabButton>
+          </div>
+          <div className="mt-1.5 w-full h-2 border-x border-b border-slate-200 rounded-b-lg" aria-hidden></div>
+        </div>
+
+        {/* Discount group — green */}
+        <div className="w-fit">
+          <div className="text-[10px] font-semibold uppercase tracking-widest text-slate-400 mb-1.5 pl-1">Discount</div>
+          <div className="flex items-center">
+            <TabButton active={tab === 'promotions'} color="emerald" onClick={() => setTab('promotions')}>
+              Promotions
+              {promoBadge}
+            </TabButton>
+          </div>
+          <div className="mt-1.5 w-full h-2 border-x border-b border-slate-200 rounded-b-lg" aria-hidden></div>
+        </div>
       </div>
 
       {/* Suggested pane */}
