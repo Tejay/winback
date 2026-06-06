@@ -94,10 +94,10 @@ export function HowItWorks() {
                 </p>
                 <p>
                   Sent from our verified sending domain with your name on
-                  the From line. Subscriber replies route to your normal
-                  inbox &mdash; WinbackFlow doesn&rsquo;t intercept or
-                  auto-respond. The conversation from there is between
-                  you and them.
+                  the From line. Subscriber replies are captured in your
+                  WinbackFlow dashboard &mdash; you read and respond right
+                  from the drawer, and WinbackFlow never auto-responds. The
+                  conversation from there is between you and them.
                 </p>
               </>
             }
