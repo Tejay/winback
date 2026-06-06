@@ -107,14 +107,27 @@ export async function POST(
   if (!apiKey) return NextResponse.json({ error: 'RESEND_API_KEY not configured' }, { status: 503 })
 
   const { subject, text } = copyFor(stage, customer.founderName, Number(customer.recoveredCents ?? 0))
+  let emailId: string | null = null
   try {
     const resend = new Resend(apiKey)
-    await resend.emails.send({ from: FROM, to, subject, text })
+    // The Resend SDK returns { data, error } and does NOT throw on API
+    // errors — must check res.error, or a rejected send looks like success.
+    const res = await resend.emails.send({ from: FROM, to, subject, text })
+    if (res.error) {
+      console.error('[admin/nudge] resend error', customerId, res.error)
+      return NextResponse.json(
+        { error: `Resend: ${res.error.message ?? res.error.name ?? 'send rejected'}` },
+        { status: 502 },
+      )
+    }
+    emailId = res.data?.id ?? null
   } catch (err) {
     console.error('[admin/nudge] send failed', customerId, err)
     return NextResponse.json({ error: 'Send failed' }, { status: 502 })
   }
 
-  await logEvent({ name: 'funnel_nudge_sent', customerId, userId: auth.userId, properties: { stage, to } })
-  return NextResponse.json({ ok: true })
+  // Only logged on a genuinely accepted send (so the 24h guard + funnel
+  // metrics never count a phantom nudge). emailId enables tracing in Resend.
+  await logEvent({ name: 'funnel_nudge_sent', customerId, userId: auth.userId, properties: { stage, to, emailId } })
+  return NextResponse.json({ ok: true, emailId })
 }
