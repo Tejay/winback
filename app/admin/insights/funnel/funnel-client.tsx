@@ -176,16 +176,16 @@ function FunnelInner() {
       <section className="space-y-3">
         <h2 className="text-lg font-semibold text-slate-900">Stuck merchants <span className="text-slate-400 font-normal text-sm">· reach out</span></h2>
         <StuckCard
-          title="Reached connect screen, didn't connect"
-          stage="viewedNotConnected"
-          rows={data.stuck.viewedNotConnected}
-        />
-        <StuckCard
           title="Registered, never reached connect screen"
           stage="registeredNotViewed"
           rows={data.stuck.registeredNotViewed}
           note="check the post-signup redirect if this is non-zero"
           noteTone="amber"
+        />
+        <StuckCard
+          title="Reached connect screen, didn't connect"
+          stage="viewedNotConnected"
+          rows={data.stuck.viewedNotConnected}
         />
         <StuckCard
           title="Connected, no first recovery"
