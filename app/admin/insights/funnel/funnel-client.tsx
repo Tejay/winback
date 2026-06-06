@@ -26,6 +26,7 @@ interface FunnelData {
   window: FunnelWindow
   stages: FunnelStage[]
   ctaByLocation: Array<{ location: string; count: number }>
+  landedByCountry: Array<{ country: string; count: number }>
   stuck: {
     registeredNotViewed: StuckMerchant[]
     viewedNotConnected: StuckMerchant[]
@@ -49,6 +50,16 @@ const STAGE_HREF: Record<string, string> = {
   connected:     '/admin/events?name=oauth_completed',
   activated:     '/admin/customers?filter=activated',
   subscribed:    '/admin/customers?filter=paying',
+}
+
+/** ISO 3166-1 alpha-2 code → flag emoji (regional indicators). '🌐' for unknown. */
+function flag(cc: string): string {
+  if (!/^[A-Za-z]{2}$/.test(cc)) return '🌐'
+  const up = cc.toUpperCase()
+  return String.fromCodePoint(
+    0x1f1e6 + up.charCodeAt(0) - 65,
+    0x1f1e6 + up.charCodeAt(1) - 65,
+  )
 }
 
 export function FunnelClient() {
@@ -120,6 +131,7 @@ function FunnelInner() {
   const bottom = data.stages[data.stages.length - 1]?.value ?? 0
   const overallPct = top > 0 ? ((bottom / top) * 100).toFixed(1) : '0'
   const totalCta = data.ctaByLocation.reduce((s, r) => s + r.count, 0)
+  const totalLanded = data.landedByCountry.reduce((s, r) => s + r.count, 0)
 
   return (
     <div className="space-y-8">
@@ -166,6 +178,24 @@ function FunnelInner() {
               <div key={r.location} className="rounded-xl bg-slate-50 p-3">
                 <div className="text-lg font-bold tabular-nums">{r.count.toLocaleString()}</div>
                 <div className="text-xs text-slate-500">{r.location}</div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* Landed by country */}
+      {totalLanded > 0 && (
+        <section className="bg-white rounded-2xl border border-slate-200 p-4">
+          <div className="text-[10px] font-semibold uppercase tracking-widest text-slate-500 mb-3">Landed by country · {totalLanded.toLocaleString()}</div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3">
+            {data.landedByCountry.map((r) => (
+              <div key={r.country} className="rounded-xl bg-slate-50 p-3 flex items-center gap-2.5">
+                <span className="text-xl leading-none">{flag(r.country)}</span>
+                <div>
+                  <div className="text-lg font-bold tabular-nums leading-none">{r.count.toLocaleString()}</div>
+                  <div className="text-xs text-slate-500 mt-0.5">{r.country === '??' ? 'unknown' : r.country}</div>
+                </div>
               </div>
             ))}
           </div>

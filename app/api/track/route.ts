@@ -57,10 +57,15 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Invalid event' }, { status: 400 })
   }
 
-  await logEvent({
-    name: parsed.data.event,
-    properties: parsed.data.location ? { location: parsed.data.location } : {},
-  })
+  // Vercel injects the visitor's geo on the request (this POST carries the
+  // visitor's IP). ISO 3166-1 alpha-2 country code; absent on localhost.
+  const country = req.headers.get('x-vercel-ip-country') || undefined
+
+  const properties: Record<string, unknown> = {}
+  if (parsed.data.location) properties.location = parsed.data.location
+  if (country) properties.country = country
+
+  await logEvent({ name: parsed.data.event, properties })
 
   return NextResponse.json({ ok: true })
 }

@@ -54,6 +54,8 @@ export interface FunnelData {
   window: FunnelWindow
   stages: FunnelStage[]
   ctaByLocation: Array<{ location: string; count: number }>
+  /** "Landed" events grouped by visitor country (ISO alpha-2; '??' = unknown). */
+  landedByCountry: Array<{ country: string; count: number }>
   stuck: {
     registeredNotViewed: StuckMerchant[]
     viewedNotConnected: StuckMerchant[]
@@ -113,6 +115,7 @@ export async function buildAcquisitionFunnel(window: FunnelWindow = '30d'): Prom
     activated,
     subscribed,
     ctaRows,
+    countryRows,
     registeredNotViewed,
     viewedNotConnected,
     connectedNotActivated,
@@ -135,6 +138,17 @@ export async function buildAcquisitionFunnel(window: FunnelWindow = '30d'): Prom
       .from(wbEvents)
       .where(and(eq(wbEvents.name, 'cta_clicked'), gte(wbEvents.createdAt, since)))
       .groupBy(sql`coalesce(${wbEvents.properties}->>'location', 'unknown')`)
+      .orderBy(desc(sql`count(*)`)),
+
+    // Landing events grouped by visitor country (within window).
+    getDbReadOnly()
+      .select({
+        country: sql<string>`coalesce(${wbEvents.properties}->>'country', '??')`,
+        n: sql<number>`count(*)::int`,
+      })
+      .from(wbEvents)
+      .where(and(eq(wbEvents.name, 'landing_viewed'), gte(wbEvents.createdAt, since)))
+      .groupBy(sql`coalesce(${wbEvents.properties}->>'country', '??')`)
       .orderBy(desc(sql`count(*)`)),
 
     // --- stuck lists (current state, not windowed) ---
@@ -181,6 +195,7 @@ export async function buildAcquisitionFunnel(window: FunnelWindow = '30d'): Prom
     window,
     stages,
     ctaByLocation: ctaRows.map((r) => ({ location: r.location, count: r.n })),
+    landedByCountry: countryRows.map((r) => ({ country: r.country, count: r.n })),
     stuck: { registeredNotViewed, viewedNotConnected, connectedNotActivated, activatedNotSubscribed },
   }
 }
