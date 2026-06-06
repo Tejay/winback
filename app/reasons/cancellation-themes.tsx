@@ -98,11 +98,12 @@ function CategoryPill({ category }: { category: string | null }) {
 
 function ThemeCard({ theme }: { theme: ThemeView }) {
   const heat = heatOf(theme.customerCount)
-  // ?tab=active hands the user to the Active tab; the prefill_* params
-  // open the modal pre-filled. ReasonsClient clears the prefill_* once
-  // it reads them, preserving tab=active.
+  // ?tab=features keeps the user on the Features tab (where the reasons
+  // editor now lives, beside the themes); the prefill_* params open the
+  // Add modal pre-filled. ReasonsClient clears the prefill_* once it reads
+  // them, preserving tab=features.
   const prefillHref =
-    '/reasons?tab=active' +
+    '/reasons?tab=features' +
     `&prefill_title=${encodeURIComponent(theme.title)}` +
     `&prefill_description=${encodeURIComponent(theme.description)}`
 

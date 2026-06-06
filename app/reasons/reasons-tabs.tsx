@@ -6,25 +6,29 @@ import { ReasonsClient } from './reasons-client'
 import { PromotionsSection, type PromotionView } from './promotions-section'
 
 /**
- * Spec 79 follow-up — /reasons restructured into three pill-button tabs:
+ * /reasons — two tabs, one per win-back lever:
  *
- *   • Suggested (default landing) — AI-clustered cancellation themes +
- *     post-ship insights. The "demand" surface; what to ship next.
- *   • Active — the merchant's published reasons list + always-visible
- *     guidance strip + "+ Add a reason". The "supply" surface.
- *   • Promotions — Stripe-native single-select promo + toggle for the
- *     price-canceler fallback path.
+ *   • Features (default) — the demand → supply loop, side by side:
+ *       LEFT  "What they asked for"  = AI-clustered cancellation themes
+ *       RIGHT "What you've shipped"  = the merchant's published reasons
+ *     "+ Add as reason" on a theme hands off to the reasons editor in the
+ *     same tab (the two former "Suggested" + "Active" tabs, merged so the
+ *     demand→supply relationship is visible without tab-hopping).
+ *   • Discount — the price-canceller fallback: a Stripe-native promo with
+ *     an off / manual / auto switch.
  *
- * Tab state lives in the URL (?tab=...) so deep-links + browser-back work
- * and the "+ Add as reason" hand-off from Suggested can drive the active
- * tab via navigation (?tab=active&prefill_title=...).
+ * Tab state lives in the URL (?tab=features|discount) so deep-links +
+ * browser-back work and the "+ Add as reason" hand-off can drive the tab
+ * via navigation (?tab=features&prefill_title=...). Legacy values
+ * (suggested/active → features, promotions → discount) still resolve so
+ * old links don't 404.
  *
- * All three panes are always mounted; we toggle `hidden` so soft-navs
- * don't unmount and remount the heavy ReasonsClient + its modal state
- * on every tab switch. Mount cost up-front; switches are instant.
+ * Both panes are always mounted; we toggle `hidden` so soft-navs don't
+ * unmount/remount the heavy ReasonsClient + its modal state on every tab
+ * switch. Mount cost up-front; switches are instant.
  */
 
-type TabKey = 'suggested' | 'active' | 'promotions'
+type TabKey = 'features' | 'discount'
 
 interface Counts {
   suggested:  number   // theme rows (excluding post-ship insights)
@@ -40,26 +44,32 @@ interface Props {
   counts:          Counts
 }
 
-function isValidTab(v: string | null): v is TabKey {
-  return v === 'suggested' || v === 'active' || v === 'promotions'
+// Resolve the URL tab param to one of the two tabs. Legacy three-tab
+// values are mapped forward so existing links/bookmarks still land.
+function resolveTab(v: string | null): TabKey {
+  if (v === 'discount' || v === 'promotions') return 'discount'
+  return 'features' // 'features' | 'suggested' | 'active' | null | invalid
 }
 
 function TabButton({
   active,
+  color = 'blue',
   onClick,
   children,
 }: {
   active: boolean
+  color?: 'blue' | 'emerald'
   onClick: () => void
   children: React.ReactNode
 }) {
+  const activeBg = color === 'emerald' ? 'bg-emerald-600' : 'bg-blue-600'
   return (
     <button
       type="button"
       onClick={onClick}
       className={
         active
-          ? 'flex items-center gap-2 px-5 py-2.5 rounded-2xl text-sm font-semibold bg-blue-600 text-white shadow-sm border border-transparent transition-colors'
+          ? `flex items-center gap-2 px-5 py-2.5 rounded-2xl text-sm font-semibold ${activeBg} text-white shadow-sm border border-transparent transition-colors`
           : 'flex items-center gap-2 px-5 py-2.5 rounded-2xl text-sm font-medium bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300 transition-colors'
       }
     >
@@ -71,12 +81,11 @@ function TabButton({
 export function ReasonsTabs({ suggestedProps, activeProps, promotionsProps, counts }: Props) {
   const sp = useSearchParams()
   const router = useRouter()
-  const tabParam = sp.get('tab')
-  const tab: TabKey = isValidTab(tabParam) ? tabParam : 'suggested'
+  const tab: TabKey = resolveTab(sp.get('tab'))
 
   function setTab(next: TabKey) {
-    // Preserve any prefill_* params so the Suggested → Active hand-off
-    // (which lands with both tab=active AND prefill_title set) keeps the
+    // Preserve any prefill_* params so the theme → editor hand-off
+    // (which lands with tab=features AND prefill_title set) keeps the
     // prefill alive across a manual click. ReasonsClient clears prefill
     // itself once it reads them.
     const params = new URLSearchParams(sp.toString())
@@ -84,67 +93,73 @@ export function ReasonsTabs({ suggestedProps, activeProps, promotionsProps, coun
     router.push(`/reasons?${params.toString()}`, { scroll: false })
   }
 
-  // Pretty count labels alongside each tab so the merchant doesn't need
-  // to click in to see state.
-  const suggestedBadge = counts.suggested > 0
+  // Features carries the "new demand" attention badge: count of clustered
+  // themes the merchant hasn't shipped yet (red, like the old Suggested tab).
+  const featuresBadge = counts.suggested > 0
     ? (
       <span className={`inline-flex items-center justify-center text-[10px] font-semibold rounded-full w-4 h-4 ${
-        tab === 'suggested' ? 'bg-white/20 text-white' : 'bg-red-500 text-white'
+        tab === 'features' ? 'bg-white/20 text-white' : 'bg-red-500 text-white'
       }`}>
         {counts.suggested}
       </span>
     )
     : null
 
-  const activeBadge = counts.active > 0
-    ? <span className={`text-xs font-normal ${tab === 'active' ? 'opacity-80' : 'text-slate-400'}`}>{counts.active}</span>
-    : null
-
-  const promoBadge = counts.promoOn
+  // Discount carries an on/off state badge.
+  const discountBadge = counts.promoOn
     ? (
-      <span className={`inline-flex items-center gap-1 text-xs font-normal ${tab === 'promotions' ? 'text-emerald-100' : 'text-emerald-600'}`}>
-        <span className={`w-1.5 h-1.5 rounded-full ${tab === 'promotions' ? 'bg-emerald-200' : 'bg-emerald-500'}`}></span>
+      <span className={`inline-flex items-center gap-1 text-xs font-normal ${tab === 'discount' ? 'text-emerald-100' : 'text-emerald-600'}`}>
+        <span className={`w-1.5 h-1.5 rounded-full ${tab === 'discount' ? 'bg-emerald-200' : 'bg-emerald-500'}`}></span>
         on
       </span>
     )
-    : <span className={`text-xs font-normal ${tab === 'promotions' ? 'opacity-80' : 'text-slate-400'}`}>off</span>
+    : <span className={`text-xs font-normal ${tab === 'discount' ? 'opacity-80' : 'text-slate-400'}`}>off</span>
 
   return (
     <>
-      {/* Tab strip — pill buttons matching the dashboard cohort tabs */}
+      {/* Two tabs — one per win-back lever */}
       <div className="flex items-center gap-3 mb-6">
-        <TabButton active={tab === 'suggested'} onClick={() => setTab('suggested')}>
-          Suggested
-          {suggestedBadge}
+        <TabButton active={tab === 'features'} color="blue" onClick={() => setTab('features')}>
+          Features
+          {featuresBadge}
         </TabButton>
-        <TabButton active={tab === 'active'} onClick={() => setTab('active')}>
-          Active
-          {activeBadge}
-        </TabButton>
-        <TabButton active={tab === 'promotions'} onClick={() => setTab('promotions')}>
-          Promotions
-          {promoBadge}
+        <TabButton active={tab === 'discount'} color="emerald" onClick={() => setTab('discount')}>
+          Discount
+          {discountBadge}
         </TabButton>
       </div>
 
-      {/* Suggested pane */}
-      <div className={tab === 'suggested' ? '' : 'hidden'}>
-        <CancellationThemes {...suggestedProps} />
-      </div>
+      {/* Features pane — demand (themes) → supply (reasons), side by side.
+          Both former tabs live here so the loop is visible at a glance. */}
+      <div className={tab === 'features' ? '' : 'hidden'}>
+        <p className="text-sm text-slate-500 mb-4">
+          Cancelled customers tell us why they left. Ship the fix, mark it here, and we email everyone who asked.
+        </p>
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_auto_1fr] gap-4 items-start">
+          {/* Demand */}
+          <div>
+            <CancellationThemes {...suggestedProps} />
+          </div>
 
-      {/* Active pane — always-visible guidance strip + the existing
-          reasons editor + a one-liner footer (so "what gets sent?" is
-          answered without clicking). The accordion that used to sit at
-          the top of the page lives here now, dissolved into context. */}
-      <div className={tab === 'active' ? '' : 'hidden'}>
-        <div className="space-y-4">
-          <GuidanceStrip />
-          <ReasonsClient {...activeProps} />
+          {/* Connector — decorative; hidden on mobile (columns stack). */}
+          <div className="hidden lg:flex lg:flex-col items-center justify-center self-center px-1 text-slate-300">
+            <span className="text-2xl leading-none" aria-hidden>&rarr;</span>
+            <span className="text-[10px] uppercase tracking-widest text-slate-400 mt-1 [writing-mode:vertical-rl] rotate-180">ship it</span>
+          </div>
+
+          {/* Supply — guidance strip + the reasons editor (full functionality) */}
+          <div className="space-y-4">
+            <GuidanceStrip />
+            <ReasonsClient {...activeProps} />
+          </div>
         </div>
       </div>
 
-      {/* Promotions pane */}
-      <div className={tab === 'promotions' ? '' : 'hidden'}>
+      {/* Discount pane — the price-canceller fallback */}
+      <div className={tab === 'discount' ? '' : 'hidden'}>
+        <p className="text-sm text-slate-500 mb-4">
+          When someone cancels purely on price, no feature will bring them back — offer a discount to price-sensitive cancellers instead.
+        </p>
         <PromotionsSection {...promotionsProps} />
       </div>
     </>
