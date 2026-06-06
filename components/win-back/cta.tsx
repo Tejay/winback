@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { TrackedCta } from '@/components/landing/tracked-cta'
 
 /**
  * Final CTA on /win-back. Pricing lives on the home page only (combined
@@ -22,12 +23,13 @@ export function Cta() {
           </Link>
         </p>
         <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
-          <Link
+          <TrackedCta
             href="/register"
+            location="win-back-page"
             className="bg-[#0f172a] text-white rounded-full px-6 py-2.5 text-sm font-medium hover:bg-[#1e293b]"
           >
             Connect Stripe →
-          </Link>
+          </TrackedCta>
         </div>
         <p className="mt-6 text-xs text-slate-500">
           Stripe Connect Standard · No card at signup.

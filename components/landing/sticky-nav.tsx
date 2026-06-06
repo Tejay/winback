@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { Logo } from '@/components/logo'
+import { track } from './track'
 
 /**
  * Sticky top nav for the marketing landing page. Gains a hairline border +
@@ -88,6 +89,7 @@ export function StickyNav() {
           </Link>
           <Link
             href="/register"
+            onClick={() => track('cta_clicked', 'sticky-nav')}
             className="bg-[#0f172a] text-white rounded-full px-4 py-1.5 text-sm font-medium hover:bg-[#1e293b]"
           >
             Sign up &rarr;
