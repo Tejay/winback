@@ -38,6 +38,19 @@ type StuckStage = keyof FunnelData['stuck']
 
 const WINDOW_OPTIONS: FunnelWindow[] = ['7d', '30d', '90d', 'all']
 
+// Each stage drills to the list behind it: customer-state stages → the
+// filtered customers list; event-counted stages → the events log by name
+// (mirrors the drill targets on /admin/insights).
+const STAGE_HREF: Record<string, string> = {
+  landed:        '/admin/events?name=landing_viewed',
+  cta:           '/admin/events?name=cta_clicked',
+  registered:    '/admin/customers',
+  connectScreen: '/admin/events?name=onboarding_stripe_viewed',
+  connected:     '/admin/events?name=oauth_completed',
+  activated:     '/admin/customers?filter=activated',
+  subscribed:    '/admin/customers?filter=paying',
+}
+
 export function FunnelClient() {
   return (
     <Suspense fallback={<p className="text-sm text-slate-500">Loading…</p>}>
@@ -134,7 +147,7 @@ function FunnelInner() {
 
       {/* Funnel bar */}
       <section className="space-y-2">
-        <FunnelStages stages={data.stages.map((s) => ({ label: s.label, value: s.value }))} />
+        <FunnelStages stages={data.stages.map((s) => ({ label: s.label, value: s.value, href: STAGE_HREF[s.key] }))} />
         <div className="flex items-center justify-between text-[11px] text-slate-400 px-1">
           <span>Overall: <strong className="text-slate-600 tabular-nums">{top.toLocaleString()} → {bottom.toLocaleString()}</strong> · {overallPct}% land-to-paid</span>
           {biggestDrop && (
