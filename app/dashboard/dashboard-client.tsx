@@ -766,19 +766,12 @@ export function DashboardClient({
         </div>
       )}
 
-      {/* Page header */}
-      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 sm:gap-4 mb-6">
-        <div>
-          <div className="text-xs font-semibold tracking-widest uppercase text-blue-600">Overview</div>
-          <h1 className="text-4xl font-bold text-slate-900">Dashboard.</h1>
-          <p className="text-sm text-slate-500 mt-1">Every cancellation, every recovery — all in one view.</p>
-        </div>
-        <a
-          href="/reasons"
-          className="self-start border border-slate-200 bg-white text-slate-700 rounded-full px-5 py-2 text-sm font-medium flex-shrink-0 inline-block"
-        >
-          Manage Winback reasons
-        </a>
+      {/* Page header. The "Manage Winback reasons" button used to live here
+          but duplicated the top-nav "Reasons" item, so it was removed. */}
+      <div className="mb-6">
+        <div className="text-xs font-semibold tracking-widest uppercase text-blue-600">Overview</div>
+        <h1 className="text-4xl font-bold text-slate-900">Dashboard.</h1>
+        <p className="text-sm text-slate-500 mt-1">Every cancellation, every recovery — all in one view.</p>
       </div>
 
       {/* Spec 31 — pilot banner */}

@@ -249,8 +249,11 @@ export default async function ReasonsPage() {
         <div className="max-w-5xl mx-auto px-6 py-10">
           <p className="text-xs font-semibold uppercase tracking-widest text-blue-600">Winback</p>
           <h1 className="text-4xl font-bold mt-1 text-slate-900">Winback reasons — why customers return.</h1>
-          <p className="text-sm text-slate-500 mt-3 max-w-2xl">
-            This is how cancelled customers learn you fixed what they wanted, and when the discount safety net kicks in for price-cancellers.
+          <p className="text-sm text-slate-500 mt-3 max-w-2xl leading-relaxed">
+            Two ways to win back a cancelled customer:{' '}
+            <strong className="text-slate-700">ship the feature they wanted</strong>, or{' '}
+            <strong className="text-slate-700">offer them a discount</strong>. Win-back emails
+            draw from whichever fits each subscriber.
           </p>
 
           <div className="mt-8">
