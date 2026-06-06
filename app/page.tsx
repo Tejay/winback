@@ -1,5 +1,6 @@
-import Link from 'next/link'
 import { StickyNav } from '@/components/landing/sticky-nav'
+import { TrackedCta } from '@/components/landing/tracked-cta'
+import { LandingViewTracker } from '@/components/landing/landing-view-tracker'
 import { TwoPillarTeaser } from '@/components/landing/two-pillar-teaser'
 import { LandingDashboardPreview } from '@/components/landing/landing-dashboard-preview'
 import { PricingFormula } from '@/components/landing/pricing-formula'
@@ -31,6 +32,7 @@ import { Footer } from '@/components/landing/footer'
 export default function LandingPage() {
   return (
     <div className="min-h-screen">
+      <LandingViewTracker />
       <StickyNav />
 
       {/* Hero — repositioned to platform-level */}
@@ -64,12 +66,13 @@ export default function LandingPage() {
           </p>
 
           <div className="flex flex-col items-center mt-8">
-            <Link
+            <TrackedCta
               href="/register"
+              location="hero"
               className="bg-[#0f172a] text-white rounded-full px-7 py-3 text-base font-medium hover:bg-[#1e293b]"
             >
               Start free — no card →
-            </Link>
+            </TrackedCta>
           </div>
 
           {/* FlowIllustration removed from home: the two-pillar teaser
@@ -123,12 +126,13 @@ export default function LandingPage() {
           </p>
 
           <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
-            <Link
+            <TrackedCta
               href="/register"
+              location="mid-page"
               className="bg-[#0f172a] text-white rounded-full px-6 py-2.5 text-sm font-medium hover:bg-[#1e293b]"
             >
               Start free &mdash; no card →
-            </Link>
+            </TrackedCta>
           </div>
         </div>
       </section>

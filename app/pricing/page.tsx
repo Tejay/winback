@@ -1,4 +1,4 @@
-import Link from 'next/link'
+import { TrackedCta } from '@/components/landing/tracked-cta'
 import { Check } from 'lucide-react'
 import { StickyNav } from '@/components/landing/sticky-nav'
 import { Footer } from '@/components/landing/footer'
@@ -145,12 +145,13 @@ export default function PricingPage() {
           </div>
 
           <div className="mt-12 text-center">
-            <Link
+            <TrackedCta
               href="/register"
+              location="pricing"
               className="inline-flex items-center justify-center bg-[#0f172a] text-white rounded-full px-6 py-3 text-sm font-semibold hover:bg-[#1e293b] transition-colors"
             >
               Start free &mdash; pay nothing until first recovery
-            </Link>
+            </TrackedCta>
             <p className="mt-3 text-xs text-slate-500">
               Connect Stripe in 30 seconds. We&rsquo;ll only ask for a card
               after we&rsquo;ve recovered your first customer.

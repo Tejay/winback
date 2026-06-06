@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { TrackedCta } from '@/components/landing/tracked-cta'
 
 /**
  * Final CTA on /payment-recovery. De-risks before asking — two short
@@ -38,12 +39,13 @@ export function Cta() {
         </ul>
 
         <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
-          <Link
+          <TrackedCta
             href="/register"
+            location="payment-recovery-page"
             className="bg-[#0f172a] text-white rounded-full px-6 py-2.5 text-sm font-medium hover:bg-[#1e293b]"
           >
             Connect Stripe &rarr;
-          </Link>
+          </TrackedCta>
           <Link
             href="/#pricing"
             className="text-slate-600 hover:text-slate-900 text-sm font-medium px-3 py-2.5"

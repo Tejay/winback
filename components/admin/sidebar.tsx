@@ -52,6 +52,7 @@ const NAV: NavGroup[] = [
     label: 'Growth & revenue',
     items: [
       { label: 'Insights', href: '/admin/insights' },
+      { label: 'Funnel',   href: '/admin/insights/funnel' },
     ],
   },
   {
