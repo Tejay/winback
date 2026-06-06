@@ -248,20 +248,6 @@ export default async function OnboardingStripePage({
                 &rarr; Disconnect. Or from your Stripe dashboard &rarr; Settings &rarr; Connected apps.
               </div>
             </details>
-
-            <details className="group py-3">
-              <summary className="cursor-pointer list-none flex items-start justify-between gap-4 text-sm font-medium text-slate-900 hover:text-blue-600">
-                <span>Where does my data live?</span>
-                <span className="text-slate-400 group-open:rotate-45 transition-transform flex-shrink-0" aria-hidden>+</span>
-              </summary>
-              <div className="mt-2 text-sm text-slate-600 leading-relaxed">
-                US (AWS us-east-2) under EU Standard Contractual Clauses. Full list at{' '}
-                <Link href="/subprocessors" className="text-blue-600 hover:underline">
-                  /subprocessors
-                </Link>
-                .
-              </div>
-            </details>
           </section>
 
           <div className="mt-6 pt-5 border-t border-slate-100 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs text-slate-400">
