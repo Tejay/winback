@@ -66,9 +66,9 @@ export default function WinBackDemoPage() {
               by side &mdash; so you can decide what to do.
             </li>
             <li>
-              <strong className="text-slate-900">Handoff alert</strong> (top, amber): when AI decides your personal
-              touch matters more than another email, it routes the case to
-              your inbox immediately after the cancellation.
+              <strong className="text-slate-900">Awaiting reply</strong> (filter + amber dot): when a subscriber
+              replies, their message is captured and flagged so you can pick
+              it up and respond from the drawer &mdash; nothing slips.
             </li>
           </ul>
         </div>

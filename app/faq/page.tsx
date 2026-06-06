@@ -110,10 +110,12 @@ const SECTIONS: Section[] = [
         a: (
           <p>
             Your name on the From line, from our verified sending domain.
-            Replies go to your normal inbox &mdash; WinbackFlow
-            doesn&rsquo;t intercept the conversation or auto-respond. From
-            there it&rsquo;s a direct conversation between you and the
-            subscriber.
+            Replies come back into WinbackFlow and appear in your
+            dashboard &mdash; you read each one and respond right from the
+            subscriber&rsquo;s drawer, so nothing gets lost in your inbox.
+            WinbackFlow never auto-responds; every reply is written by you.
+            It&rsquo;s a direct conversation between you and the subscriber,
+            just kept in one place.
           </p>
         ),
       },

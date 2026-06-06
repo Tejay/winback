@@ -27,7 +27,8 @@ import {
   CheckCircle,
   DollarSign,
   Users,
-  Sparkles,
+  Send,
+  ChevronDown,
   Search,
   X,
 } from 'lucide-react'
@@ -55,8 +56,12 @@ interface WinBackRow {
   cancellationCategory: 'Price' | 'Feature' | 'Quality' | 'Switched' | 'Unused' | 'Other'
   tier: 1 | 2 | 3
   status: WinBackStatus
-  needsAttention?: boolean    // shows the "Needs you" pill
-  hasReply?: boolean
+  // Drawer redesign — recovery-likelihood chip (paint, not a queue) +
+  // inline "awaiting reply" snippet replace the removed handoff/"Needs you"
+  // escalation. Mirrors the live dashboard's open-row status column.
+  recoveryLikelihood?: 'high' | 'medium' | 'low'
+  awaitingReply?: boolean
+  latestReplySnippet?: string
 }
 
 interface PaymentRow {
@@ -99,7 +104,6 @@ export const WINBACK_KPI = {
   cumulativeRevenueCents: 980000,   // $9,800 lifetime saved
   activeMrrCents:         76000,    // $760/mo currently active
   inProgress:             12,
-  handoffsNeedingAttention: 3,
   recoveredThisMonth:     4,
   recoveredLastMonth:     3,
   mrrThisMonthCents:      36000,
@@ -116,7 +120,7 @@ const WINBACK_TOP_REASONS = [
 ]
 
 const WINBACK_FILTER_COUNTS = {
-  all: 15, handoff: 3, hasReply: 2, paused: 1, recovered: 3, done: 7,
+  all: 15, awaiting: 2, high: 4, price: 3, recovered: 3, done: 7,
 }
 
 const WINBACK_ROWS: WinBackRow[] = [
@@ -131,7 +135,7 @@ const WINBACK_ROWS: WinBackRow[] = [
     cancellationCategory: 'Switched',
     tier: 3,
     status: 'contacted',
-    needsAttention: true,
+    recoveryLikelihood: 'high',
   },
   {
     id: 'wb-2',
@@ -144,7 +148,9 @@ const WINBACK_ROWS: WinBackRow[] = [
     cancellationCategory: 'Price',
     tier: 2,
     status: 'contacted',
-    hasReply: true,
+    recoveryLikelihood: 'high',
+    awaitingReply: true,
+    latestReplySnippet: 'Yeah, $49 would change my mind. Is that a real plan or are you just feeling it out?',
   },
   {
     id: 'wb-3',
@@ -157,6 +163,7 @@ const WINBACK_ROWS: WinBackRow[] = [
     cancellationCategory: 'Feature',
     tier: 2,
     status: 'contacted',
+    recoveryLikelihood: 'medium',
   },
   {
     id: 'wb-4',
@@ -181,7 +188,7 @@ const WINBACK_ROWS: WinBackRow[] = [
     cancellationCategory: 'Switched',
     tier: 1,
     status: 'contacted',
-    needsAttention: true,
+    recoveryLikelihood: 'high',
   },
   {
     id: 'wb-6',
@@ -206,6 +213,7 @@ const WINBACK_ROWS: WinBackRow[] = [
     cancellationCategory: 'Other',
     tier: 1,
     status: 'pending',
+    recoveryLikelihood: 'low',
   },
   {
     id: 'wb-8',
@@ -218,8 +226,9 @@ const WINBACK_ROWS: WinBackRow[] = [
     cancellationCategory: 'Price',
     tier: 2,
     status: 'contacted',
-    needsAttention: true,
-    hasReply: true,
+    recoveryLikelihood: 'high',
+    awaitingReply: true,
+    latestReplySnippet: 'If you can hold our old rate for 6 months I’ll bring it back to the team.',
   },
   {
     id: 'wb-9',
@@ -272,8 +281,8 @@ const WINBACK_ROWS: WinBackRow[] = [
 ]
 
 // The drawer is pre-opened on Marcus Patel — he's the most persuasive
-// row to feature: mid-conversation, replied to our email, AI has a
-// concrete trigger-need extracted, founder action is clear.
+// row to feature: mid-conversation, replied to our email, AI insight +
+// the inline reply composer make the founder's next move obvious.
 const WINBACK_SELECTED_ID = 'wb-2'
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -461,23 +470,6 @@ function Sparkline({ data, accent }: { data: number[]; accent: 'blue' | 'green' 
   )
 }
 
-function StatusBadge({ status }: { status: WinBackStatus }) {
-  const config: Record<WinBackStatus, { bg: string; text: string; border: string; icon: string }> = {
-    recovered: { bg: 'bg-green-50',  text: 'text-green-700', border: 'border-green-200', icon: '✓' },
-    contacted: { bg: 'bg-blue-50',   text: 'text-blue-700',  border: 'border-blue-200',  icon: '✉' },
-    pending:   { bg: 'bg-amber-50',  text: 'text-amber-700', border: 'border-amber-200', icon: '○' },
-    lost:      { bg: 'bg-slate-100', text: 'text-slate-500', border: 'border-slate-200', icon: '×' },
-    skipped:   { bg: 'bg-slate-50',  text: 'text-slate-400', border: 'border-slate-200', icon: '–' },
-  }
-  const c = config[status]
-  return (
-    <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium border ${c.bg} ${c.text} ${c.border}`}>
-      <span>{c.icon}</span>
-      {status.charAt(0).toUpperCase() + status.slice(1)}
-    </span>
-  )
-}
-
 function DunningStageBadge({ row }: { row: PaymentRow }) {
   if (row.status === 'recovered') {
     return <span className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium bg-green-50 text-green-700 border border-green-200">Recovered</span>
@@ -553,25 +545,27 @@ function TabStrip({ active }: { active: 'winback' | 'paymentRecovery' }) {
 }
 
 // Filter chips — visual only in the demo; the "All" chip is highlighted.
+// Borderless pill style mirrors the live dashboard (dark fill when active,
+// plain slate text otherwise).
 function FilterChips({
   chips,
 }: {
   chips: Array<{ label: string; count: number; active?: boolean }>
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-2 mb-4">
+    <div className="flex items-center gap-1 overflow-x-auto -mx-4 px-4 md:mx-0 md:px-0">
       {chips.map((chip) => (
         <span
           key={chip.label}
           className={
             chip.active
-              ? 'inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold bg-slate-900 text-white'
-              : 'inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium bg-white border border-slate-200 text-slate-600'
+              ? 'flex items-center gap-1.5 bg-[#0f172a] text-white rounded-full px-4 py-1.5 text-sm font-medium whitespace-nowrap'
+              : 'flex items-center gap-1.5 text-slate-500 rounded-full px-4 py-1.5 text-sm font-medium whitespace-nowrap'
           }
         >
-          {chip.label}
+          <span>{chip.label}</span>
           {chip.count > 0 && (
-            <span className={chip.active ? 'tabular-nums opacity-70' : 'tabular-nums text-slate-400'}>
+            <span className={chip.active ? 'tabular-nums text-white/70 text-xs' : 'tabular-nums text-slate-400 text-xs'}>
               {chip.count}
             </span>
           )}
@@ -604,12 +598,12 @@ function DemoSearch({ placeholder }: { placeholder: string }) {
 export function WinBackDemoDashboard() {
   const selected = WINBACK_ROWS.find((r) => r.id === WINBACK_SELECTED_ID)!
   const winbackChips = [
-    { label: 'All',        count: WINBACK_FILTER_COUNTS.all,      active: true },
-    { label: 'Needs you',  count: WINBACK_FILTER_COUNTS.handoff },
-    { label: 'Has reply',  count: WINBACK_FILTER_COUNTS.hasReply },
-    { label: 'Paused',     count: WINBACK_FILTER_COUNTS.paused },
-    { label: 'Recovered',  count: WINBACK_FILTER_COUNTS.recovered },
-    { label: 'Done',       count: WINBACK_FILTER_COUNTS.done },
+    { label: 'All',                 count: WINBACK_FILTER_COUNTS.all, active: true },
+    { label: 'Awaiting reply',      count: WINBACK_FILTER_COUNTS.awaiting },
+    { label: 'High recovery',       count: WINBACK_FILTER_COUNTS.high },
+    { label: 'Price cancellations', count: WINBACK_FILTER_COUNTS.price },
+    { label: 'Recovered',           count: WINBACK_FILTER_COUNTS.recovered },
+    { label: 'Done',                count: WINBACK_FILTER_COUNTS.done },
   ]
 
   return (
@@ -622,21 +616,12 @@ export function WinBackDemoDashboard() {
         <div>
           <TabStrip active="winback" />
 
-          {/* Handoff alert (Spec 21b/40) — sits above pipeline strip per Spec 43 reorder */}
-          <div className="mb-4 flex items-center justify-between gap-3 bg-amber-50 border border-amber-200 rounded-2xl px-5 py-3">
-            <div className="flex items-center gap-2 text-sm">
-              <span className="bg-amber-100 text-amber-700 rounded-full w-6 h-6 flex items-center justify-center text-xs font-bold">!</span>
-              <span className="font-medium text-amber-900">
-                {WINBACK_KPI.handoffsNeedingAttention} subscribers need your attention
-              </span>
-            </div>
-            <span className="text-sm font-medium text-amber-900">Resolve queue →</span>
-          </div>
-
           <PipelineStrip pipeline={WINBACK_PIPELINE} />
 
-          {/* KPI band — blue tint */}
-          <section className="rounded-3xl bg-blue-100 border border-blue-200 p-3 mb-7">
+          {/* KPI cards — clean white cards on the page background (the legacy
+              "needs your attention" handoff alert + blue-tint band were
+              removed; the AI no longer escalates a queue). */}
+          <section className="mb-7">
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
               <StatCard
                 accent="blue"
@@ -677,53 +662,88 @@ export function WinBackDemoDashboard() {
             <DemoSearch placeholder="Search name, email, reason" />
           </div>
 
-          {/* Subscriber table */}
-          <div className="bg-white rounded-2xl border border-slate-100 overflow-x-auto">
+          {/* Subscriber table — avatar + "awaiting reply" dot/snippet +
+              recovery-likelihood chip, mirroring the live dashboard. */}
+          <div className="bg-white rounded-2xl border border-slate-100 overflow-x-auto shadow-[0_1px_3px_rgba(15,23,42,0.04)]">
             <table className="w-full">
               <thead>
-                <tr className="border-b border-slate-100">
-                  <th className="text-left text-xs font-semibold uppercase tracking-wide text-slate-400 py-3 px-4">Subscriber</th>
-                  <th className="hidden lg:table-cell text-left text-xs font-semibold uppercase tracking-wide text-slate-400 py-3 px-4">Plan</th>
-                  <th className="hidden sm:table-cell text-left text-xs font-semibold uppercase tracking-wide text-slate-400 py-3 px-4">Cancelled</th>
-                  <th className="hidden md:table-cell text-left text-xs font-semibold uppercase tracking-wide text-slate-400 py-3 px-4">Reason</th>
-                  <th className="text-left text-xs font-semibold uppercase tracking-wide text-slate-400 py-3 px-4">Status</th>
-                  <th className="text-right text-xs font-semibold uppercase tracking-wide text-slate-400 py-3 px-4">MRR</th>
+                <tr className="bg-slate-50/60 border-b border-slate-100">
+                  <th className="text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400 py-3 pl-5 pr-4">Subscriber</th>
+                  <th className="hidden lg:table-cell text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400 py-3 px-4">Plan</th>
+                  <th className="hidden sm:table-cell text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400 py-3 px-4">Cancelled</th>
+                  <th className="hidden md:table-cell text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400 py-3 px-4">Reason</th>
+                  <th className="text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400 py-3 px-4">Status</th>
+                  <th className="text-right text-[11px] font-semibold uppercase tracking-wider text-slate-400 py-3 pr-5">MRR</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="divide-y divide-slate-50">
                 {WINBACK_ROWS.map((row) => {
                   const isSelected = row.id === WINBACK_SELECTED_ID
+                  const isClosed = row.status === 'lost' || row.status === 'recovered' || row.status === 'skipped'
+                  const initial = (row.name?.[0] ?? '?').toUpperCase()
+                  const showSnippet = !!(row.awaitingReply && row.latestReplySnippet)
+                  const snippet = (row.latestReplySnippet ?? '').slice(0, 80)
+                  const avatarClass =
+                    row.status === 'recovered' ? 'bg-emerald-50 text-emerald-700'
+                    : row.recoveryLikelihood === 'high' ? 'bg-gradient-to-br from-amber-200 to-amber-300 text-amber-900'
+                    : 'bg-slate-100 text-slate-500'
                   return (
                     <tr
                       key={row.id}
-                      className={`border-b border-slate-50 transition-colors ${isSelected ? 'bg-blue-50/40' : ''}`}
+                      className={`hover:bg-slate-50/70 transition-colors ${isSelected ? 'bg-blue-50/40' : ''}`}
                     >
-                      <td className="py-4 pr-4 px-4">
-                        <div className="text-sm font-medium text-slate-900">{row.name}</div>
-                        <div className="text-xs text-slate-400 mt-0.5 truncate max-w-[160px] sm:max-w-none">{row.email}</div>
+                      <td className="py-3.5 pl-3 pr-4">
+                        <div className="flex items-center gap-2.5">
+                          {/* Unread-style dot — "the ball's in your court". */}
+                          <span className="w-2 flex justify-center shrink-0">
+                            {showSnippet && <span className="w-2 h-2 rounded-full bg-amber-400" />}
+                          </span>
+                          <div className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-semibold shrink-0 ${avatarClass}`}>{initial}</div>
+                          <div className="min-w-0">
+                            <div className={`text-sm text-slate-900 leading-tight ${showSnippet ? 'font-bold' : 'font-medium'}`}>{row.name}</div>
+                            {showSnippet ? (
+                              <div className="text-xs text-amber-700 mt-0.5 truncate max-w-[200px]">
+                                <MessageSquare className="w-3 h-3 inline-block align-[-2px] mr-1" />
+                                “{snippet}”
+                              </div>
+                            ) : (
+                              <div className="text-xs text-slate-400 mt-0.5 truncate max-w-[200px]">{row.email}</div>
+                            )}
+                          </div>
+                        </div>
                       </td>
-                      <td className="hidden lg:table-cell text-sm text-slate-600 py-4 px-4">{row.planName}</td>
-                      <td className="hidden sm:table-cell text-sm text-slate-600 py-4 px-4">{row.cancelledAt}</td>
-                      <td className="hidden md:table-cell text-sm text-slate-600 py-4 px-4">
+                      <td className="hidden lg:table-cell text-sm text-slate-600 py-3.5 px-4">{row.planName}</td>
+                      <td className="hidden sm:table-cell text-sm text-slate-500 py-3.5 px-4">{row.cancelledAt}</td>
+                      <td className="hidden md:table-cell text-sm text-slate-600 py-3.5 px-4">
                         {row.cancellationReason.length > 45
                           ? row.cancellationReason.slice(0, 45) + '…'
                           : row.cancellationReason}
                       </td>
-                      <td className="py-4 px-4">
-                        {row.needsAttention ? (
-                          <span className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200">
-                            Needs you
-                          </span>
-                        ) : row.hasReply ? (
-                          <span className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200">
-                            ✉ Has reply
-                          </span>
-                        ) : (
-                          <StatusBadge status={row.status} />
-                        )}
+                      <td className="py-3.5 px-4">
+                        {(() => {
+                          if (isClosed) {
+                            if (row.status === 'recovered') {
+                              return <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">✓ Recovered</span>
+                            }
+                            const closedLabel = row.status === 'lost' ? 'Lost' : 'Skipped'
+                            return <span className="inline-flex items-center text-[11px] font-medium text-slate-500 bg-slate-50 border border-slate-200 px-2 py-0.5 rounded-full">{closedLabel}</span>
+                          }
+                          const rl = row.recoveryLikelihood
+                          if (!rl) return <span className="text-xs text-slate-300">—</span>
+                          const chip =
+                            rl === 'high'   ? { dot: 'bg-emerald-500', cls: 'text-emerald-700 bg-emerald-50 border-emerald-200', label: 'High' }
+                            : rl === 'medium' ? { dot: 'bg-amber-400',   cls: 'text-amber-700 bg-amber-50 border-amber-200',     label: 'Medium' }
+                            :                   { dot: 'bg-slate-300',   cls: 'text-slate-500 bg-slate-50 border-slate-200',     label: 'Low' }
+                          return (
+                            <span className={`inline-flex items-center gap-1 text-[11px] font-semibold border px-2 py-0.5 rounded-full ${chip.cls}`}>
+                              <span className={`w-1.5 h-1.5 rounded-full ${chip.dot}`} />
+                              {chip.label}
+                            </span>
+                          )
+                        })()}
                       </td>
-                      <td className="text-sm font-medium text-slate-900 py-4 px-4 text-right tabular-nums">
-                        ${(row.mrrCents / 100).toFixed(0)}
+                      <td className={`text-sm font-semibold tabular-nums py-3.5 pr-5 text-right ${row.status === 'recovered' ? 'text-emerald-700' : 'text-slate-900'}`}>
+                        ${(row.mrrCents / 100).toFixed(2)}
                       </td>
                     </tr>
                   )
@@ -733,138 +753,124 @@ export function WinBackDemoDashboard() {
           </div>
         </div>
 
-        {/* RIGHT — drawer (always-open in the demo, no overlay, no close button) */}
+        {/* RIGHT — drawer (always-open in the demo). Block layout mirrors the
+            live dashboard's redesigned panel: identity · AI insight ·
+            conversation · reply composer · Details footer. The AI sends one
+            listen-only exit email then stays quiet; the founder replies at
+            any time from the composer (no take-over / handoff step). */}
         <aside className="bg-white rounded-2xl border border-slate-100 overflow-hidden lg:sticky lg:top-6 lg:self-start lg:max-h-[calc(100vh-3rem)] lg:overflow-y-auto">
-          <div className="px-6 pt-6 pb-4 border-b border-slate-100 flex items-start justify-between">
-            <div>
-              <div className="text-xs font-semibold uppercase tracking-widest text-slate-400 mb-1">Subscriber</div>
-              <div className="text-xl font-bold text-slate-900">{selected.name}</div>
+          {/* Block 1: identity — avatar + name + MRR + recovery chip */}
+          <div className="px-5 pt-5 pb-4 flex items-start gap-3">
+            <div className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-amber-200 text-amber-900 text-sm font-semibold shrink-0">
+              {selected.name.charAt(0).toUpperCase()}
             </div>
-            <span className="text-slate-300"><X className="w-4 h-4" /></span>
-          </div>
-
-          <div className="px-6 py-4 flex items-center justify-between">
-            <span className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200">
-              ✉ Has reply
-            </span>
-            <div className="text-right">
-              <div className="text-xs font-semibold uppercase tracking-widest text-slate-400">MRR</div>
-              <div className="text-xl font-bold text-slate-900 tabular-nums">${(selected.mrrCents / 100).toFixed(2)}</div>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3 px-6">
-            <div className="bg-slate-50 rounded-xl p-3">
-              <div className="text-xs font-semibold uppercase tracking-widest text-slate-400 mb-1">Email</div>
-              <div className="text-sm font-medium text-slate-900 truncate">{selected.email}</div>
-            </div>
-            <div className="bg-slate-50 rounded-xl p-3">
-              <div className="text-xs font-semibold uppercase tracking-widest text-slate-400 mb-1">Plan</div>
-              <div className="text-sm font-medium text-slate-900">{selected.planName}</div>
-            </div>
-            <div className="bg-slate-50 rounded-xl p-3">
-              <div className="text-xs font-semibold uppercase tracking-widest text-slate-400 mb-1">Cancelled</div>
-              <div className="text-sm font-medium text-slate-900">{selected.cancelledAt}</div>
-            </div>
-            <div className="bg-slate-50 rounded-xl p-3">
-              <div className="text-xs font-semibold uppercase tracking-widest text-slate-400 mb-1">Tenure</div>
-              <div className="text-sm font-medium text-slate-900">14 months</div>
-            </div>
-          </div>
-
-          {/* What they said vs What we heard — voice-vs-AI panel */}
-          <div className="mx-6 mt-4 grid grid-cols-1 gap-3">
-            <div className="bg-slate-50 rounded-xl p-4 border border-slate-100">
-              <div className="text-[10px] font-semibold uppercase tracking-widest text-slate-500 mb-2">
-                What they said
-              </div>
-              <div className="inline-flex items-center text-[11px] font-mono px-2 py-0.5 rounded bg-slate-200/70 text-slate-700 mb-2">
-                too_expensive
-              </div>
-              <div className="text-sm text-slate-700 italic leading-relaxed">
-                &ldquo;Honestly, $99/mo is just too much for what I&rsquo;m getting right now &mdash; switching back to a free Notion setup.&rdquo;
-              </div>
-            </div>
-            <div className="bg-blue-50 rounded-xl p-4 border border-blue-100">
-              <div className="flex items-center justify-between mb-2 gap-2">
-                <div className="text-[10px] font-semibold uppercase tracking-widest text-blue-600">
-                  What we heard
+            <div className="min-w-0 flex-1">
+              <div className="flex items-start justify-between">
+                <div className="min-w-0">
+                  <div className="text-base font-semibold text-slate-900 truncate">{selected.name}</div>
+                  <div className="text-xs text-slate-500 truncate mt-0.5">{selected.email}</div>
                 </div>
-                <span className="inline-flex items-center rounded-full bg-blue-100 text-blue-700 text-[10px] font-bold px-2 py-0.5">
-                  T2
+                <span className="w-7 h-7 -mr-1 -mt-1 rounded-full flex items-center justify-center text-slate-400 shrink-0">
+                  <X className="w-3.5 h-3.5" />
                 </span>
               </div>
-              <div className="text-sm font-medium text-slate-900 mb-1">Price too high for current value</div>
-              <div className="text-xs text-slate-500">
-                Category: <span className="text-slate-700 font-medium">Price</span>
+              <div className="flex items-center gap-2 mt-2 flex-wrap">
+                <span className="text-sm font-semibold text-slate-900 tabular-nums">
+                  ${(selected.mrrCents / 100).toFixed(0)}<span className="text-xs text-slate-400 font-medium">/mo</span>
+                </span>
+                <span className="text-slate-300">·</span>
+                <span className="inline-flex items-center text-[10px] uppercase tracking-wider font-semibold text-amber-900 bg-amber-100 border border-amber-200 px-2 py-0.5 rounded-full">
+                  High recovery
+                </span>
               </div>
             </div>
           </div>
 
-          {/* Trigger need (violet) */}
-          <div className="mx-6 mt-4 bg-violet-50 rounded-xl p-4 border border-violet-100">
-            <div className="flex items-start gap-3">
-              <div className="bg-violet-100 rounded-lg w-8 h-8 flex items-center justify-center text-violet-700 flex-shrink-0 mt-0.5">
-                <Sparkles className="w-4 h-4" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="text-[10px] font-semibold uppercase tracking-widest text-violet-700 mb-1">
-                  What would win them back
-                </div>
-                <div className="text-sm text-slate-800 italic leading-relaxed">
-                  &ldquo;If you ship a $49 starter tier in the next 30 days, surface it to Marcus.&rdquo;
-                </div>
-                <div className="text-[11px] text-violet-700/70 mt-2">
-                  We&rsquo;ll auto-fire a win-back when your changelog mentions{' '}
-                  <span className="font-mono bg-violet-100 px-1 py-0.5 rounded">starter tier</span>.
+          {/* Block 2: manual promo offer action */}
+          <div className="px-5 py-3 border-t border-slate-100">
+            <span className="w-full inline-flex items-center justify-center gap-2 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-lg py-2">
+              <DollarSign className="w-4 h-4" />
+              Send promo offer
+            </span>
+          </div>
+
+          {/* Block 3: AI insight — Read + Worth knowing */}
+          <div className="px-5 py-3 border-t border-slate-100">
+            <div className="rounded-xl bg-violet-50 border border-violet-200/60 p-3.5 flex items-start gap-2.5">
+              <div className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-violet-600 text-white text-[10px] font-bold shrink-0 mt-0.5">AI</div>
+              <div className="flex-1 min-w-0">
+                <div className="text-[10px] uppercase tracking-wider font-semibold text-violet-700 mb-1">Insight</div>
+                <div className="text-[13px] text-slate-800 leading-relaxed space-y-1">
+                  <div><span className="text-violet-700 font-semibold">Read.</span> Price-sensitive, not gone to a competitor &mdash; $99/mo felt steep for a solo seat.</div>
+                  <div><span className="text-violet-700 font-semibold">Worth knowing.</span> He asked directly whether a $49 plan is real. A straight answer likely converts.</div>
                 </div>
               </div>
             </div>
           </div>
 
-          {/* AI judgment */}
-          <div className="mx-6 mt-4 bg-slate-50 rounded-xl p-4 border border-slate-100">
-            <div className="flex items-center justify-between mb-2 gap-2">
-              <div className="text-xs font-semibold uppercase tracking-widest text-slate-500">AI Judgment</div>
-              <span className="text-xs font-semibold px-2 py-0.5 rounded-full border whitespace-nowrap bg-amber-50 text-amber-700 border-amber-200">
-                Recovery: medium
+          {/* Block 4: conversation thread */}
+          <div className="px-5 py-4 border-t border-slate-100">
+            <div className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold mb-3">
+              Conversation <span className="ml-1.5 text-slate-400 normal-case tracking-normal">· 2 messages</span>
+            </div>
+            <ol className="space-y-2">
+              <li className="border border-slate-200 rounded-xl bg-white">
+                <div className="w-full flex items-start gap-3 p-3 text-left">
+                  <span className="mt-0.5 inline-flex items-center justify-center w-6 h-6 rounded-full bg-slate-900 text-white text-[10px] font-semibold shrink-0">AI</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-0.5 flex-wrap">
+                      <span className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">AI · sent on your behalf · winback_exit</span>
+                      <span className="text-[10px] text-slate-400">Apr 29 · 9:12 AM</span>
+                      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-medium">replied</span>
+                    </div>
+                    <div className="text-sm text-slate-800 truncate">A cheaper way to keep Aurora?</div>
+                  </div>
+                  <ChevronDown className="w-3.5 h-3.5 text-slate-400 mt-1.5 shrink-0" />
+                </div>
+              </li>
+              <li className="border border-indigo-200 bg-indigo-50/40 rounded-xl">
+                <div className="w-full flex items-start gap-3 p-3 text-left">
+                  <span className="mt-0.5 inline-flex items-center justify-center w-6 h-6 rounded-full bg-indigo-600 text-white text-[10px] font-semibold shrink-0">
+                    {selected.name.charAt(0).toUpperCase()}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-0.5">
+                      <span className="text-[10px] uppercase tracking-wider text-indigo-700 font-semibold">Them</span>
+                      <span className="text-[10px] text-slate-400">May 1 · 2:03 PM</span>
+                    </div>
+                    <div className="text-sm text-slate-800 truncate">Yeah, $49 would change my mind. Is that a real plan or are you just feeling it out?</div>
+                  </div>
+                  <ChevronDown className="w-3.5 h-3.5 text-slate-400 mt-1.5 shrink-0" />
+                </div>
+              </li>
+            </ol>
+          </div>
+
+          {/* Block 5: reply composer — always available (no take-over step) */}
+          <div className="px-5 py-4 border-t border-slate-100">
+            <div className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold mb-2">Your reply</div>
+            <div className="border border-slate-200 rounded-xl bg-white overflow-hidden">
+              <div className="w-full px-3.5 pt-3 pb-2 text-[13px] text-slate-400 leading-relaxed min-h-[5.5rem]">Write your reply…</div>
+              <div className="px-3.5 py-2 border-t border-slate-100 bg-slate-50/60 text-[10px] text-slate-500 flex items-center justify-between">
+                <span className="truncate">↓ auto-appends reactivate · sign-off · unsubscribe</span>
+                <span className="tabular-nums font-medium ml-2 shrink-0 text-slate-400">0 / 500</span>
+              </div>
+            </div>
+            <div className="flex items-center justify-end mt-3">
+              <span className="bg-slate-900 text-white rounded-full px-4 py-2 text-xs font-semibold flex items-center gap-1.5">
+                Send reply <Send className="w-3 h-3" />
               </span>
             </div>
-            <p className="text-sm text-slate-700 italic leading-relaxed">
-              &ldquo;Customer cites cost vs. value mismatch. Price-sensitive but not churning to a competitor &mdash; open to a discount or downgrade conversation.&rdquo;
-            </p>
           </div>
 
-          {/* Email history */}
-          <div className="px-6 mt-5">
-            <div className="text-sm font-semibold text-slate-900 mb-3">Email history</div>
-            <div className="space-y-3">
-              <div className="bg-slate-50 rounded-xl p-3 border border-slate-100">
-                <div className="flex items-center justify-between mb-1">
-                  <div className="text-xs font-semibold text-slate-700">Win-back sent</div>
-                  <div className="text-[11px] text-slate-400 tabular-nums">2026-04-29</div>
-                </div>
-                <div className="text-xs text-slate-500 leading-relaxed">
-                  &ldquo;Hey Marcus &mdash; saw you cancelled. The $99/mo tier is built for teams of 5+; if it&rsquo;s just you right now, you might be a better fit for our Starter at $49&hellip;&rdquo;
-                </div>
-              </div>
-              <div className="bg-blue-50 rounded-xl p-3 border border-blue-100">
-                <div className="flex items-center justify-between mb-1">
-                  <div className="text-xs font-semibold text-blue-700">Reply received</div>
-                  <div className="text-[11px] text-blue-400 tabular-nums">2026-05-01</div>
-                </div>
-                <div className="text-xs text-slate-700 leading-relaxed">
-                  &ldquo;Yeah, $49 would change my mind. Is that a real plan or are you just feeling it out?&rdquo;
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Actions */}
-          <div className="px-6 mt-5 pt-5 border-t border-slate-100 pb-6 flex flex-wrap gap-2">
-            <span className="inline-flex items-center px-3 py-1.5 rounded-full text-xs font-medium bg-[#0f172a] text-white">Mark recovered</span>
-            <span className="inline-flex items-center px-3 py-1.5 rounded-full text-xs font-medium bg-white border border-slate-200 text-slate-700">Hand off to me</span>
-            <span className="inline-flex items-center px-3 py-1.5 rounded-full text-xs font-medium bg-white border border-slate-200 text-slate-700">Pause AI</span>
+          {/* Block 6: quiet footer with Details toggle */}
+          <div className="px-5 py-3 border-t border-slate-100 flex items-center justify-between text-[11px]">
+            <span className="text-slate-400">
+              Cancelled Apr 28<span className="text-slate-300 mx-1.5">·</span>contacted
+            </span>
+            <span className="text-slate-500 font-medium flex items-center gap-1">
+              Details <ChevronDown className="w-3 h-3" />
+            </span>
           </div>
         </aside>
       </div>
