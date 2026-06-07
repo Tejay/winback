@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server'
-import { and, eq, gte, sql } from 'drizzle-orm'
+import { and, eq, gte, inArray, sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { wbEvents } from '@/lib/schema'
 import { withCron } from '@/src/winback/lib/cron-wrap'
@@ -74,7 +74,12 @@ export const GET = (req: NextRequest) =>
       .where(and(
         eq(wbEvents.name, 'red_light_alert_sent'),
         gte(wbEvents.createdAt, cooldownCutoff),
-        sql`(${wbEvents.properties}->>'rule') = ANY(${ruleNames})`,
+        // inArray binds the list as a single text[] param → valid `= ANY($n)`.
+        // A raw sql`... = ANY(${ruleNames})` expands the JS array into separate
+        // scalar params (ANY('x') / ANY($a,$b)), which Postgres rejects — that
+        // was the "Failed query" crash that broke every red-light alert send.
+        // (rollups.ts documents this same inArray-vs-sql ANY pitfall.)
+        inArray(sql`(${wbEvents.properties}->>'rule')`, ruleNames),
       ))
       .groupBy(sql`(${wbEvents.properties}->>'rule')`)
 
