@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server'
-import { and, eq, gte, inArray, sql } from 'drizzle-orm'
+import { and, eq, inArray, sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { wbEvents } from '@/lib/schema'
 import { withCron } from '@/src/winback/lib/cron-wrap'
@@ -11,19 +11,20 @@ import { getPlatformStripe } from '@/src/winback/lib/platform-stripe'
 /**
  * PR 2 — Red-light email alert cron.
  *
- * Schedule: every 5 minutes via vercel.json. Each run:
+ * Schedule: once daily via vercel.json. Each run:
  *   1. Compute the current red-lights via buildOverviewRollup
- *   2. For each active rule, check the last `red_light_alert_sent` event
- *      for that rule. Skip if a fire happened in the last 15 minutes
- *      (cooldown).
+ *   2. For each active rule, count its prior `red_light_alert_sent` events.
+ *      Skip the rule once it reaches MAX_ALERTS_PER_RULE — i.e. each rule
+ *      emails at most 3 times, then goes silent.
  *   3. If any rules remain, send ONE consolidated email to
  *      ADMIN_ALERT_EMAIL listing them all. Then write a
  *      `red_light_alert_sent` event per rule that was included.
  *
- * The cooldown is per-rule, but emails are bundled — so a single fire
- * lists "errors, floor_emails_sent" together. This beats per-rule emails
- * (fewer inbox interruptions) while still letting each rule cool down
- * independently.
+ * The cap is per-rule, but emails are bundled — so a single fire lists
+ * "errors, floor_emails_sent" together. Daily cadence + a 3-alert cap stops
+ * a persistent (often low-volume) signal from flooding the inbox; the red
+ * light still shows live on /admin regardless. Clearing a rule's
+ * `red_light_alert_sent` events resets its budget.
  *
  * PRODUCTION ONLY: a real send happens only when VERCEL_ENV='production'.
  * Dev/preview compute the lights (so the cron is testable) but never email
@@ -34,7 +35,9 @@ import { getPlatformStripe } from '@/src/winback/lib/platform-stripe'
  */
 export const maxDuration = 60
 
-const COOLDOWN_MS = 15 * 60 * 1000
+// Each rule emails at most this many times, then goes silent (the red light
+// still shows on /admin). Clearing a rule's red_light_alert_sent events resets it.
+const MAX_ALERTS_PER_RULE = 3
 
 export const GET = (req: NextRequest) =>
   withCron('red-light-check', req, async () => {
@@ -61,36 +64,37 @@ export const GET = (req: NextRequest) =>
       }
     }
 
-    // Look up the last-fire timestamp for each active rule
+    // Per-rule alert budget: count each active rule's prior alerts and skip
+    // any that already hit the cap — so a persistent signal stops emailing
+    // after MAX_ALERTS_PER_RULE.
     const ruleNames = lights.map((l) => l.metric)
-    const cooldownCutoff = new Date(Date.now() - COOLDOWN_MS)
 
-    const recentSends = await db
+    const priorSends = await db
       .select({
-        rule: sql<string>`(${wbEvents.properties}->>'rule')`,
-        lastAt: sql<Date>`max(${wbEvents.createdAt})`,
+        rule:  sql<string>`(${wbEvents.properties}->>'rule')`,
+        count: sql<number>`count(*)::int`,
       })
       .from(wbEvents)
       .where(and(
         eq(wbEvents.name, 'red_light_alert_sent'),
-        gte(wbEvents.createdAt, cooldownCutoff),
-        // inArray binds the list as a single text[] param → valid `= ANY($n)`.
-        // A raw sql`... = ANY(${ruleNames})` expands the JS array into separate
-        // scalar params (ANY('x') / ANY($a,$b)), which Postgres rejects — that
-        // was the "Failed query" crash that broke every red-light alert send.
-        // (rollups.ts documents this same inArray-vs-sql ANY pitfall.)
+        // inArray binds the list as one text[] param → valid `= ANY($n)`. A
+        // raw sql`... = ANY(${ruleNames})` expands the array into scalar params
+        // (ANY('x') / ANY($a,$b)), which Postgres rejects. (rollups.ts
+        // documents this inArray-vs-sql ANY pitfall.)
         inArray(sql`(${wbEvents.properties}->>'rule')`, ruleNames),
       ))
       .groupBy(sql`(${wbEvents.properties}->>'rule')`)
 
-    const rulesInCooldown = new Set(recentSends.map((r) => r.rule))
-    const lightsToSend = lights.filter((l) => !rulesInCooldown.has(l.metric))
+    const sentCountByRule = new Map(priorSends.map((r) => [r.rule, r.count]))
+    const lightsToSend = lights.filter(
+      (l) => (sentCountByRule.get(l.metric) ?? 0) < MAX_ALERTS_PER_RULE,
+    )
 
     if (lightsToSend.length === 0) {
       return {
         activeLights: lights.length,
         sent: false,
-        skippedReason: 'all rules in cooldown',
+        skippedReason: `all active rules at max alerts (${MAX_ALERTS_PER_RULE})`,
       }
     }
 
@@ -187,6 +191,6 @@ function composeAlertBody(lights: OverviewRollup['redLights'], envLabel: string)
   }
   lines.push('')
   lines.push('Investigate: open /admin')
-  lines.push('Cooldown per rule: 15 min. To stop alerts, fix the underlying signal.')
+  lines.push('Each rule emails at most 3 times, then goes silent — the red light stays live on /admin. Fix the underlying signal (or clear its alert events) to reset.')
   return lines.join('\n')
 }
