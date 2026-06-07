@@ -46,7 +46,7 @@
     },
     {
       "path": "/api/cron/red-light-check",
-      "schedule": "*/5 * * * *"
+      "schedule": "0 13 * * *"
     }
   ]
 }
